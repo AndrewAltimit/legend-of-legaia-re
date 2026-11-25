@@ -636,6 +636,16 @@ impl LegaiaRuntime {
         self.options_state.muted
     }
 
+    /// Set the master mute [`Self::audio_muted`] reads, persisted with the
+    /// other options. The page keeps it in step with its Sound button, so
+    /// `F2` and the button are one control there, as `F2` is on the window.
+    pub fn set_audio_muted(&mut self, on: bool) {
+        if self.options_state.muted != on {
+            self.options_state.muted = on;
+            self.persist_and_apply_options();
+        }
+    }
+
     /// The controller stick's dead zone in percent
     /// (`OptionsState::stick_dead_zone`), the native launcher's *Stick dead
     /// zone* row: snapped to its steps, persisted with the other options.

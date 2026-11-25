@@ -2242,7 +2242,10 @@ names itself on both hosts. A second `SIM_PAIRS` row pins both Rust sites to
 the two notice kernels; the JavaScript half is pinned by
 `play_hotkeys::tests::the_page_shows_hotkey_notices`. The native window's
 `F12` panel (every hotkey with its current state) has no page twin beyond
-that list: the page's own checkboxes already show the state.
+that list: the page's own controls show the state. The mute's control is the
+page's Sound button: `F2` sets the button from the stored option, and the
+button writes the option back through `set_audio_muted`, so the two never
+disagree and the button's state wins when a runtime comes up.
 
 `Print Screen` (`HostHotkey::Screenshot`) is the one key both hosts also take
 on its release: Windows delivers that key's release alone, so each host shoots

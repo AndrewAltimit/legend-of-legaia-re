@@ -76,6 +76,9 @@
 .play-dock-btn[aria-expanded="true"]::after { content: "\25B4"; }
 .play-dock-panels > .play-card { margin-bottom: 0.8rem; }
 .play-dock-panels > .play-card[hidden] { display: none; }
+/* The key list is a reference read beside the game: capped so opening it
+   leaves the picture on screen under it. */
+.play-dock-panels > .play-keys-card { max-height: min(60vh, 34rem); overflow-y: auto; }
 /* Expansion packs are the port's own, still-moving feature: every place
  * the page offers one says so. */
 .play-experimental {
@@ -670,10 +673,12 @@ div.play-vis-head { cursor: default; }
         </div>
         <div class="play-btn-row">
           <button id="play-recenter" type="button">Reset camera</button>
+          <button id="play-title-bar" type="button" disabled
+                  title="Leave the running game for the title card (New Game, Continue, Options). Progress since your last save is lost.">Back to title</button>
           <button id="play-fullscreen" class="btn-accent" type="button" title="Present the viewport full screen (F11; Esc to exit)">&#9974; Fullscreen</button>
           <button id="play-touch-pad" type="button" aria-pressed="false"
                   title="Show or hide the on-screen pad (D-pad, face buttons, shoulders, Start and Select) for a touch screen. Shown by default on a phone or tablet; remembered.">Touch pad</button>
-          <label class="play-volume" title="Scene BGM output gain (the engine's SPU mixer runs into a WebAudio GainNode)">
+          <label class="play-volume" title="Output level: the whole mix, music, sound effects, voices and movies (the window's Master volume; Music and SFX below set the two buses)">
             &#9834; <input type="range" id="play-volume" min="0" max="10" step="0.5" value="1">
             <span id="play-volume-value">1x</span>
           </label>
@@ -1504,7 +1509,18 @@ div.play-vis-head { cursor: default; }
   }
   /* For the web benches (frame-bench-web, movie-timeline-web): a fresh title. */
   window.__playBootNewGame = bootNewGameTitle;
-  document.getElementById('play-back-to-title').addEventListener('click', bootNewGameTitle);
+  /* Back to title, in the expansion panel and in the row under the picture.
+   * Leaving a running game drops everything since the last save, so it asks
+   * first; from the title or its screens it just restarts the title. */
+  function backToTitleAsked() {
+    if (!runtime) return;
+    if (!cancelBootTitle && view
+        && !window.confirm('Leave the running game for the title card? Progress since your last save is lost.')) return;
+    bootNewGameTitle();
+  }
+  for (const id of ['play-back-to-title', 'play-title-bar']) {
+    document.getElementById(id).addEventListener('click', backToTitleAsked);
+  }
 
   /* The dock: each button opens its panel and closes the others; a second
    * press closes it. The Scene picker also shows the stage, so the list can
@@ -1589,6 +1605,7 @@ div.play-vis-head { cursor: default; }
       statusEl.textContent = `Disc loaded (${count} PROT entries). Starting a New Game.`;
       modesEl.style.display = 'flex';
       document.getElementById('play-back-to-title').disabled = false;
+      document.getElementById('play-title-bar').disabled = false;
       window.__playRuntime = runtime;
       if (typeof window.__playListHotkeys === 'function') window.__playListHotkeys(runtime);
       if (typeof window.__playApplyDevMenu === 'function') window.__playApplyDevMenu();
@@ -3549,8 +3566,19 @@ div.play-vis-head { cursor: default; }
     applyVolume();
   });
   window.__playApplyVolume = applyVolume;
+  /* One mute on this page: the Sound button and the engine's stored master
+   * mute (`F2`, `OptionsState::muted`) hold the same state, the button's
+   * winning when a runtime comes up. Without it `F2` muted the game with
+   * nothing on the page saying so, across reloads too. */
+  function syncEngineMute() {
+    const rt = window.__playRuntime;
+    if (!window.LegaiaSound || !rt || typeof rt.set_audio_muted !== 'function') return;
+    try { rt.set_audio_muted(!window.LegaiaSound.isSoundOn()); } catch (e) {}
+  }
+  window.__playSyncEngineMute = syncEngineMute;
   if (window.LegaiaSound) {
     window.LegaiaSound.onChange(applyVolume);
+    window.LegaiaSound.onChange(syncEngineMute);
     /* The toggle button itself, beside the volume control, so the gate has a
      * control on this page and not only on the pages that mount their own. */
     const volLabel = volEl.closest('label');
@@ -3971,6 +3999,7 @@ div.play-vis-head { cursor: default; }
     syncRenderToggles();
     syncGroundFog();
     syncPreciseMove();
+    if (window.__playSyncEngineMute) window.__playSyncEngineMute();
     syncAudioOptions();
     syncCameraDistance();
     syncPageToggles();
@@ -4563,7 +4592,15 @@ div.play-vis-head { cursor: default; }
   });
   window.__playHotkeyActions = {
     diag_rows: () => { if (hudEl) hudEl.style.display = hudEl.style.display === 'none' ? '' : 'none'; },
-    audio_mute: () => {},
+    /* `F2` flipped the engine's stored mute; the Sound button beside the
+     * volume slider shows it (its change handler writes the same state
+     * back, a no-op here). */
+    audio_mute: () => {
+      const rt = window.__playRuntime;
+      if (window.LegaiaSound && rt && typeof rt.audio_muted === 'function') {
+        try { window.LegaiaSound.setSoundOn(!rt.audio_muted()); } catch (e) {}
+      }
+    },
     occlusion_fade: () => { syncRenderToggles(); applySeeThrough(); },
     cheat_max_ap: () => document.getElementById('play-cheat-max-ap').click(),
     cheat_encounters: () => cheatNoEncEl.click(),
