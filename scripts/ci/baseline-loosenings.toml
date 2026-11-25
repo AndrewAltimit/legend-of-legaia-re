@@ -1986,3 +1986,11 @@ changes = [
   ["shortcuts/walked/seed_16/examine_far", 29, 36],
   ["shortcuts/walked/seed_16/restore_xz", 55, 56],
 ]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "The play and tool bundles carry the New Game rules screen rebuilt in the game's menu style: four tabs, the randomizer parts, the seed editor, Custom difficulty, the New Game+ save list, the Boss Rush panel and touch hit-testing from its layout. They also carry the numeral escape and the field frame-cost terms ported this wave. About 27 KB gzip on 5.25 MB of play bundle and 26 KB on the tool bundle."
+changes = [
+  ["counts/bundle/gzip_bytes", 7400158, 7426399],
+  ["counts/bundle/play_gzip_bytes", 5249137, 5276608],
+]
