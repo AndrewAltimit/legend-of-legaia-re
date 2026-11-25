@@ -24,7 +24,9 @@ aborting, not by the comparison.
 
 Each direction first flips its first execution; when every test survives that,
 it flips every execution. Up to `--tests` of the cheapest tests that took the
-direction run per mutant. The population is the ported arms of
+direction run per mutant, and a survivor of both stages tries `--more` of the
+next cheapest before it is called unchecked (the cheapest tests are often not
+the one that compares the arm). The population is the ported arms of
 `branch-coverage.py`: directions taken in a PORT-tagged routine, outside every
 `branch-coverage-scope/*.toml` row. Results land in
 `target/checked-arms/results.tsv`, addresses and hashes only. It is a
@@ -222,10 +224,12 @@ def verdict(outcomes: dict[str, str]) -> str:
     return "unreached"
 
 
-def mutate(exe: Path, d: Direction, ms: dict[str, int], k: int, timeout: float) -> list[str]:
-    tests = sorted(d.tests, key=lambda t: (ms.get(t, 10**9), t))[:k]
+def mutate(exe: Path, d: Direction, ms: dict[str, int], k: int, timeout: float, more: int = 0) -> list[str]:
+    ranked = sorted(d.tests, key=lambda t: (ms.get(t, 10**9), t))
+    tests = ranked[:k]
     # A test's own run time can pass the floor: give the mutant room for it.
-    timeout = max(timeout, 4 * max(ms.get(t, 0) for t in tests) / 1000 + 10)
+    floor = timeout
+    timeout = max(floor, 4 * max(ms.get(t, 0) for t in tests) / 1000 + 10)
     total = 0.0
     stage = "first"
     outcomes, dt = run_mutant(exe, d, "1", tests, timeout)
@@ -235,6 +239,16 @@ def mutate(exe: Path, d: Direction, ms: dict[str, int], k: int, timeout: float) 
         stage = "all"
         outcomes, dt = run_mutant(exe, d, "all", tests, timeout)
         total += dt
+        v = verdict(outcomes)
+    # The cheapest tests are often not the one that compares the arm: a
+    # survivor tries the next `more` before it is called unchecked.
+    rest = ranked[k : k + more]
+    if v in ("unchecked", "unreached") and rest:
+        stage = "more"
+        timeout = max(floor, 4 * max(ms.get(t, 0) for t in rest) / 1000 + 10)
+        extra, dt = run_mutant(exe, d, "all", rest, timeout)
+        total += dt
+        outcomes.update(extra)
         v = verdict(outcomes)
     detail = ",".join(f"{t}={o}" for t, o in outcomes.items())
     return [*d.key, v, stage, str(len(d.tests)), f"{total:.2f}", detail]
@@ -246,7 +260,7 @@ def done_keys() -> set[tuple]:
     return {tuple(line.split("\t")[:4]) for line in RESULTS.read_text().splitlines() if line}
 
 
-def run(dirs: list[Direction], ms: dict[str, int], k: int, jobs: int, timeout: float) -> None:
+def run(dirs: list[Direction], ms: dict[str, int], k: int, jobs: int, timeout: float, more: int) -> None:
     exe = binary()
     have = done_keys()
     todo = [d for d in dirs if d.key not in have]
@@ -255,7 +269,7 @@ def run(dirs: list[Direction], ms: dict[str, int], k: int, jobs: int, timeout: f
     OUT.mkdir(parents=True, exist_ok=True)
     t0 = time.monotonic()
     with RESULTS.open("a") as out, ThreadPoolExecutor(jobs) as pool:
-        futures = [pool.submit(mutate, exe, d, ms, k, timeout) for d in todo]
+        futures = [pool.submit(mutate, exe, d, ms, k, timeout, more) for d in todo]
         for i, fut in enumerate(as_completed(futures), 1):
             row = fut.result()
             out.write("\t".join(row) + "\n")
@@ -335,6 +349,8 @@ def main() -> int:
     ap.add_argument("--recheck", type=int, metavar="K",
                     help="rerun unchecked directions with up to K of the tests that took them, when fewer ran")
     ap.add_argument("--tests", type=int, default=3, help="tests run per mutant, cheapest first")
+    ap.add_argument("--more", type=int, default=9,
+                    help="further tests a survivor of both stages tries, flipping every execution")
     ap.add_argument("--jobs", type=int, default=3, help="mutant processes at once")
     ap.add_argument("--threads", type=int, default=6, help="--record's test threads")
     ap.add_argument("--timeout", type=float, default=60,
@@ -368,7 +384,7 @@ def main() -> int:
         if not os.environ.get("LEGAIA_DISC_BIN"):
             print("checked-arms: LEGAIA_DISC_BIN is unset; every test would skip")
             return 2
-        run(dirs, ms, args.tests, args.jobs, args.timeout)
+        run(dirs, ms, args.tests, args.jobs, args.timeout, args.more)
         keys = {d.key for d in dirs}
         rows = [r.split("\t") for r in RESULTS.read_text().splitlines()]
         report([r for r in rows if tuple(r[:4]) in keys], args.worklist)

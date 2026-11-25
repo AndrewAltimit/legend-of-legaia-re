@@ -277,7 +277,10 @@ directions taken in a `PORT:`-tagged routine and outside every scope row. The
 branch table's per-test `B` lines name the tests that took each direction, and
 its `T` lines their run times. A mutant reruns the cheapest few of those
 tests, flipping first the direction's first execution and, when every test
-survives that, every execution. Each direction gets one verdict:
+survives that, every execution; a survivor of both then tries the next
+cheapest few, since the cheapest tests are often not the one that compares
+the arm (a step test runs the field VM's every op in seconds, and the test
+that holds an op's globals is slower). Each direction gets one verdict:
 
 - **checked**: a test fails. The comparison sees retail leave the arm.
 - **abnormal**: no test fails cleanly, but a flipped call stopped other than by
