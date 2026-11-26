@@ -666,11 +666,15 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
         let action = action_of(entry);
         let profile = cam::module_profile(entry).expect("directed");
         let shots = Rc::new(RefCell::new(Vec::<Shot>::new()));
-        let special_word = if live && entry == 931 && step % 2 == 0 {
-            ARENA_WORD
-        } else {
-            0
-        };
+        // So are PROT 0930's odd-step live runs, which skip the heal's and
+        // the cure's spell XP (`0x801F7980..0x801F7988`,
+        // `0x801F79C0..0x801F79C8`).
+        let special_word =
+            if live && ((entry == 931 && step % 2 == 0) || (entry == 930 && step % 2 == 1)) {
+                ARENA_WORD
+            } else {
+                0
+            };
         let mut cpu = scus_cpu().expect("SCUS");
         cpu.mem.load(OVERLAY_BASE, &overlay);
         cpu.mem.wr32(CTX_PTR, CTX);
@@ -891,6 +895,23 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 let s = (layout.caster + 1) % 3;
                 cpu.mem.wr16(ACTOR + s * STRIDE + 0x14C, 0);
             }
+            // PROT 0930's fallen runs heal a party with one member unhurt and
+            // Venomed (no HP owed, a cure outside the `0x3C` mask) and one
+            // Stoned (the masked cure's effect), every member in a clip
+            // (`0x801F7960..0x801F7B04`).
+            if entry == 930 && fallen {
+                let a = ACTOR + ((layout.caster + 1) % 3) * STRIDE;
+                cpu.mem.wr16(a + 0x14C, 400);
+                cpu.mem.wr16(a + 0x16E, 0x1);
+                cpu.mem
+                    .wr16(ACTOR + ((layout.caster + 2) % 3) * STRIDE + 0x16E, 0x4);
+                // ... and the caster far down, past what any MP-scaled
+                // restore would cover: the heal is the whole deficit
+                // (`0x801F7968..0x801F7974`, `0x801F7A2C`).
+                let c = ACTOR + layout.caster * STRIDE;
+                cpu.mem.wr16(c + 0x14C, 10);
+                cpu.mem.wr16(c + 0x14E, 999);
+            }
             // PROT 0931's lone monster stands raised, so arm 26's cut on the
             // row's middle (`-4 * +0x3E`) stands TR y above `0x400` and arm
             // 31's exit leaves it there (`slti 0x400` at 0x801F8894).
@@ -1066,6 +1087,16 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                     legaia_engine_battle_vm::status_effects::StatusKind::Stone,
                 );
             }
+            if let Some(w) = shadow.as_mut().filter(|_| entry == 930 && fallen) {
+                use legaia_engine_battle_vm::status_effects::StatusKind;
+                let c = layout.caster as u8;
+                w.battle
+                    .status_effects
+                    .apply((c + 1) % 3, StatusKind::Venom);
+                w.battle
+                    .status_effects
+                    .apply((c + 2) % 3, StatusKind::Stone);
+            }
             let mut shadow_after: Vec<u32> = Vec::new();
             // Whether each side has seated the creature: the port at the
             // start for a module with no seat arm, retail once its seat arm
@@ -1227,6 +1258,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                         && (pass + s) % 4 == 0;
                     let playing = match (s == CREATURE, lag) {
                         (false, _) if chase_clip => staged.max(1),
+                        (false, _) if entry == 930 && fallen && s < 3 => 1,
                         (true, true) => 4,
                         (true, false) if matches!(entry, 908 | 928) && fallen => {
                             let (playing, late) = &mut zenoir_clip;

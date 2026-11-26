@@ -181,3 +181,17 @@ image = "f0403708cf2879aa"
 range = "0x801F844C..0x801F844C"
 verdict = "unreachable"
 reason = "PROT 0928: the rounding fix-up of `/ 4` on the absolute value of a seat's sign-extended halfword `+0x34` (`lh` at 0x801F8438, negated below zero at 0x801F8448): the value is at most 0x8000, never negative, so the `bgez` is always taken."
+
+[[arm]]
+entry = "0x801F6A74"
+image = "f69a9ec23b1185ea"
+range = "0x801F6AE8..0x801F6AE8"
+verdict = "unreachable"
+reason = "PROT 0930's phase dispatch bound (`sltiu 0x1F` / `beqz` at 0x801F6AE4..0x801F6AE8): the module's one phase store is the shared `+1` (0x801F7C60..0x801F7C70), taken by arms 0..10 only; arm 11 (0x801F7C74) returns its busy word cleared (`sw zero,0x38(sp)` at 0x801F7D20) without it, so the phase never passes 11."
+
+[[arm]]
+entry = "0x801F6A74"
+image = "f69a9ec23b1185ea"
+range = "0x801F7E40..0x801F7E64"
+verdict = "unreachable"
+reason = "PROT 0930's clip-cycle arm at 0x801F7E34, the jump table's entry for phase 30 (the table at 0x801F69D8 sends 12..29 to the epilogue): the phase is stored only by the shared `+1` (0x801F7C70) from arms 0..10, so it never passes 11 and the arm is never dispatched."
