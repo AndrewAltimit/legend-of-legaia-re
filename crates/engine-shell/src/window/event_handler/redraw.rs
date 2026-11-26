@@ -180,6 +180,29 @@ impl PlayWindowApp {
                 .leadin_surface_wanted
                 .get_or_insert(toggles.battle_surface_frame_cost);
             toggles.battle_surface_frame_cost = met && surface;
+            // An art commit's keyframe decode is held with it, but for the
+            // capture's own actor: a party art another seat commits in the
+            // lead-in moves the rounds the replay reaches its gate on
+            // (`battle_balden_orb_v2_strike` fell back to the default step's
+            // pin, `.986` to `.927`), while the acting seat's own commits
+            // ahead of a mid-art gate are the art's frames
+            // (`battle_jou_party_vahn_chain_late`, `.956` held to `.900`).
+            let me_decode = *sc
+                .leadin_me_decode_wanted
+                .get_or_insert(toggles.battle_me_decode_cost);
+            let world = &self.session.host.world;
+            let acting = match sc.battle_drive.as_ref() {
+                Some(legaia_engine_capture::battle_drive::BattleDrive::Action { seat, .. }) => {
+                    Some(legaia_engine_capture::battle_drive::engine_seat(
+                        *seat,
+                        world.party.party_count,
+                    ))
+                }
+                _ => None,
+            };
+            let own = acting.is_some_and(|s| world.battle_ctx.active_actor == s);
+            let toggles = &mut self.session.host.world.toggles;
+            toggles.battle_me_decode_cost = (met || own) && me_decode;
             if met {
                 sc.leadin_table_cost = false;
                 // The pass the film opened on ran before the census came

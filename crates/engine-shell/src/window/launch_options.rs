@@ -312,6 +312,9 @@ pub struct ScreenshotConfig {
     /// What the session asked of the command surfaces' pricing
     /// (`WorldToggles::battle_surface_frame_cost`), held off with the census.
     pub leadin_surface_wanted: Option<bool>,
+    /// What the session asked of an art commit's keyframe-decode pricing
+    /// (`WorldToggles::battle_me_decode_cost`), held off with the census.
+    pub leadin_me_decode_wanted: Option<bool>,
     pub leadin_span_wanted: Option<bool>,
     /// `LEGAIA_BATTLE_DISPLAYED_SEAT=slot:x:z,...`: live pairs the captured
     /// frame stands combatants on **after** the camera is aligned on
@@ -1301,6 +1304,7 @@ impl ScreenshotConfig {
             leadin_span_law: std::env::var_os("LEGAIA_LEADIN_SPAN_LAW").is_some(),
             leadin_census_wanted: None,
             leadin_surface_wanted: None,
+            leadin_me_decode_wanted: None,
             leadin_span_wanted: None,
             battle_ground_snap: std::env::var("LEGAIA_BATTLE_GROUND_SNAP")
                 .map(|v| legaia_engine_capture::ground_snap::ground_snaps_from_env(&v))
