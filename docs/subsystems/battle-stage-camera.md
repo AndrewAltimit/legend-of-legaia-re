@@ -3501,8 +3501,17 @@ lead to. The battle draw therefore runs **one battle frame behind**:
   ease-out's opening steps run under about `450` angle units, and the cast
   modules' cuts from `512` up. A body moved `1024` units or turned `1024`
   in a frame was placed, not moved, and lands too, pose and all; so does a
-  part that moved `512` units or turned `1024`. The first frames of a battle
-  draw live.
+  body with any part that moved `512` units or turned `1024`, whole, so no
+  limb lands ahead of the rest. The first frames of a battle draw live.
+- A part's turn is measured from the nearer of the frame before's two Euler
+  forms (`present::carry_pose_back`). `(x, y, z)` and `(x + 0x800, 0x800 - y,
+  z + 0x800)` are the same `Rz·Ry·Rx` turn, and the pose decoder's Euler-flip
+  retry (`FUN_8004998C`, `battle_pose_blend`) crosses from one form to the
+  other inside a blend, so a part can read half a turn on two axes between two
+  frames while it has turned a few degrees. Read per axis, Vahn's flinch
+  (clip `2`) crossed the snap on one part every keyframe: that part drew its
+  landing for a vsync while the body trailed a frame behind, a jerk of
+  up to `67` degrees in one vsync followed by a hold.
 - It is presentation-only. The draw-side reads are `World::battle_draw_pose`,
   `battle_draw_root`, `battle_draw_shift`, `battle_draw_root_i16`,
   `battle_draw_pose_frame`, `battle_fx_shift`, `battle_sprite_shift` and

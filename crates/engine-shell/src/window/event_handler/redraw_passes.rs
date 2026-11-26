@@ -475,6 +475,34 @@ impl PlayWindowApp {
                 }
                 None => pose,
             };
+            // `LEGAIA_DIAG_POSE_CSV=<file>`: the drawn pose of every battle
+            // body each redraw - tick, slot, clip, cursor (12.4), whether the
+            // smooth camera carried it, then one `tx ty tz rx ry rz` group
+            // per part - for a per-frame continuity read of a clip switch.
+            if actor.battle_animation.is_some()
+                && let Some(path) = std::env::var_os("LEGAIA_DIAG_POSE_CSV")
+                && let Ok(mut f) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(path)
+            {
+                use std::io::Write as _;
+                let p = actor.battle_animation.as_ref();
+                let parts: Vec<String> = pose
+                    .bone_outputs
+                    .iter()
+                    .map(|(t, r)| format!("{} {} {} {} {} {}", t[0], t[1], t[2], r[0], r[1], r[2]))
+                    .collect();
+                let _ = writeln!(
+                    f,
+                    "{},{ai},{},{},{},{}",
+                    self.tick_no,
+                    p.map_or(-1, |p| i32::from(p.action_id())),
+                    p.map_or(-1, |p| i32::from(p.cursor_sixteenths())),
+                    u8::from(lerped.is_some()),
+                    parts.join(",")
+                );
+            }
             // The playing clip's morph lanes (`FUN_800495C8`, blended before
             // the draw and restored after it): the posed mesh is built from
             // a blended clone, the rest TMD stays untouched.

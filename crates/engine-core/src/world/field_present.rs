@@ -50,8 +50,8 @@ pub const SNAP_MOVE: f32 = 512.0;
 /// hunters' quarter turns (`1024` in one frame) are drawn over the frame.
 pub const SNAP_TURN: f32 = 1536.0;
 /// A pose part translation step at least this long, or a rotation step at
-/// least [`SNAP_PART_ANGLE`], draws the part where it landed (a clip change
-/// that jumps the limb).
+/// least [`SNAP_PART_ANGLE`] (the nearer of its two Euler forms), draws the
+/// body where it landed (a clip change that jumps the limb).
 pub const SNAP_PART_MOVE: i32 = 512;
 /// See [`SNAP_PART_MOVE`].
 pub const SNAP_PART_ANGLE: i32 = 1024;
@@ -492,9 +492,9 @@ impl World {
 
 impl FieldPresent {
     /// Fill [`Self::drawn`] for this tick: each slot's pose stepped `lag` of
-    /// the way back toward the frame before, part by part (a part that moved
-    /// past [`SNAP_PART_MOVE`] or turned past [`SNAP_PART_ANGLE`] draws where
-    /// it landed), unheld where the slot draws its live pose. The buffers
+    /// the way back toward the frame before, part by part (a body with a part
+    /// that moved past [`SNAP_PART_MOVE`] or turned past [`SNAP_PART_ANGLE`]
+    /// draws where it landed), unheld where the slot draws its live pose. The buffers
     /// are kept from tick to tick, so a steady scene allocates nothing here.
     fn fill_drawn_poses(&mut self, actors: &[Actor]) {
         let lag = self.lag();
@@ -522,26 +522,17 @@ impl FieldPresent {
             if c.is_empty() || p.len() != c.len() || p == c || live.bone_outputs.len() != c.len() {
                 continue;
             }
-            *held = true;
             frame.factor = live.factor;
             frame.finished = live.finished;
-            frame.bone_outputs.clear();
-            let back = |c: i16, d: i32| (f32::from(c) - lag * d as f32).round() as i16;
-            frame.bone_outputs.extend(p.iter().zip(c).map(|(p, c)| {
-                let dt: [i32; 3] = std::array::from_fn(|k| i32::from(c.0[k]) - i32::from(p.0[k]));
-                let dr: [i32; 3] = std::array::from_fn(|k| {
-                    (i32::from(c.1[k]) - i32::from(p.1[k]) + 2048).rem_euclid(4096) - 2048
-                });
-                if dt.iter().any(|d| d.abs() >= SNAP_PART_MOVE)
-                    || dr.iter().any(|d| d.abs() >= SNAP_PART_ANGLE)
-                {
-                    return *c;
-                }
-                (
-                    std::array::from_fn(|k| back(c.0[k], dt[k])),
-                    std::array::from_fn(|k| back(c.1[k], dr[k])),
-                )
-            }));
+            // The battle draw's kernel: the nearer Euler form, and a body
+            // with a limb past the snap drawn whole where it landed.
+            *held = super::battle::carry_pose_back(
+                p,
+                c,
+                lag,
+                (SNAP_PART_MOVE, SNAP_PART_ANGLE),
+                &mut frame.bone_outputs,
+            );
         }
     }
 }
