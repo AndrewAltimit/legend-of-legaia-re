@@ -437,6 +437,12 @@ impl SlotMachine {
             self.feature_mode = FEATURE_MODE_BONUS;
             self.bonus_spins = rounds as i32;
             result.bonus_triggered = true;
+            // The jackpot's fanfare: voice `0x11` released, then the two
+            // fanfare voices keyed.
+            self.sounds.voice_off.push(FANFARE_RELEASE_VOICE);
+            self.sounds
+                .voice_on
+                .extend(bonus_fanfare(self.voice_volume));
         }
         // Reach and tease modes stand until their jackpot lands. Hot mode has
         // a one-in-150 chance to end on every spin, won or lost, off the LCG

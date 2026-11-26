@@ -70,6 +70,7 @@ impl World {
             self.mode = self.minigames.slot_return_mode;
             return;
         };
+        m.set_voice_volume(self.audio.levels.voice_volume as u32);
         // The cabinet's whole frame (`SlotMachine::frame`), shared with the
         // standalone minigames page.
         match m.frame(packed) {

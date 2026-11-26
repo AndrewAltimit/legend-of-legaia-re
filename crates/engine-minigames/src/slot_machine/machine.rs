@@ -158,6 +158,10 @@ pub struct SlotMachine {
     pub(super) frame: u32,
     /// The sounds this machine raised since the host last took them.
     pub(super) sounds: SlotSounds,
+    /// The voice-volume config word `_DAT_80084580` the bonus fanfare halves
+    /// ([`crate::other_game_overlay::cue_volume`]); the cold-reset `200`
+    /// until a host seats the live setting ([`Self::set_voice_volume`]).
+    pub(super) voice_volume: u32,
     /// The retail state word while the machine is in [`SlotPhase::Menu`]
     /// (`0x32..=0x39`); unused otherwise.
     pub(super) menu_state: u8,
@@ -188,6 +192,32 @@ pub struct SlotSounds {
 
 /// The SPU voice the reel motor loop keys (`FUN_80065034`'s `a0 = 0x13`).
 pub const SPIN_VOICE: u8 = 0x13;
+
+/// The voice-volume word's cold-reset value (`FUN_8001FFA4`).
+pub const VOICE_VOLUME_COLD_RESET: u32 = 200;
+
+/// The bonus fanfare a jackpot line (symbol `8` or `9`) keys in the win
+/// evaluation, after releasing voice `0x11` (`FUN_800653C8(0x11)` at
+/// `0x801D192C` / `0x801D19E8`): voice `0x12` on VAB `2` program `0` tone
+/// `3` at note `0x3F`, then voice `0x11` on program `1` tone `4` at note
+/// `0x40`, both at fine `0x40` and the voice-volume word halved
+/// (`0x801D1934..0x801D19B8`, `0x801D19F0..0x801D1A74`).
+///
+/// PORT: FUN_801d13e8 (`0x801D190C..0x801D1A74`, the jackpot's fanfare voices)
+pub fn bonus_fanfare(volume_word: u32) -> [crate::other_game_overlay::VoiceAttrCue; 2] {
+    let v = crate::other_game_overlay::cue_volume(volume_word);
+    let cue =
+        |voice: u32, program: i32, tone: i32, note: i32| crate::other_game_overlay::VoiceAttrCue {
+            voice,
+            vab_program_tone: (2, program, tone),
+            note_and_fine: (note, 0x40),
+            volume: (v, v),
+        };
+    [cue(0x12, 0, 3, 0x3F), cue(0x11, 1, 4, 0x40)]
+}
+
+/// The voice the jackpot releases ahead of its fanfare.
+pub const FANFARE_RELEASE_VOICE: u8 = 0x11;
 /// Reel stop click - one store into ring slot 0 per Stop press taken
 /// (`0x801CF74C` / `0x801CF794` / `0x801CF7DC`).
 pub const CUE_REEL_STOP: i16 = 0x20A;
@@ -354,6 +384,7 @@ impl SlotMachine {
             // State `0`'s own frame has already stepped it (`0x801CFF14`).
             frame: 1,
             sounds: SlotSounds::default(),
+            voice_volume: VOICE_VOLUME_COLD_RESET,
             menu_state: 0,
             menu_cursor: 0,
             fade: 0,
@@ -376,6 +407,12 @@ impl SlotMachine {
     /// (`DAT_801d3c8c`): the last spin's line, or `-1` - which lights none.
     pub fn winning_line_word(&self) -> i32 {
         self.win_line
+    }
+
+    /// Seat the voice-volume config word `_DAT_80084580` the jackpot's
+    /// fanfare halves ([`bonus_fanfare`]).
+    pub fn set_voice_volume(&mut self, word: u32) {
+        self.voice_volume = word;
     }
 
     /// Take the sounds raised since the last call ([`SlotSounds`]).

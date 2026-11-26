@@ -544,6 +544,21 @@ fn jackpot_symbols_trigger_the_bonus_round_and_product_payout() {
     assert!(r.bonus_triggered);
     assert!(m.in_bonus_round());
     assert_eq!(m.bonus_spins(), BONUS_SPINS_JACKPOT);
+    // The jackpot's fanfare: voice 0x11 released, 0x12 and 0x11 keyed at the
+    // cold-reset volume halved.
+    let s = m.take_sounds();
+    assert!(s.voice_off.contains(&FANFARE_RELEASE_VOICE));
+    let fanfare: Vec<_> = s.voice_on.iter().filter(|v| v.voice != 0x13).collect();
+    assert_eq!(fanfare.len(), 2);
+    assert_eq!(
+        (
+            fanfare[0].voice,
+            fanfare[0].vab_program_tone,
+            fanfare[0].volume
+        ),
+        (0x12, (2, 0, 3), (100, 100))
+    );
+    assert_eq!(fanfare[1].note_and_fine, (0x40, 0x40));
     m.collect();
 
     // A bonus "free" spin still costs 1 coin (the mode-4..6 charge).

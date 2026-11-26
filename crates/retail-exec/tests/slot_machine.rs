@@ -513,8 +513,40 @@ fn whole_sessions_play_out_as_retail_plays_them() {
     ] {
         cpu.stub(va, 0);
     }
+    // The direct voices, logged in call order: `FUN_80065034`'s eight
+    // arguments as a key-on, `FUN_800653C8`'s voice as a release.
+    type VoiceLog = Vec<Result<(u32, [i32; 7]), u32>>;
+    let voices: Rc<std::cell::RefCell<VoiceLog>> = Rc::default();
+    {
+        let log = voices.clone();
+        cpu.hook(0x8006_5034, move |r, m| {
+            use psx_retail_exec::{A0, A1, A2, A3, SP};
+            let sp = r.r[SP];
+            let mut w = |k: u32| m.rd32(sp + 0x10 + 4 * k) as i32;
+            log.borrow_mut().push(Ok((
+                r.r[A0],
+                [
+                    r.r[A1] as i32,
+                    r.r[A2] as i32,
+                    r.r[A3] as i32,
+                    w(0),
+                    w(1),
+                    w(2),
+                    w(3),
+                ],
+            )));
+        });
+        let log = voices.clone();
+        cpu.hook(0x8006_53C8, move |r, _| {
+            log.borrow_mut()
+                .push(Err(r.r[psx_retail_exec::A0] & 0xFFFF))
+        });
+    }
+    // The voice-volume word the fanfare halves, at the port's cold reset.
+    cpu.mem.wr32(0x8008_4580, 200);
     let clean = cpu.mem.clone();
     let mut rng = Rng(0x534D_2020);
+    let mut fanfares = 0u32;
     let (mut spins, mut wins, mut quits, mut broke, mut rules) = (0, 0, 0, 0, 0);
     let mut modes = [0u32; 7];
     for scenario in 0..400 {
@@ -564,6 +596,7 @@ fn whole_sessions_play_out_as_retail_plays_them() {
             for a in RING {
                 cpu.mem.wr16(a, 0);
             }
+            voices.borrow_mut().clear();
             assert_eq!(cpu.call(SM, &[ACTOR]), Stop::Returned, "frame {frame}");
             let raw: [i32; 3] =
                 std::array::from_fn(|r| cpu.mem.rd32(REEL_POS + r as u32 * 4) as i32);
@@ -602,6 +635,39 @@ fn whole_sessions_play_out_as_retail_plays_them() {
                     .find(|(s, _)| *s == slot)
                     .map_or(0, |&(_, id)| id)
             });
+            // The voices: the releases and the key-ons, each in call order
+            // (a host releases ahead of keying).
+            let log = voices.borrow().clone();
+            let retail_off: Vec<u32> = log.iter().filter_map(|v| v.err()).collect();
+            let retail_on: Vec<(u32, [i32; 7])> = log
+                .iter()
+                .filter_map(|v| v.as_ref().ok().copied())
+                .collect();
+            let port_off: Vec<u32> = sounds.voice_off.iter().map(|&v| u32::from(v)).collect();
+            let port_on: Vec<(u32, [i32; 7])> = sounds
+                .voice_on
+                .iter()
+                .map(|c| {
+                    (
+                        c.voice,
+                        [
+                            c.vab_program_tone.0,
+                            c.vab_program_tone.1,
+                            c.vab_program_tone.2,
+                            c.note_and_fine.0,
+                            c.note_and_fine.1,
+                            c.volume.0,
+                            c.volume.1,
+                        ],
+                    )
+                })
+                .collect();
+            assert_eq!(
+                (retail_off, retail_on),
+                (port_off, port_on),
+                "scenario {scenario} frame {frame}: the voices"
+            );
+            fanfares += u32::from(sounds.voice_off.contains(&0x11));
             let port = (m.frame_row(), ring);
             assert_eq!(
                 retail, port,
@@ -625,6 +691,7 @@ fn whole_sessions_play_out_as_retail_plays_them() {
         "spins {spins} wins {wins} quits {quits} broke {broke} rules {rules} resolved by mode {modes:?}"
     );
     assert!(spins > 2000 && wins > 100 && quits > 100 && broke > 20 && rules > 20);
+    assert!(fanfares > 10, "{fanfares} jackpot fanfares");
     assert!([0, 1, 2, 3, 6].iter().all(|&i| modes[i] > 20), "{modes:?}");
 }
 
