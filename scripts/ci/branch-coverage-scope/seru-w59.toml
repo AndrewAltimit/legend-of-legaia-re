@@ -202,3 +202,31 @@ image = "756fcc7a853b8393"
 range = "0x801F6A7C..0x801F6A7C"
 verdict = "unreachable"
 reason = "PROT 0921's phase dispatch bound (`sltiu 0xC` / `beqz` at 0x801F6A78..0x801F6A7C): the module's one phase store is the shared `+1` (0x801F7DD0..0x801F7DE0), and its last arm 11 (0x801F7DE4) returns its busy word cleared (`sw zero,0x38(sp)` at 0x801F7FD4) without jumping to it, so the phase never passes 11."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "f0403708cf2879aa"
+range = "0x801F7064..0x801F7064"
+verdict = "unreachable"
+reason = "PROT 0928: the rounding fix-up of `/ 8` on three times the module word 0x801FA0D0 (`addu v0,a3,a1` at 0x801F7060): the word is zeroed (0x801F6DB8) and only grows by `step * scalar` a pass to its clamp `scalar << 8` (0x801F6EC8..0x801F6EE8) before this read, so the product is never negative."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "f0403708cf2879aa"
+range = "0x801F7344..0x801F7398"
+verdict = "unreachable"
+reason = "PROT 0928: the rounding fix-ups on `sin(word)` (`/ 4`, 0x801F7344), `3 * word` (`/ 4`, 0x801F7364) and `sin(2 * word)` (`/ 32`, 0x801F7398), the sines read off the table `*0x8007B81C`: the previous arm's pass zeroes the word 0x801FA0D0 (0x801F722C) and this arm adds `step * scalar` a pass and clamps it at `scalar << 7` = 0x400 (0x801F7294..0x801F72DC), so the word, `sin(word)` and `sin(2 * word)` (angles in 0..0x800) are never negative."
+
+[[arm]]
+entry = "0x801F6A08"
+image = "756fcc7a853b8393"
+range = "0x801F765C..0x801F765C"
+verdict = "unreachable"
+reason = "PROT 0921: the `beqz` on the battle's monster count `ctx[+1]` (`lbu 0x1` off `*0x8007BD24` at 0x801F7654) that skips the row loop: a fight that runs has at least one monster seated, so the count is never 0."
+
+[[arm]]
+entry = "0x801F6A08"
+image = "756fcc7a853b8393"
+range = "0x801F77D0..0x801F77D0"
+verdict = "unreachable"
+reason = "PROT 0921: the rounding fix-up of `/ 4` on `step * scalar`, the product of the unsigned bytes `0x1F800393` and `0x1F80037D` (`lbu` / `mult` at 0x801F77BC..0x801F77CC), which is never negative."
