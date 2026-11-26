@@ -5,6 +5,9 @@
 //!   (the pad handler it calls next stops the run), over every battle-flag
 //!   bit 7, every first-monster id and the scenes the overrides key on,
 //!   against `select_intro_style`;
+//! - the init run whole for each style it reaches, against the part seats
+//!   `battle_intro_parts::style_seats` (records, the init's stores, the
+//!   white-out word);
 //! - the `POLY_GT4` builder `FUN_801CF1B0` over generated descriptors and
 //!   arguments, against `build_intro_quad`: the whole packet, the ordering
 //!   table link and the OT-depth reset.
@@ -172,4 +175,134 @@ fn the_intro_quad_builder_matches_the_overlay() {
         assert_eq!(cpu.mem.rd32(OT_DEPTH), INTRO_QUAD_DEFAULT_OT_DEPTH);
     }
     assert!(modes.iter().all(|&n| n > 500), "{modes:?}");
+}
+
+/// The init `FUN_801CE8CC` run whole for each style and sub-style the
+/// selector reaches, against `battle_intro_parts::style_seats`: the records
+/// each arm hands the stager `FUN_80021B04`, in order, the stores the init
+/// makes into the parts it was handed (`+0x54`, `+0xA0`, `+0xB4`, `+0xB6`,
+/// `+0xC0`), and the white-out word `_DAT_8007B8FC` against
+/// `intro_leaves_white`. Every routine the init calls outside its own arms
+/// is stubbed; the stager returns a fresh sentinel-filled actor per call.
+#[test]
+fn the_intro_init_seats_each_styles_parts() {
+    differential!(prot(979, 0x801C_E8CC));
+    use legaia_engine_effects::battle_intro_parts::style_seats;
+    use legaia_render_kernels::battle_intro_styles::intro_leaves_white;
+    use psx_retail_exec::{A2, V0};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    let Some(mut cpu) = intro_cpu() else {
+        return;
+    };
+    const ACTORS: u32 = 0x8013_0000;
+    const ACTOR_SIZE: u32 = 0x100;
+    const ENTITY: u32 = 0x8012_F000;
+    const BUFFER: u32 = 0x8014_0000;
+    const WHITE: u32 = 0x8007_B8FC;
+    for stub in [
+        0x8001_7B94,
+        0x8001_822C,
+        0x8001_DAF8,
+        0x8001_DCF8,
+        0x8001_E3B8,
+        0x8002_6740,
+        0x8005_67A8,
+        0x8005_8104,
+        0x8005_8298,
+        0x8005_83C8,
+        0x8005_842C,
+        0x8005_8490,
+        0x8006_53C8,
+        // The five style seeders, each a differential of its own.
+        0x801C_FBB4,
+        0x801D_0164,
+        0x801D_081C,
+        0x801D_1564,
+        0x801D_1CD4,
+    ] {
+        cpu.hook(stub, |_, _| {});
+    }
+    cpu.hook(0x8002_0DE0, |r, _| r.r[V0] = ENTITY);
+    cpu.hook(0x8001_7888, |r, _| r.r[V0] = BUFFER);
+    let spawns: Rc<RefCell<Vec<(u32, u32)>>> = Rc::default();
+    let log = spawns.clone();
+    cpu.hook(0x8002_1B04, move |r, m| {
+        let mut log = log.borrow_mut();
+        let actor = ACTORS + ACTOR_SIZE * log.len() as u32;
+        m.load(actor, &[0xEE; ACTOR_SIZE as usize]);
+        log.push((r.r[A2], actor));
+        r.r[V0] = actor;
+    });
+    // One input triple per (style, sub-style) the selector reaches.
+    let mut cases = std::collections::BTreeMap::new();
+    for slot0 in 0..=255u8 {
+        for flags in [0u8, 0x80] {
+            for scene in [3u32, 0x0C, 0x15, 0x9B, 0, 0x9A] {
+                let pick = select_intro_style(&IntroStyleInputs {
+                    battle_flags: flags,
+                    formation_slot0: slot0,
+                    scene_index: scene,
+                });
+                cases
+                    .entry((pick.style.selector(), pick.sub_style))
+                    .or_insert((slot0, flags, scene, pick.style));
+            }
+        }
+    }
+    assert!(cases.len() >= 7, "{:?}", cases.keys());
+    for ((_, sub), (slot0, flags, scene, style)) in cases {
+        for latch in [0u32, 1] {
+            cpu.mem.wr8(0x8007_BD60, flags);
+            cpu.mem.wr8(0x8007_BD0C, slot0);
+            cpu.mem.wr32(0x8008_4540, scene);
+            cpu.mem.wr32(0x8007_B880, latch);
+            cpu.mem.wr32(WHITE, 0xEEEE);
+            spawns.borrow_mut().clear();
+            assert_eq!(cpu.call(INIT, &[]), Stop::Returned);
+            let at = format!("{style:?} sub {sub}");
+            let seats = style_seats(style, sub);
+            let got: Vec<(u32, u32)> = spawns.borrow().clone();
+            assert_eq!(
+                got.iter().map(|s| s.0).collect::<Vec<_>>(),
+                seats.iter().map(|s| s.va).collect::<Vec<_>>(),
+                "{at}: the records seated"
+            );
+            for (k, (seat, &(_, actor))) in seats.iter().zip(got.iter()).enumerate() {
+                let h = |m: &mut psx_retail_exec::Memory, off: u32| m.rd16(actor + off);
+                let untouched = 0xEEEE;
+                let want16 = |v: Option<i16>| v.map_or(untouched, |v| v as u16);
+                assert_eq!(
+                    h(&mut cpu.mem, 0x54),
+                    want16(seat.wait),
+                    "{at} part {k} +0x54"
+                );
+                assert_eq!(
+                    cpu.mem.rd32(actor + 0xA0),
+                    seat.colour.unwrap_or(0xEEEE_EEEE),
+                    "{at} part {k} +0xA0"
+                );
+                assert_eq!(
+                    h(&mut cpu.mem, 0xB4),
+                    want16(seat.radius.map(|r| r.0)),
+                    "{at} part {k} +0xB4"
+                );
+                assert_eq!(
+                    h(&mut cpu.mem, 0xB6),
+                    want16(seat.radius.map(|r| r.1)),
+                    "{at} part {k} +0xB6"
+                );
+                assert_eq!(
+                    h(&mut cpu.mem, 0xC0),
+                    want16(seat.rate_c0),
+                    "{at} part {k} +0xC0"
+                );
+            }
+            assert_eq!(
+                cpu.mem.rd32(WHITE),
+                u32::from(intro_leaves_white(style, sub)),
+                "{at}: _DAT_8007B8FC"
+            );
+        }
+    }
 }
