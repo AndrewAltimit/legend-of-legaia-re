@@ -299,9 +299,13 @@ impl SceneHost {
         // the contest raise before their warps and spawns the Disco King's
         // verdict (`P2[8]`) and the judging (`P2[9]`); without the re-run the
         // field came back with the marker up and no verdict.
+        // An overworld departure (the fishing doors on `map02` / `map03`)
+        // keeps its entity scripts as they were: the overworld's re-entry is
+        // not this field re-run.
         // REF: FUN_80026018, FUN_8003ab2c
         if std::mem::take(&mut self.world.minigames.entry_rerun_pending)
             && matches!(self.world.mode, legaia_engine_mode::mode::SceneMode::Field)
+            && !legaia_engine_scene::scene::is_world_map_scene(&self.world.active_scene_label)
         {
             self.rerun_scene_entry_script("minigame");
         }
