@@ -526,7 +526,15 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
                 // A strike-seeded cast lands with a long band hold, the
                 // strike credit's base, on both sides.
                 if strike_seeded {
-                    port.seat_band_countdown([0x20, 0x40, 0x80, 0x100][rng.below(4) as usize]);
+                    port.seat_band_countdown(
+                        [0x4, 0x8, 0x10, 0x20, 0x40, 0x100][rng.below(6) as usize],
+                    );
+                    // Band 0 half the time, the band a cadence match seats,
+                    // so the band-4 kit's gate (`0x801D34EC..0x801D35CC`)
+                    // meets the band it upgrades.
+                    if rng.below(2) == 0 {
+                        port.seat_band(0);
+                    }
                 }
                 cpu.mem.wr32(BAND, port.band());
                 cpu.mem.wr32(COUNTDOWN, port.band_countdown() as u32);

@@ -157,6 +157,13 @@ impl PondSession {
         self.band.countdown = countdown;
     }
 
+    /// Seat the band check's live cast band (`DAT_801D90E8`), as a harness
+    /// standing a waiting line on a band a cadence matched does.
+    #[doc(hidden)]
+    pub fn seat_band(&mut self, band: u32) {
+        self.band.band = band;
+    }
+
     /// Seat the session on the line-break screen (state `0x28`) with its
     /// banner timer (`DAT_801D9164`) at `banner`, as a harness standing the
     /// pond on a retail state does.
