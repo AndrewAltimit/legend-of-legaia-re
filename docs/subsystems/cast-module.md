@@ -2095,10 +2095,13 @@ the sweep, so the band holds `0x36` until the phase has run its turn. Retail's p
 follow its frame step: a Mednafen frame-stepped recording of `theeder_summon_mid_cast`
 runs arm 11 at steps 2 then 1, arm 12 at step 2 (the word `0x80` a pass, tested from
 `0x80`) and arm 13 at step 3, and strikes seat 3 (dead ahead) on arm 12's first test,
-seat 5 at `0x280` and seat 4 at `0x980` (vsyncs `+0 / +8 / +36`). The engine runs both
-arms on its table's step 4 and tests on `0x40 + 0x100 * k`, which lands the same hits on
-the same gaps (`0x40 / 0x240 / 0x940`, a vsync earlier); testing on `0x100 * k` struck seat
-5 first and seat 3 at the `0x800` crossing, eight passes late. Arm 13 retracts one a pass,
+seat 5 at `0x280` and seat 4 at `0x980` (vsyncs `+0 / +8 / +36`). A pass ramps the
+word by `step * 0x40` (`scalar * delta << 3` at `0x801F7AC8..0x801F7AF0`) and tests the
+ramped word, so the port tests on the ticks that close a pass at the step its clock runs the
+arm at (`World::module_frame_step`): `0x100 * k` on the arm table's step 4, the console's
+clock that the PCSX-Redux film `s82` scores (its five cues on retail's ticks), and `0x80 * k`
+under a Mednafen step track. A phase fitted to the Mednafen vsync gaps on the step-4 clock
+(`0x40 + 0x100 * k`) moved `s82`'s arm-12 and arm-13 cues 28 ticks early. Arm 13 retracts one a pass,
 so on retail's step 3 the trail empties in 45 vsyncs where the engine's step 4 takes 60.
 A hit in
 the sweep arm stages the victim's knockdown id `+0x1F1` when its get-up id

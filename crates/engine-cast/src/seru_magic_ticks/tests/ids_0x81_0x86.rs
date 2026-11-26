@@ -1340,20 +1340,22 @@ fn theeder_rise_arms_the_spark_selector_and_the_show_clears_it() {
     }
 }
 
-/// Retail's arm-12 passes land on `0x40 + 0x100 * k`: the per-vsync ticks
-/// that carry one test the words `0x40, 0x140, ..., 0xF40`, and the ticks
-/// between (and the old `0x100 * k` phase) test nothing. Against the arm's
-/// ray, those passes strike `theeder_summon_mid_cast`'s seat 3 (dead ahead)
-/// on the first pass, seat 5 two passes later and seat 4 seven after that -
-/// the frame-stepped capture's vsyncs `783 / 791 / 819`.
+/// Retail's arm-12 pass ramps `step * 0x40` and then tests: on the console's
+/// step `4` the tested words are `0x100 * k` from `0x100`, on a Mednafen step
+/// `2` `0x80 * k` from `0x80`; the vsyncs between test nothing.
 #[test]
 fn theeder_tests_its_cone_on_retails_pass_phase() {
-    let tested: Vec<u16> = (1..=64u16)
-        .map(|t| t * 0x40)
-        .filter(|&w| theeder_pass_tested(w))
-        .collect();
-    assert_eq!(tested.len(), 16);
-    assert_eq!(tested[0], THEEDER_FIRST_PASS_PHASE);
-    assert!(tested.iter().all(|w| w & 0xFF == 0x40));
-    assert!(!theeder_pass_tested(0x100) && !theeder_pass_tested(0x800));
+    let tested = |step: u8| -> Vec<u16> {
+        (1..=64u16)
+            .map(|t| t * 0x40)
+            .filter(|&w| theeder_pass_tested(w, step))
+            .collect()
+    };
+    let four = tested(4);
+    assert_eq!(four.len(), 16);
+    assert_eq!(four[0], 0x100);
+    assert!(four.iter().all(|w| w % 0x100 == 0));
+    let two = tested(2);
+    assert_eq!((two.len(), two[0]), (32, 0x80));
+    assert!(!theeder_pass_tested(0x40, 4) && !theeder_pass_tested(0x140, 4));
 }
