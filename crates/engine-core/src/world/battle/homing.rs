@@ -155,6 +155,7 @@ impl World {
                     facing: s.heading,
                     homing_slot: Some(k.min(slots.len() - 1) as u8),
                     table_scale: fx::TABLE_SCALE_SEED,
+                    follow_legs: None,
                 },
             );
         }
@@ -410,6 +411,7 @@ impl World {
                 facing: s.heading,
                 homing_slot: Some(s.slot),
                 table_scale: legaia_engine_effects::action_effect_script::TABLE_SCALE_SEED,
+                follow_legs: None,
             });
         }
     }

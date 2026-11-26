@@ -1750,7 +1750,21 @@ actor - re-seats the part at the actor's position with the stashed raw legs
 rotated by the *current* facing `+ 0x800` (Y minus `ctx[+0x1186]`). It is a
 follow-the-actor re-seat, not target-seeking motion; the per-target homing
 state lives in the `+0x1144` quads the terminator seeds and the move-power
-`+0x0E` list consumes. A separate prologue lane: `ctx[+0x263]` non-zero
+`+0x0E` list consumes.
+
+What the handle carries is a cast clip's ray burst. Songi's Hyper Wave seats
+code `0xA` (record `0x801F55F8`) and steps forward through its clip, and a
+PCSX-Redux recording of `battle_garmel_songi_hyper_wave_mid_cast` reads the
+burst node moving with Songi's `+0x34` pair, `(-32, +160)` over the cast;
+seated once and left there, the burst stood behind a caster that had walked
+on, and the film read `.960` where it reads `.985` with the re-seat. Port:
+`World::reseat_effect_follow_handle` runs ahead of every stepper call
+(`action_effect_script::follow_reseat` on the scene whose `follow_legs` the
+route set for a follow code, `FOLLOW_HANDLE_CODES`); the differential
+`the_effect_stepper_follow_handle_is_retails` drives retail's prologue and
+table arm against it.
+
+A separate prologue lane: `ctx[+0x263]` non-zero
 consumes the whole call, clearing the flag and bumping the actor's `+0x1F5`
 and `+0x1F6` cursors without spawning. Its one writer is the melee kernel's
 limb-vs-height miss (`0x801EC554`,

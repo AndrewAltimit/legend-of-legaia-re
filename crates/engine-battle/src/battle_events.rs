@@ -200,6 +200,12 @@ pub struct BattleEffectSpawn {
     /// record (`legaia_engine_effects::action_effect_script::table_effect_scale`);
     /// `0x1000` for a flight spawn and the direct form.
     pub table_scale: u16,
+    /// `Some(legs)` for an effect-script table spawn whose substituted code
+    /// installs the `ctx[+0x1028]` follow handle (codes `0xA` / `0x2D` /
+    /// `0x2E`): the record's raw legs the stepper's prologue re-seats the
+    /// part with each frame
+    /// (`legaia_engine_effects::action_effect_script::follow_reseat`).
+    pub follow_legs: Option<[i16; 3]>,
 }
 
 /// One **hit event** the attack band resolved this tick - the retail

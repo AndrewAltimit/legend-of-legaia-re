@@ -41,6 +41,7 @@ impl World {
     // REF: FUN_80047430 (the retail caller this substitutes for)
     pub(in crate::world) fn step_actor_effect_script(&mut self, i: usize, frame: i16) {
         use legaia_engine_effects::action_effect_script as fx;
+        self.reseat_effect_follow_handle(i);
         let Some(actor) = self.actors.get(i) else {
             return;
         };
@@ -136,6 +137,8 @@ impl World {
                     facing: script_actor.facing,
                     homing_slot: None,
                     table_scale: s.table_scale,
+                    follow_legs: (!s.direct && fx::FOLLOW_HANDLE_CODES.contains(&effect))
+                        .then_some(s.legs),
                 },
             );
         }
@@ -168,6 +171,44 @@ impl World {
         }
         if let Some(actor) = self.actors.get_mut(i) {
             actor.battle_effect_cursor = cursor;
+        }
+    }
+
+    /// The stepper's prologue (`0x801DEA50..0x801DEBEC`): drop the
+    /// `ctx[+0x1028]` follow handle once its part has retired (`+0x10` bit
+    /// `3`, `0x801DEA88..0x801DEAAC`), then, when the stepped actor `i` is
+    /// the context's active actor (`ctx[+0x13]`, `0x801DEABC`), re-seat the
+    /// handle at that actor: its position, `y` less the stashed leg, `x` / `z`
+    /// offset by the stashed legs rotated at its current facing `+ 0x800`
+    /// ([`legaia_engine_effects::action_effect_script::follow_reseat`]). A
+    /// cast clip's ray burst (code `0xA`) so rides along with a caster that
+    /// steps through its clip, as Songi's Hyper Wave does.
+    ///
+    /// PORT: FUN_801DEA50 (`0x801DEA88..0x801DEBE4`, the follow-handle prologue)
+    fn reseat_effect_follow_handle(&mut self, i: usize) {
+        use legaia_engine_effects::action_effect_script as fx;
+        for scene in &mut self.casting.active_action_fx {
+            if scene.follow_legs.is_some() && scene.parts.first().is_none_or(|p| p.finished) {
+                scene.follow_legs = None;
+            }
+        }
+        if i != usize::from(self.battle_ctx.active_actor) {
+            return;
+        }
+        let Some(actor) = self.actors.get(i) else {
+            return;
+        };
+        let world = (
+            i32::from(actor.move_state.world_x),
+            i32::from(actor.move_state.world_y),
+            i32::from(actor.move_state.world_z),
+        );
+        let facing = actor.battle.facing_angle;
+        let lut = legaia_engine_system::rotation_lut::retail_rotation_lut();
+        for scene in &mut self.casting.active_action_fx {
+            if let Some(legs) = scene.follow_legs {
+                scene.drag_handle(fx::follow_reseat(lut, world, facing, legs));
+            }
         }
     }
 

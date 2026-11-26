@@ -53,6 +53,7 @@ fn spawn(effect: u8, direct: bool) -> BattleEffectSpawn {
         facing: 0x200,
         homing_slot: None,
         table_scale: 0x1000,
+        follow_legs: None,
     }
 }
 
