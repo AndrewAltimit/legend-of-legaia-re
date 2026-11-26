@@ -887,6 +887,13 @@ impl World {
                 if self.clock.display_frame_step == 1 {
                     self.tick_field_npc_motions();
                 }
+                // Whether the battle intro already owns this frame, read before
+                // the carriers below can commit a fight: a carrier's commit
+                // (`3E FF`, the encounter SM `FUN_801DA51C`) stores mode `8`
+                // a frame after it arms, so the placements still walk on the
+                // frame it lands (`rim_elm_queen_bee_battle`: every wanderer
+                // steps on the commit's pass).
+                let intro_owns_walk = self.battle_intro_owns_frame();
                 self.tick_tile_board();
                 // Rebuild the tile-actor draw list from the current board +
                 // player cell (retail's per-frame board render pass).
@@ -948,8 +955,9 @@ impl World {
                 // game frame (`town01_npc16_dialogue_first_page`'s walk film).
                 // REF: FUN_8002519C, FUN_8003BC08, FUN_80038158, FUN_80036D80
                 // The battle intro rebuilt the actor lists, so no placement's
-                // driver runs under it (`Self::battle_intro_owns_frame`).
-                if actor_tick_fired && !self.battle_intro_owns_frame() {
+                // driver runs under it (`Self::battle_intro_owns_frame`, read
+                // ahead of the carriers above).
+                if actor_tick_fired && !intro_owns_walk {
                     // The part list walks ahead of the placements'.
                     self.run_banked_ambient_part_ticks();
                     self.tick_field_npc_ambient();

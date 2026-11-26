@@ -2379,7 +2379,10 @@ so the new clip draws one step in on the frame it binds (a walk film of
 `town01_npc16_dialogue_first_page`: cursor `8` on each villager's switch). The port binds the
 request in the frame tail's cue drain, after the frame's anim tick, and steps it there. A
 cross-context poke takes a second step when the target's own tick runs later in the same walk
-(`World::bind_npc_scene_clip`).
+(`World::bind_npc_scene_clip`). A party-bank clip, which the hosts bind at the frame tail's cue
+drain, takes both steps there (`FieldNpcState::poked_cues`): `vozz_ozma_hatching_hover`'s
+`P2[17]` seats flat `7` on party clip `16` with `CC 07 51 .. 80 10`, and retail draws it from
+cursor `16` on the seat's pass. An ambient stream's own request keeps its one step.
 
 The player's tick leads the frame. Retail's actor-list walk (`FUN_80016444` -> `FUN_8002519C`)
 runs list 0 first, and the player's node (tick `FUN_801D1344`: the pad step `FUN_801D01B0`, the
