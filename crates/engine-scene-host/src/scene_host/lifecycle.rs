@@ -62,6 +62,7 @@ impl SceneHost {
             battle_link_creature: None,
             battle_link_last: Default::default(),
             last_minigame_warp: None,
+            headless_clip_banks: None,
             pending_entry_seat: None,
             pending_scene_override: None,
             failed_pack_mode_map: None,

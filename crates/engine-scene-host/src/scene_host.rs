@@ -220,6 +220,21 @@ use legaia_engine_core::world::{
 pub struct NullBgmDirector;
 impl BgmDirector for NullBgmDirector {}
 
+/// The clip banks a scene's actors were bound from, for the headless frame
+/// tail's cue drain ([`SceneHost::headless_clip_banks`]).
+#[derive(Debug, Clone)]
+pub struct HeadlessClipBanks {
+    /// The scene the banks belong to (`World::active_scene_label`).
+    pub scene: String,
+    /// The scene's own ANM bundle.
+    pub scene_anm: Option<legaia_actor_formats::player_anm::PlayerAnmBundle>,
+    /// The party locomotion bundle.
+    pub locomotion_anm: Option<legaia_actor_formats::player_anm::PlayerAnmBundle>,
+    /// Every catalogued placement slot, with whether it is a global-pool
+    /// special (the drain's spawn-bank answer).
+    pub targets: std::collections::BTreeMap<u8, bool>,
+}
+
 /// Bundles the runtime composite (`World`) with a loaded `Scene`, a frame
 /// timer, and a [`MapIdResolver`] for field-VM scene transitions. The host
 /// owns the engine-vm world (per-actor data + every VM's `Host` impl) and
@@ -306,6 +321,13 @@ pub struct SceneHost {
     /// [`SceneHost::tick`]; one that does not is unaffected. See
     /// [`legaia_engine_mode::minigame_entry`].
     pub last_minigame_warp: Option<MinigameWarpOutcome>,
+    /// The clip banks a headless driver's frame tail drains the clip cues
+    /// against ([`Self::step_headless_frame_tail`]), set where the scene's
+    /// actors are bound (`scene_actors::bind_scene_actors` in
+    /// `legaia-engine-session`) and used only while that scene is active.
+    /// `None` drains with no banks: the player's scene picks never resolve
+    /// and an NPC re-target binds nothing.
+    pub headless_clip_banks: Option<HeadlessClipBanks>,
     /// The **destination-entry operand** the next field entry seats the player
     /// from, in world coordinates - the engine's mirror of retail's
     /// `_DAT_80073EF4` / `_DAT_80073EF8` pair.
