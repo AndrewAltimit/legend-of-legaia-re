@@ -342,9 +342,19 @@ fn a_party_join_or_leave_edits_the_list_as_retail_does() {
     cpu.stub_outside = Some((OVERLAY_BASE, 0x8020_0000));
     cpu.mem.wr8(0x1F80_0393, 1);
     cpu.mem.wr32(CTX + 0x94, SCRIPT);
+    // The bag normalize the join's tail calls once the list reads Vahn and
+    // Noa (count `2`, halfword `0x0100`, `0x801E05B0..0x801E05D0`).
+    let normalized = std::rc::Rc::new(std::cell::Cell::new(0u32));
+    {
+        let normalized = normalized.clone();
+        cpu.hook(0x8004_23E0, move |_, _| {
+            normalized.set(normalized.get() + 1)
+        });
+    }
     let gp = cpu.regs.r[GP];
     let clean = cpu.mem.clone();
     let mut rng = crate::common::Rng(0x5041_5254);
+    let mut normalizes = 0u32;
     let mut differ: BTreeMap<String, u32> = BTreeMap::new();
     for round in 0..2000u32 {
         let op = if round % 2 == 0 { 0x3C } else { 0x3D };
@@ -377,8 +387,10 @@ fn a_party_join_or_leave_edits_the_list_as_retail_does() {
                 .wr8(LIST + i, list.get(i as usize).copied().unwrap_or(0));
         }
         cpu.mem.load(SCRIPT, &[op, id]);
+        normalized.set(0);
         assert_eq!(cpu.call(VM, &[SCRIPT, 0, CTX]), Stop::Returned);
         assert_eq!(cpu.regs.r[2], 2);
+        let retail_normalized = normalized.get() != 0;
         let count = cpu.mem.rd8(COUNT) as usize;
         let retail_list = cpu.mem.read(LIST, count.min(4));
         let retail_leader = cpu.mem.rd8(LEADER);
@@ -387,11 +399,25 @@ fn a_party_join_or_leave_edits_the_list_as_retail_does() {
         w.party.party_actor_slots = list.iter().map(|&i| Some(i)).collect();
         w.party.field_list_emptied = list.is_empty();
         w.party.party_leader_slot = Some(leader);
+        // A bag with a hole ahead of a stack, which a normalize closes up:
+        // the port's normalize is seen as the bag changing.
+        w.party.inventory = legaia_engine_menus::item_bag::ItemBag::from_slots(&[(0, 0), (5, 1)]);
+        let bag = w.party.inventory.slots().to_vec();
         w.field_bytecode = vec![op, id, 0x21];
         w.field_pc = 0;
         let _ = w.step_field();
         let port_list = w.present_party_list();
         let port_leader = w.party.party_leader_slot;
+        let port_normalized = w.party.inventory.slots() != bag.as_slice();
+        normalizes += u32::from(retail_normalized);
+        if port_normalized != retail_normalized {
+            *differ
+                .entry(format!(
+                    "{op:02X} {id} on {list:?}: retail normalizes {retail_normalized}, \
+                     port {port_normalized}"
+                ))
+                .or_default() += 1;
+        }
         if port_list != retail_list || port_leader != Some(retail_leader) {
             *differ
                 .entry(format!(
@@ -403,6 +429,73 @@ fn a_party_join_or_leave_edits_the_list_as_retail_does() {
     }
     let report: Vec<String> = differ.keys().cloned().collect();
     assert!(report.is_empty(), "{}", report.join("\n"));
+    assert!(normalizes > 5, "{normalizes} joins normalized the bag");
+}
+
+/// `4C 52`, TAKE_ITEM, stepped by the real `World`: retail consumes one of
+/// the id from the bag (`FUN_80042310`) and only on its not-found sentinel
+/// `0x100` takes it off whoever wears it (`FUN_800430AC`,
+/// `0x801E1AC4..0x801E1AEC`). The consume is answered hit or miss at random
+/// and the port's bag holds the id or not to match; a present member wears
+/// it either way. Compared: retail's unequip call against the port's worn
+/// slot clearing.
+#[test]
+fn a_take_item_unequips_only_on_a_bag_miss() {
+    differential!(prot(897, VM));
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &d.read_entry(897).expect("PROT 0897"));
+    cpu.stub_outside = Some((OVERLAY_BASE, 0x8020_0000));
+    cpu.mem.wr8(0x1F80_0393, 1);
+    cpu.mem.wr32(CTX + 0x94, SCRIPT);
+    let hit = std::rc::Rc::new(std::cell::Cell::new(false));
+    let unequips = std::rc::Rc::new(std::cell::Cell::new(0u32));
+    {
+        let hit = hit.clone();
+        cpu.hook(0x8004_2310, move |r, _| {
+            r.r[2] = if hit.get() { 0 } else { 0x100 };
+        });
+        let unequips = unequips.clone();
+        cpu.hook(0x8004_30AC, move |_, _| unequips.set(unequips.get() + 1));
+    }
+    let gp = cpu.regs.r[GP];
+    let clean = cpu.mem.clone();
+    let mut rng = crate::common::Rng(0x5441_4B45);
+    let (mut misses, mut hits) = (0u32, 0u32);
+    for round in 0..400u32 {
+        let id = 1 + rng.below(0xFE) as u8;
+        let in_bag = rng.below(2) == 0;
+        cpu.mem = clean.clone();
+        cpu.regs.r[GP] = gp;
+        hit.set(in_bag);
+        unequips.set(0);
+        cpu.mem.load(SCRIPT, &[0x4C, 0x52, id, 0x21]);
+        assert_eq!(cpu.call(VM, &[SCRIPT, 0, CTX]), Stop::Returned);
+        assert_eq!(cpu.regs.r[2], 3);
+        let retail = unequips.get() != 0;
+
+        let mut w = legaia_engine_core::world::World::new();
+        let mut party = legaia_save::Party::zeroed(1);
+        let mut eq = party.members[0].equipment();
+        eq.slots[5] = id;
+        party.members[0].set_equipment(eq);
+        w.party.roster = party;
+        w.party.party_actor_slots = vec![Some(0)];
+        if in_bag {
+            w.party.inventory.insert(id, 1);
+        }
+        w.field_bytecode = vec![0x4C, 0x52, id, 0x21];
+        w.field_pc = 0;
+        let _ = w.step_field();
+        let port = w.party.roster.members[0].equipment().slots[5] == 0;
+        assert_eq!(port, retail, "round {round}: id {id:#x} in bag {in_bag}");
+        misses += u32::from(retail);
+        hits += u32::from(!retail);
+    }
+    assert!(misses > 100 && hits > 100, "{misses} misses {hits} hits");
 }
 
 /// The party-record tests of op `4C`, stepped by the real `World` on
@@ -1230,14 +1323,23 @@ fn an_effect_colour_retires_and_latches_as_retail_does() {
         .load(OVERLAY_BASE, &d.read_entry(897).expect("PROT 0897"));
     cpu.stub_outside = Some((OVERLAY_BASE, 0x8020_0000));
     cpu.hook(READ_U16, |r, m| r.r[2] = m.rd16(r.r[4]) as i16 as u32);
-    // The tween spawner: a fresh actor.
-    cpu.hook(0x801D_E2B0, |r, _| r.r[2] = NEW);
+    // The tween spawner: a fresh actor. The last template it took (the
+    // walk-in, after any walk-out) is kept for its duration `+0x2`.
+    let spawned = std::rc::Rc::new(std::cell::Cell::new(None::<i16>));
+    {
+        let spawned = spawned.clone();
+        cpu.hook(0x801D_E2B0, move |r, m| {
+            spawned.set(Some(m.rd16(r.r[4] + 2) as i16));
+            r.r[2] = NEW;
+        });
+    }
     cpu.mem.wr8(0x1F80_0393, 1);
     cpu.mem.wr32(CTX + 0x94, SCRIPT);
     let gp = cpu.regs.r[GP];
     let clean = cpu.mem.clone();
     let mut rng = crate::common::Rng(0x4546_4645);
     let (mut retired, mut cleared, mut parked) = (0u32, 0u32, 0u32);
+    let mut timed = 0u32;
     for round in 0..3000u32 {
         let live = rng.below(2) == 0;
         let old_rgb = [
@@ -1250,9 +1352,12 @@ fn an_effect_colour_retires_and_latches_as_retail_does() {
             [0u8, 2, 8][rng.below(3) as usize],
         );
         let op0 = rng.below(8) as u8;
-        let rgb = match rng.below(4) {
+        let rgb = match rng.below(5) {
             0 => [0, 0, 0],
             1 => [0xFF, 0xFF, 0xFF],
+            // Red and green clear, blue not: the black test reads all three
+            // (`0x801DFDE4..0x801DFE00`), so this is a colour, not a retire.
+            2 => [0, 0, 1 + rng.below(255) as u8],
             _ => [
                 rng.below(256) as u8,
                 rng.below(256) as u8,
@@ -1272,8 +1377,12 @@ fn an_effect_colour_retires_and_latches_as_retail_does() {
         cpu.mem
             .load(0x8007_BCCD, &[old_rgb[2], old_rgb[1], old_rgb[0]]);
         cpu.mem.load(SCRIPT, &script);
+        spawned.set(None);
         assert_eq!(cpu.call(VM, &[SCRIPT, 0, CTX]), Stop::Returned);
         assert_eq!(cpu.regs.r[2], 7);
+        // The walk-in's length: a white target under blend 2 loses an
+        // eighth (`0x801DFE14..0x801DFE64`).
+        let retail_duration = spawned.get().filter(|_| cpu.mem.rd32(PARKED) == NEW);
         let retail = (
             live && cpu.mem.rd32(OLD + 0x10) & 8 != 0,
             i16::from(cpu.mem.rd8(0x8007_BCE0)),
@@ -1319,13 +1428,25 @@ fn an_effect_colour_retires_and_latches_as_retail_does() {
             w.presentation.effect_tween_slot.is_some(),
         );
         assert_eq!(port, retail, "round {round}: {script:02x?} live {live}");
+        let port_duration = w
+            .presentation
+            .effect_tween_slot
+            .and_then(|s| w.actors[s].colour_tween.as_ref())
+            .map(|t| t.duration);
+        if retail_duration.is_some() {
+            assert_eq!(
+                port_duration, retail_duration,
+                "round {round}: {script:02x?} walk-in duration"
+            );
+            timed += 1;
+        }
         retired += u32::from(retail.0);
         cleared += u32::from(rgb == [0, 0, 0]);
         parked += u32::from(retail.4);
     }
     assert!(
-        retired > 500 && cleared > 300 && parked > 1000,
-        "{retired} {cleared} {parked}"
+        retired > 500 && cleared > 300 && parked > 1000 && timed > 1000,
+        "{retired} {cleared} {parked} {timed}"
     );
 }
 
