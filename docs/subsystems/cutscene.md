@@ -1362,7 +1362,12 @@ columns coincide and the state's image reads `.942` to `.953`. Grade `disassembl
 `RollerSeed` is read off the seed op before each block. Both hosts draw the crawl through
 `engine-screens::field_screens::cutscene_narration_stage_draws`, which cuts every glyph quad to
 the clip window's rows, so a line entering at the foot or leaving at the head shows the part
-inside, as retail's `DR_AREA` pair leaves it. It draws in the dialogue white (`(206, 206, 206)`,
+inside, as retail's `DR_AREA` pair leaves it. The area's rows are absolute (`top + 4 + 240 *
+buffer`, `0x80037660..0x80037698`) while the glyph sprites take the field's draw offset `(0, 4)`,
+so on screen the window is `top..bottom - 4`: a display-crop of a retail state in `opdeene`'s first
+crawl holds its text on rows `64..=187`, and a line enters four rows later than the window the
+roller computes would let it (`RollerSeed` keeps the computed window, `stage_clip_window` the
+shown one). It draws in the dialogue white (`(206, 206, 206)`,
 ink 7), the colour a retail film of `opdeene`'s first crawl reads off every glyph. The roller counts display
 vsyncs: `World::tick` is one retail vsync and hands it `display_frame_step`, and the roller
 runs one pass of the handler per `frame_step` vsyncs (the cadence it was opened at), adding that

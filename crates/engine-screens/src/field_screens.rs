@@ -349,7 +349,9 @@ pub fn field_window_stage_draws(
 ///
 /// The crawl is cropped to the roller's clip window row by row, as the
 /// `DR_AREA` pair the roller links after its lines does: a line entering at
-/// the window's foot or leaving at its head shows the part inside. It draws
+/// the window's foot or leaving at its head shows the part inside. The
+/// window is the one the screen shows (`stage_clip_window`): the area skips
+/// the draw offset the glyphs take. It draws
 /// in the dialogue white (ink 7, `(206, 206, 206)`), the colour a retail
 /// film of `opdeene`'s first crawl reads off every glyph.
 // REF: FUN_80037174
@@ -361,7 +363,7 @@ pub fn cutscene_narration_stage_draws(
     if let Some(n) = world.cutscene.narration.as_ref() {
         let lines = n.all_lines();
         let crawl: Vec<(&str, i32)> = lines.iter().map(|l| (l.text, l.y)).collect();
-        let (top, bottom) = n.clip_window();
+        let (top, bottom) = n.stage_clip_window();
         out.extend(
             legaia_engine_ui::cutscene_text_stage_draws(
                 font,
@@ -397,8 +399,8 @@ mod tests {
     use legaia_engine_field::cutscene_narration::CutsceneNarration;
 
     /// The first page enters at the window's foot a row at a time: the
-    /// glyph quads are cut at the clip window's bottom (`191` under the scene
-    /// reset's seed), not dropped until the whole row fits.
+    /// glyph quads are cut at the clip window's bottom (`187` on screen under
+    /// the scene reset's seed), not dropped until the whole row fits.
     #[test]
     fn the_crawl_is_cut_at_the_clip_window() {
         let font = legaia_font::Font::placeholder();
@@ -406,7 +408,8 @@ mod tests {
         let mut n = CutsceneNarration::new(vec!["abc".to_string(), "def".to_string()]);
         // The first pass admits page 0 at y = 192, below the window; climb
         // it until its row reaches the window's foot.
-        let (top, bottom) = n.clip_window();
+        let (top, bottom) = n.stage_clip_window();
+        assert_eq!((top, bottom), (64, 187));
         for _ in 0..200 {
             n.tick(1);
             if n.all_lines().first().is_some_and(|l| l.y <= bottom - 2) {
