@@ -899,6 +899,15 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             // Venomed (no HP owed, a cure outside the `0x3C` mask) and one
             // Stoned (the masked cure's effect), every member in a clip
             // (`0x801F7960..0x801F7B04`).
+            // PROT 0921's fallen runs shrink the row from a record size
+            // above a pass's step (`0x801F785C..0x801F7878`) and a last
+            // monster whose body radius `+0x58` already reads `0`
+            // (`0x801F788C..0x801F789C`).
+            if entry == 921 && fallen {
+                cpu.mem.wr8(MONSTER_RECORD + 0x1F, 20);
+                cpu.mem
+                    .wr16(NODES + (2 + layout.monsters) * 0x100 + 0x58, 0);
+            }
             if entry == 930 && fallen {
                 let a = ACTOR + ((layout.caster + 1) % 3) * STRIDE;
                 cpu.mem.wr16(a + 0x14C, 400);
