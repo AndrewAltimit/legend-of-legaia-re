@@ -2291,8 +2291,15 @@ pair is not yet possible. The castle's rooms are separate map regions joined
 by kind-0 teleports, and a gate opens on a `31 00` behind its key flag,
 which the planner already follows: P0[15] at (17, 120) runs it once `0x270`
 is up, and its examine raises `0x270` (taking the key) only once the switch
-flag `0x26B` is. With the gates the beats pass opens (`0x270..0x272`), the
-room the pair stands in is still joined to the walker's by none of them. Without the pair, the walk that crosses `dolk` back to `map01` in
+flag `0x26B` is. The pair's room is entered only by a one-way teleport,
+(70, 122) to (14, 5), from a hall the walker's component joins only past the
+gates. With the gates up (`0x270..0x272`, from a seeded `rim_elm_restored`
+segment) the planner reaches all three seats, (17, 11), (11, 8) and (13, 8),
+so nothing in the engine's walls or gates keeps the room shut: the beats
+pass plays the pair while the gates are still down, as the first props it
+comes to, and places them across components. Retail's anchors through
+`rim_elm_restored` carry neither the switches' flags nor the gates', so a
+player there has left them alone. Without the pair, the walk that crosses `dolk` back to `map01` in
 part B's `rim_elm_restored -> ravine` goes another way, and the lone,
 221-HP Vahn the segment is seeded with wiped on it.
 
