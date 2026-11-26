@@ -1243,7 +1243,10 @@ an item the player is *wearing* still removes it.
 The unified 6-byte "write or ramp a slot" pattern:
 `[4C, op0, val_lo, val_hi, ticks_lo, ticks_hi]`, slot = `op0 & 0x0F`. With
 `ticks == 0` the value is written directly; otherwise a `func_0x8003C5F0` ramp
-runs from the current value to `val` over `ticks` frames. The nibble-4 head
+runs from the current value to `val` over `ticks` frames. Both words come through
+`FUN_8003CE9C`, which sign-extends, and the scheduler keeps `ticks` as a full word, so
+`0x8000..=0xFFFF` is a negative count that lands on `val` at the first tick
+(`ambient_motion::script_ramp_ticks`). The nibble-4 head
 adds the 6 bytes before it dispatches (`addiu s8,s8,6` at `0x801E1138`), and
 every ramping sub tails into the shared scheduler exit `0x801E205C`
 (`jal 0x8003C5F0`, then `j 0x801E3628` with `v0 = s8`). The ramp is a
@@ -1252,7 +1255,7 @@ scheduled actor; **the script never waits on it**.
 | Sub | Slot | Notes |
 |---|---|---|
 | 0 | `ctx[+0x72]` | Plain s16 write or ramp. Speed multiplier and draw scale (`0` = not drawn); aimed at `0xF8` it lands on the player ([world-map.md](world-map.md#overworld-walk-speed-and-clip)). The ramp (`0x801E118C`) runs on whichever actor the op resolved, placements and objects included: `stone` P2[6] hides Gi Delilas with `CC 13 40 00 00 00 00` and grows him in with `CC 13 40 00 10 08 00`. |
-| 1 | `ctx[+0x6A]` | Input is `(value >> 1).max(1)` (signed halve, floor 1). The actor's clip rate - [below](#4c-41-the-clip-rate). |
+| 1 | `ctx[+0x6A]` | Input is `value >> 1` (signed halve), with a zero result replaced by `1` (`0x801E11B4..0x801E11C0`); a negative rate stays negative. The actor's clip rate - [below](#4c-41-the-clip-rate). |
 | 2 | `ctx[+0x8E]` | When ramp == 0 and `flags & 0x20000000`, also writes `world_y = -value`. |
 | 3 | `ctx[+0x24]` | Plain s16 write or ramp (`0x801E1234`). No jump. The actor's X Euler angle, which the actor draw composes. |
 | 4 | `ctx[+0x28]` | Plain s16 write or ramp (`0x801E126C`). No jump. The Z Euler angle. |

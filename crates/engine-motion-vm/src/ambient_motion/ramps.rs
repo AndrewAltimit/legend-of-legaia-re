@@ -221,6 +221,16 @@ impl RampScheduler {
     }
 }
 
+/// A script ramp's duration word as the scheduler holds it. The field VM
+/// reads the ticks operand through `FUN_8003CE9C`, which sign-extends
+/// (`sll 0x10` / `sra 0x10`), and `FUN_8003C5F0` stores it as a full word at
+/// `slot+0x10` / `+0x14`; so `0x8000..=0xFFFF` is a negative count, which the
+/// first tick's `remaining <= 0` lands on the endpoint, not a long tween.
+// REF: FUN_8003CE9C, FUN_8003C5F0
+pub fn script_ramp_ticks(ticks: u16) -> i32 {
+    i32::from(ticks as i16)
+}
+
 /// Retail's scalar lerp: `end + (start - end) * remaining / total`, with a
 /// truncating (toward-zero) divide. Reproduces `0x80036E00..0x80036E50`:
 /// `subu`, `mult` / `mflo` and `addu` all wrap in 32 bits, so a product past

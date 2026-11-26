@@ -1337,7 +1337,8 @@ impl FieldScreenHost for Recording {
         if ticks == 0 {
             self.put(at, value);
         } else {
-            self.ramps.push((at, value, u32::from(ticks)));
+            // The ticks word is `FUN_8003CE9C`'s sign-extended `s16`.
+            self.ramps.push((at, value, i32::from(ticks as i16) as u32));
         }
     }
     fn set_ambient_particle_gate(&mut self, enabled: bool) {
@@ -1416,8 +1417,11 @@ impl FieldActorHost for Recording {
             8 => 0x26,
             _ => return,
         };
-        self.ramps
-            .push((CTX + off, i32::from(target) as u32, u32::from(ticks)));
+        self.ramps.push((
+            CTX + off,
+            i32::from(target) as u32,
+            i32::from(ticks as i16) as u32,
+        ));
     }
 }
 impl FieldActorSpawnHost for Recording {
@@ -1442,7 +1446,8 @@ impl FieldActorFxHost for Recording {
         }
         let blend_word = i32::from(blend as i16) as u32;
         if ctx.field_78 != 0 && blend != 0 {
-            self.ramps.push((CTX + 0x74, colour, u32::from(ticks)));
+            self.ramps
+                .push((CTX + 0x74, colour, i32::from(ticks as i16) as u32));
         }
         self.ramps
             .push((CTX + 0x78, blend_word, i32::from(ticks as i16) as u32));
@@ -1525,7 +1530,18 @@ fn every_instruction_leaves_the_host_globals_as_retail_leaves_them() {
     });
     let gp = cpu.regs.r[GP];
     let clean = cpu.mem.clone();
-    let corpus = corpus();
+    // The disc corpus, then every op over generated operand bytes, so an
+    // arm only a mutated operand reaches (a ramp's non-zero ticks, an
+    // all-zero colour) stores where retail stores. A generated `3F` is left
+    // out: its name bytes are not a CDNAME label, which the port's name gate
+    // refuses (a phantom `3F` inside message text must not warp) and retail
+    // hands the packet as they are.
+    let mut corpus = corpus();
+    corpus.extend(
+        crate::field_vm::synthetic()
+            .into_iter()
+            .filter(|(script, _, _)| script.first() != Some(&0x3F)),
+    );
     let mut rng = Rng(0x484F_5354);
     let read = |cpu: &mut psx_retail_exec::Cpu, at: u32, w: u8| {
         if w == 2 {

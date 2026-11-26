@@ -3,7 +3,7 @@
 //! hand to the controller. The kernel is `legaia_engine_system::rumble`.
 
 use super::*;
-use legaia_engine_motion_vm::ambient_motion::{Ramp, RampKind, RampScheduler};
+use legaia_engine_motion_vm::ambient_motion::{Ramp, RampKind, RampScheduler, script_ramp_ticks};
 use legaia_engine_system::rumble::{
     ActuatorLayout, BattleRumbleDecay, BattleRumbleWrite, RumbleActuator, RumbleFrame, RumbleMotors,
 };
@@ -58,8 +58,8 @@ impl WorldRumble {
                 owner: dest,
                 start: *slot,
                 end: target,
-                total: i32::from(ticks),
-                remaining: i32::from(ticks),
+                total: script_ramp_ticks(ticks),
+                remaining: script_ramp_ticks(ticks),
                 kind: RampKind::U32,
             });
         }

@@ -731,3 +731,24 @@ fn a_wander_draw_counts_and_steps_the_lent_seed() {
         "the seed the host lent, one LCG step on"
     );
 }
+
+#[test]
+fn a_script_ramp_reads_its_ticks_signed() {
+    assert_eq!(script_ramp_ticks(8), 8);
+    assert_eq!(script_ramp_ticks(0xFFFF), -1);
+    // A negative count lands on the endpoint on the first tick.
+    let mut s = RampScheduler::default();
+    let t = script_ramp_ticks(0xFFFF);
+    s.install(Ramp {
+        dest: RAMP_DEST_HEADING,
+        owner: 1,
+        start: 0,
+        end: 0x400,
+        total: t,
+        remaining: t,
+        kind: RampKind::U16,
+    });
+    let w = s.tick(1);
+    assert_eq!(w.len(), 1);
+    assert_eq!(w[0].value, 0x400);
+}

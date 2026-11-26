@@ -318,6 +318,18 @@ fn op_4c_n4_sub_1_immediate_floors_zero_to_one() {
 }
 
 #[test]
+fn op_4c_n4_sub_1_keeps_a_negative_rate() {
+    // `sra` then a zero test (`0x801E11B4..0x801E11C0`), not a floor: -4
+    // halves to -2 and -1 stays -1.
+    for (lo, hi, want) in [(0xFC, 0xFF, -2), (0xFF, 0xFF, -1)] {
+        let mut host = TestHost::default();
+        let mut ctx = FieldCtx::default();
+        step(&mut host, &mut ctx, &[0x4C, 0x41, lo, hi, 0, 0], 0);
+        assert_eq!(ctx.field_6a, want);
+    }
+}
+
+#[test]
 fn op_4c_n4_sub_1_ramp_passes_halved_target_to_host() {
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();

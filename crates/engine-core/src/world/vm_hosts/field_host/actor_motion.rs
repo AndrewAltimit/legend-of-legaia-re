@@ -138,7 +138,7 @@ impl FieldHostImpl<'_> {
             if let Some(HeadingOwner::Placement(slot)) = self.world.heading_owner(ctx) {
                 use legaia_engine_motion_vm::ambient_motion::{RAMP_DEST_HEADING, Ramp, RampKind};
                 let start = i32::from(self.world.npcs.heading(slot).wrapping_sub(0x800));
-                let total = i32::from(ticks);
+                let total = legaia_engine_motion_vm::ambient_motion::script_ramp_ticks(ticks);
                 self.world.npcs.heading_ramps.free_owner(u32::from(slot));
                 self.world.npcs.heading_ramps.install(Ramp {
                     dest: RAMP_DEST_HEADING,
@@ -182,7 +182,7 @@ impl FieldHostImpl<'_> {
                 );
                 return;
             }
-            let total = i32::from(ticks);
+            let total = legaia_engine_motion_vm::ambient_motion::script_ramp_ticks(ticks);
             let ramp = |owner: u32| Ramp {
                 dest,
                 owner,
@@ -221,7 +221,7 @@ impl FieldHostImpl<'_> {
                     ticks,
                 );
             } else if let Some(HeadingOwner::Placement(slot)) = self.world.heading_owner(ctx) {
-                let total = i32::from(ticks);
+                let total = legaia_engine_motion_vm::ambient_motion::script_ramp_ticks(ticks);
                 self.world.npcs.slot_ramps.install(Ramp {
                     dest: RAMP_DEST_RATE,
                     owner: u32::from(slot),
@@ -246,7 +246,7 @@ impl FieldHostImpl<'_> {
         // 00 00` and brings him in with `CC 13 40 00 10 08 00`, and a
         // player-only ramp left him at scale 0 for the whole confrontation.
         use legaia_engine_motion_vm::ambient_motion::{RAMP_DEST_SCALE, Ramp, RampKind};
-        let total = i32::from(ticks);
+        let total = legaia_engine_motion_vm::ambient_motion::script_ramp_ticks(ticks);
         if ctx.script_id != u16::from(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET) {
             if let Some(record) = self.world.field_vm.executing_object {
                 self.world.schedule_object_ramp(
