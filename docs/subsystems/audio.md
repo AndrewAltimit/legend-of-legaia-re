@@ -4240,6 +4240,17 @@ read `0.42` because the replay's delegated fill drew two arts where retail's dre
 ([a delegated seat's stream](../tooling/retail-compare.md#a-delegated-seats-stream)); on retail's
 stream its envelope lines up within `8` vsyncs and the waveform reads `0.38`.
 
+Three party actions stand beside the casts, so a strike's sound is scored as a cast's is:
+
+| State | `cast` corr | Level | Reading |
+|---|---|---|---|
+| `battle_melee_hit_spark` | `0.9993` | `+0.01` dB | a melee impact; `cast_core` `0.81` at `-1.3` dB |
+| `noa_levelup_fight_pre` | `0.9996` | `0.00` dB | Noa's last blow; the engine's recording ends `20` vsyncs past the Done band, before the level-up banner, and the retail cue tail is silent past `0.5` s: no cue sounds for the level-up |
+| `player_steal_skeleton_pre` | `0.71` | `+0.18` dB | Vahn's arts string into the kill and the steal banner, `5.7` s of cues. Quarter-second windows fit `0.65..0.99` at their best lag, and the lag walks from `+1` to `+4` vsyncs (the engine early) over the string: [the frame step](#the-casts-step-is-pcsx-reduxs) on a party strike. The last second, cue `0x0D` decaying, fits `0.99` |
+
+`rim_elm_gimard_seru_capture_before` is not a row: the state stands partway into its action, and the
+gate replays the action from its start, about thirty vsyncs before the recording opens.
+
 <a id="the-casts-step-is-pcsx-reduxs"></a>
 **The cast's step is PCSX-Redux's.** The battle frame step carries each pass's cost into the next
 frame and charges a loading CD-XA clip from the pass after its cue, both fitted to PCSX-Redux recordings
