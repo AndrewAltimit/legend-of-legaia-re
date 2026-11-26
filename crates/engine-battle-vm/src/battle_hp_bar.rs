@@ -458,6 +458,39 @@ mod tests {
     }
 
     #[test]
+    fn a_restore_on_an_unarmed_readout_counts_up_from_the_old_figure() {
+        use crate::battle_action::BattleActor;
+        use crate::battle_slot::RetailSlot;
+        // A Healing Leaf (200) on a seat at 300 that no hit has armed: the
+        // applier writes live HP, then the assigning seed. The readout starts
+        // on the pre-restore figure and climbs the quarter-step ramp, the
+        // figures a retail capture of the leaf reads frame by frame.
+        let mut a = BattleActor {
+            hp: 500,
+            max_hp: 1382,
+            ..Default::default()
+        };
+        a.assign_hp_bar(200);
+        assert_eq!((a.hp_display, a.hp_bar_pending), (Some(300), -200));
+        let mut shown = Vec::new();
+        while a.hp_bar_pending != 0 {
+            a.tick_hp_bar(RetailSlot::new(2));
+            shown.push(a.hp_display.unwrap());
+        }
+        assert_eq!(shown[..8], [350, 388, 416, 437, 453, 465, 474, 481]);
+        assert_eq!(*shown.last().unwrap(), 500);
+        // An armed readout keeps its figure; the seed only reassigns the debt.
+        let mut b = BattleActor {
+            hp: 500,
+            hp_display: Some(320),
+            hp_bar_pending: -10,
+            ..Default::default()
+        };
+        b.assign_hp_bar(200);
+        assert_eq!((b.hp_display, b.hp_bar_pending), (Some(320), -200));
+    }
+
+    #[test]
     fn the_monster_mp_arm_is_the_duplicated_hp_arm_and_moves_nothing() {
         // Retail's copy-paste: the `slot >= 3` branch of the MP block touches
         // `+0x172`/`+0x10`, so the MP readout and its accumulator are both
