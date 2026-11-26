@@ -1009,16 +1009,17 @@ mode-`8` store (`T`) and from the fight's end (`E`, mode `2`):
 The spin is therefore the cue alone, for over two seconds, and the theme arrives with
 the fight. Phase 2 only reads the bundle: its `FUN_800567A8` is the debug print of
 `battle bgm %d`. Port: `World::silence_field_audio_for_intro` keys off the track
-(sub-op `3`, set `0` only) and voices `0x10..0x17` on the transition's first tick, and
-queues the sustained teardown of the init's own mode init `FUN_8001DCF8(0xA)`
+(sub-op `3`, set `0` only) and voices `0x10..0x17` on the third tick of the held mode-`8`
+window, `T + 3` (the init's key-offs precede its display capture, which fills the rest of
+the window), and queues the sustained teardown of the init's own mode init `FUN_8001DCF8(0xA)`
 (`jal` at `0x801CE974`, ahead of the voice loop), and
 `World::enter_battle_from_formation` attaches, both hosts through
 `route_bgm_events`. A set above `0` leaves the field track alone until the attach, and
 `-1` plays it through.
 
 The session test `parity/tests/battle_music_timeline_disc.rs` reads the same order on a
-forced fight: the key-off on the transition's first tick, the start on the battle's, `132`
-ticks on, where retail's mode `9` runs `133` vsyncs.
+forced fight: the key-off on the window's third tick, the start on the battle's, `138`
+ticks after the encounter, where retail attaches at `T + 139`.
 
 #### The return closes the battle score before the field's track loads
 

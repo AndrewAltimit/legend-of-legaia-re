@@ -1408,3 +1408,45 @@ fn a_transition_opens_on_the_mode_8_load_window() {
         "the entity ticks after the window"
     );
 }
+
+/// The intro init's audio half runs inside the mode-`8` window, on its
+/// third tick (retail's `T + 3`): its key-offs precede the init's display
+/// capture, so the field track and the cue voices stop before the entity's
+/// first tick, and only once.
+#[test]
+fn the_intro_init_keys_the_field_off_inside_the_load_window() {
+    use legaia_engine_battle::encounter::EncounterRoll;
+
+    let mut world = World::new();
+    let mut session = legaia_engine_battle::encounter::EncounterSession::new(
+        legaia_engine_battle::encounter::EncounterTracker::new(
+            legaia_engine_battle::encounter::EncounterTable::default(),
+        ),
+    );
+    session.trigger_with(EncounterRoll {
+        formation_id: 3,
+        row_index: 0,
+        roll_q8: 0,
+    });
+    world.set_encounter_session(Some(session));
+    world.set_battle_bgm(Some(2001));
+    let mut keyed = Vec::new();
+    for t in 0..crate::world::encounters::ENCOUNTER_JOLT_VSYNCS + 3 {
+        world.tick_encounter();
+        let evs = world.drain_field_events();
+        if evs
+            .iter()
+            .any(|e| matches!(e, FieldEvent::Bgm { sub_op: 3, .. }))
+        {
+            keyed.push((t, world.take_sfx_voice_stops()));
+        }
+    }
+    assert_eq!(
+        keyed,
+        vec![(
+            crate::world::encounters::INTRO_INIT_AUDIO_TICK,
+            (0x10..=0x17).collect::<Vec<u8>>()
+        )],
+        "one key-off, on the init's tick of the window"
+    );
+}

@@ -87,7 +87,9 @@ fn the_battle_track_arrives_with_the_fight() {
         .iter()
         .find(|e| e.1 == "pause")
         .expect("the intro keys the field track off");
-    assert!(pause.0 <= 4, "keyed off with the intro's init: {pause:?}");
+    // Retail's init keys the field off at `T + 3`, inside the mode-`8`
+    // window, ahead of its display capture.
+    assert_eq!(pause.0, 2, "keyed off with the intro's init: {pause:?}");
     let start = log
         .events
         .iter()

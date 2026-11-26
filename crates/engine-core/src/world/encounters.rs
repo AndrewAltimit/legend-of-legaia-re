@@ -12,4 +12,6 @@ mod scripted_battles;
 
 #[cfg(test)]
 pub(crate) use encounter_tick::ENCOUNTER_JOLT_VSYNCS;
+#[cfg(test)]
+pub(crate) use encounter_tick::INTRO_INIT_AUDIO_TICK;
 pub use scripted_battles::*;
