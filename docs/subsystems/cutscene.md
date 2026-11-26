@@ -2886,6 +2886,20 @@ uploaded under each frame's particles, and each frame's particles and ring raste
 (`screen_prim_raster::rasterize_onto_15bpp`). Retail double-buffers the display, so each buffer
 takes every second frame; the single model accumulates every frame (`inference`).
 
+The scatter field (`FUN_801CFDA0`, the selector's arm for slot-0 monsters `0x4C`, `0x88` and
+`0xB3`) runs on the same display and differs by its wash: from the second frame on (entity clock
+`+0x1A` non-zero) it arms `func_0x8004695C(0x101010)` (`0x801CFE1C..0x801CFE24`), which the
+frame driver drains as a subtractive full-screen quad in the farthest OT bucket, ahead of every
+particle. A patch at rest is opaque and redraws its own cell, so the field that has not peeled
+off holds; where a patch has flown, the field fades out over about sixteen frames, and each
+flying patch leaves a fading trail. The port runs this style on the spin-up's display model and
+takes the wash off it (`SCATTER_DISPLAY_DECAY_5`, two 5-bit levels) before the frame's particles
+land; composed over the backdrop, every departed patch opened black at once. The drain scales the
+colour by the frame step, which the same body floors at `3` (`sw v0,-0x4628(v1)` at
+`0x801CFE00`); the emitter steps once per clock unit and the model once per presented frame, so
+two levels a unit is the same fade over the same clock span. No retail state stands before one
+of the three fights, so the trail is `disassembly`-grounded, not compared against a capture.
+
 #### The fade's second argument is a blend mode, not a depth
 
 `func_0x80024EE4(layer, blend, rgb)` pushes a five-word untextured quad over the whole display

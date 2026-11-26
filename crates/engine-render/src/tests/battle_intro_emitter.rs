@@ -1486,3 +1486,84 @@ mod curtain_accumulation {
         assert_eq!(px & 0x8000, 0x8000, "the model must stay opaque");
     }
 }
+
+// ---------------------------------------------------------------------------
+// The scatter style's never-cleared display (FUN_801CFDA0's per-frame wash)
+// ---------------------------------------------------------------------------
+
+/// `FUN_801CFDA0` arms `0x101010` on every frame after the first and nothing
+/// clears the display, so what no particle redraws fades two 5-bit levels a
+/// frame - the trail a flown patch leaves - where the spin-up, which arms no
+/// wash, keeps it.
+mod scatter_display {
+    use super::*;
+    use legaia_render_kernels::battle_intro::{PARTICLE_WASH_RGB, SCATTER_DISPLAY_DECAY_5};
+
+    /// A pixel on a row the particle grid never visits (`29 * 8 = 232` rows).
+    fn bottom_pixel(it: &BattleIntro) -> u16 {
+        let accum = it.display_accum_for_test();
+        accum[236 * PSX_SCREEN_WIDTH as usize + 106]
+    }
+
+    fn levels(px: u16) -> [u16; 3] {
+        [px & 0x1F, (px >> 5) & 0x1F, (px >> 10) & 0x1F]
+    }
+
+    fn run(style: IntroStyle, clocks: i16) -> Vec<u16> {
+        let mut it = intro(style, 400);
+        it.seed_capture_for_test(vram_with_capture());
+        (0..clocks)
+            .map(|clock| {
+                it.tick(clock, 1);
+                let _ = it.refresh_captured_page();
+                bottom_pixel(&it)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_wash_is_two_levels_a_frame() {
+        assert_eq!(
+            SCATTER_DISPLAY_DECAY_5,
+            ((PARTICLE_WASH_RGB & 0xFF) >> 3) as u16
+        );
+        assert_eq!(SCATTER_DISPLAY_DECAY_5, 2);
+    }
+
+    #[test]
+    fn an_undrawn_scatter_pixel_fades_from_the_second_frame() {
+        let px = run(IntroStyle::ScatterParticles, 4);
+        let first = levels(px[0]);
+        assert!(
+            first.iter().all(|&c| c >= 6),
+            "the probe needs a lit pixel: {first:?}"
+        );
+        for (k, p) in px.iter().enumerate() {
+            let want = first.map(|c| c.saturating_sub(2 * k as u16));
+            assert_eq!(levels(*p), want, "frame {k}: the first frame is not washed");
+            assert_eq!(p & 0x8000, 0x8000, "the model stays opaque");
+        }
+    }
+
+    #[test]
+    fn the_spinup_display_keeps_what_nothing_redraws() {
+        let px = run(IntroStyle::SpinUpParticles, 4);
+        assert!(px.iter().all(|&p| p == px[0]), "{px:x?}");
+    }
+
+    #[test]
+    fn the_scatter_frame_draws_its_display_trail_behind_the_particles() {
+        use legaia_render_kernels::battle_intro::CURTAIN_TRAIL_OT;
+        let mut it = intro(IntroStyle::ScatterParticles, 400);
+        it.seed_capture_for_test(vram_with_capture());
+        it.tick(0, 1);
+        let _ = it.refresh_captured_page();
+        let frame = it.tick(1, 1);
+        let trail = frame
+            .prims
+            .iter()
+            .filter(|p| matches!(p, ScreenPrim::Textured(q) if q.ot_index == CURTAIN_TRAIL_OT))
+            .count();
+        assert_eq!(trail, 5, "five 64-px pages tile the display model");
+    }
+}

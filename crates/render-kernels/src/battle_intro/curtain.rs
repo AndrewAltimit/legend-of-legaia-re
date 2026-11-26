@@ -34,6 +34,18 @@ pub const CURTAIN_MIDPASS_DECAY_5: u16 = 0x10;
 /// undrawn display pixel takes ~31 frames to reach black.
 pub const CURTAIN_DISPLAY_DECAY_5: u16 = 1;
 
+/// The scatter style's per-frame display wash (`FUN_801CFDA0`'s
+/// `func_0x8004695C(0x101010)`, armed on every frame after the first) as a
+/// 5-bit-channel step: `0x10 >> 3`, two levels a frame, so an undrawn display
+/// pixel reaches black in about sixteen frames.
+///
+/// The drain (`FUN_80046978`) scales the colour by the frame step, which the
+/// scatter body floors at `3` (the `0x801CFE00` store), so a retail frame takes
+/// `2 * step` levels off while its clock moves `step`. The emitter steps once
+/// per clock unit and the display model once per presented frame, so two
+/// levels a step is the same fade over the same clock span.
+pub const SCATTER_DISPLAY_DECAY_5: u16 = (super::PARTICLE_WASH_RGB as u16 & 0xFF) >> 3;
+
 /// Where the port keeps its CPU model of the transition's display buffer in
 /// the cloned VRAM page, so the trail can be drawn as textured quads. Retail
 /// needs no such rect - on the console the display buffer *is* VRAM and the
@@ -166,8 +178,20 @@ impl BattleIntro {
         self.pending_rows = rows;
     }
 
-    /// Advance the spin-up style's CPU display model and land it in
+    /// Advance a particle style's CPU display model and land it in
     /// [`CURTAIN_TRAIL_RECT`].
+    ///
+    /// The scatter style (`FUN_801CFDA0`) runs on the same never-cleared
+    /// display, and its screen wash is what tells the two apart: each frame
+    /// after the first it subtracts `0x101010` (the farthest OT bucket, ABR
+    /// `2`, ahead of every particle), so where a patch has flown away the
+    /// field fades to black over about sixteen frames and a flying patch
+    /// leaves a fading trail, rather than the hole opening at once that a
+    /// frame composed over the black backdrop shows. A patch at its rest pose
+    /// is opaque and redraws its own cell each frame, so the field that has
+    /// not peeled off stays intact under the wash. The wash comes off
+    /// ([`SCATTER_DISPLAY_DECAY_5`]) before the upload, since it lands on the
+    /// display ahead of this frame's particles; the spin-up arms none.
     ///
     /// `FUN_801D0370` arms no wash, and nothing clears the display buffer
     /// while the transition runs (game mode `9`, no field renderer; the only
@@ -202,6 +226,10 @@ impl BattleIntro {
         let Some(page) = self.captured.as_mut() else {
             return;
         };
+        let wash = std::mem::take(&mut self.pending_wash_5);
+        if wash != 0 {
+            decay_15bpp(&mut self.display_accum, wash);
+        }
         let r = CURTAIN_TRAIL_RECT;
         page.write_block(
             r.x,

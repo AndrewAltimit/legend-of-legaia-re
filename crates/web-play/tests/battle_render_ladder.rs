@@ -375,14 +375,17 @@ fn rung2_style_emitters(index: &ProtIndex) -> Result<(), String> {
             ));
         }
 
-        // The curtain and the spin-up field re-compose their page per frame
-        // (the curtain's intermediate and trail, the spin-up's never-cleared
-        // display); every other style reports exactly one changed page (the
-        // capture landing).
-        if style == IntroStyle::SpinUpParticles {
+        // The curtain and the two particle fields re-compose their page per
+        // frame (the curtain's intermediate and trail, the particle styles'
+        // never-cleared display); every other style reports exactly one
+        // changed page (the capture landing).
+        if matches!(
+            style,
+            IntroStyle::SpinUpParticles | IntroStyle::ScatterParticles
+        ) {
             if run.page_refreshes != run.frames {
                 return Err(format!(
-                    "spin-up: {} of {} frames re-composed the display model",
+                    "{style:?}: {} of {} frames re-composed the display model",
                     run.page_refreshes, run.frames
                 ));
             }
@@ -403,7 +406,7 @@ fn rung2_style_emitters(index: &ProtIndex) -> Result<(), String> {
         } else if run.page_refreshes != 1 {
             return Err(format!(
                 "{style:?}: {} page refreshes - the capture is a one-shot for \
-                 every style but the curtain",
+                 every style without a display model",
                 run.page_refreshes
             ));
         }

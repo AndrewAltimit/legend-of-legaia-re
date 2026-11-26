@@ -71,11 +71,10 @@ impl BattleIntro {
         // ([`Self::update_spinup_display`]).
         if matches!(
             self.style,
-            IntroStyle::Curtain | IntroStyle::SpinUpParticles
+            IntroStyle::Curtain | IntroStyle::SpinUpParticles | IntroStyle::ScatterParticles
         ) {
             self.curtain_trail_prims(&mut out.prims);
         }
-        let style_start = out.prims.len();
 
         match &mut self.set {
             WorkingSet::Particles { grid, style } => {
@@ -89,9 +88,20 @@ impl BattleIntro {
                 // marker) washes the screen near-black on every frame after
                 // the first; the confetti reconstructs the frame over it
                 // until the delays expire.
+                // On the display model the wash is taken off the previous
+                // frames' pixels before this frame's particles land
+                // ([`Self::refresh_captured_page`]); the primitive itself
+                // falls on the black backdrop under the trail quads. A host
+                // that refreshes the model once over several steps owes it
+                // every step's wash.
                 if emit && style.stamp_field_16 {
                     out.prims.push(wash_prim(PARTICLE_WASH_RGB));
+                    self.pending_wash_5 =
+                        self.pending_wash_5.saturating_add(SCATTER_DISPLAY_DECAY_5);
                 }
+                // The model takes the wash as a decay, so it lands only the
+                // particles and the ring.
+                let particles_from = out.prims.len();
                 // The spin-up tail's ring phase uses the pre-increment clock.
                 let ring_phase = i32::from(self.clock) * SPINUP_RING_PHASE_STEP;
                 let drawn = emit_particle_field(
@@ -106,10 +116,10 @@ impl BattleIntro {
                 // expanding ring behind the confetti.
                 let ring = emit && style.spin_up && emit_spinup_ring(ring_phase, &mut out.prims);
                 out.style_drawn = drawn || ring;
-                if style.spin_up {
+                if style.spin_up || style.stamp_field_16 {
                     self.pending_particles.clear();
                     self.pending_particles
-                        .extend_from_slice(&out.prims[style_start..]);
+                        .extend_from_slice(&out.prims[particles_from..]);
                 }
             }
             WorkingSet::Tiles(grid) => {

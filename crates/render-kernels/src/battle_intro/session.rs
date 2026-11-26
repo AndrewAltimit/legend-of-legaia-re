@@ -90,8 +90,14 @@ pub struct BattleIntro {
     /// This frame's spin-up particle and ring primitives, held between
     /// [`BattleIntro::tick`] (which emits them) and
     /// [`BattleIntro::refresh_captured_page`] (which lands them in the CPU
-    /// display model the next frame draws over). Only the spin-up fills it.
+    /// display model the next frame draws over). Only the two particle styles
+    /// fill it.
     pub(super) pending_particles: Vec<crate::screen_prim::ScreenPrim>,
+    /// The scatter style's screen washes the steps since the last
+    /// [`BattleIntro::refresh_captured_page`] armed, as a 5-bit-channel step
+    /// ([`SCATTER_DISPLAY_DECAY_5`] each), which the refresh takes off the
+    /// display model before this frame's particles land.
+    pub(super) pending_wash_5: u16,
     /// The curtain's intermediate ([`FIELD_CAPTURE_ROWS`] content) as a
     /// persistent buffer: retail never clears it - `FUN_801D1D9C` decays it by
     /// [`CURTAIN_MIDPASS_DECAY_5`] each frame before the column strips draw.
@@ -195,6 +201,7 @@ impl BattleIntro {
             pending_columns: Vec::new(),
             pending_rows: Vec::new(),
             pending_particles: Vec::new(),
+            pending_wash_5: 0,
             intermediate: Vec::new(),
             display_accum: Vec::new(),
             last_frame: None,
@@ -347,7 +354,10 @@ impl BattleIntro {
             entry0.textures.retain(|t| t.index == 0);
             entry0.upload_to_vram(page, false);
         }
-        if style == IntroStyle::Curtain || style == IntroStyle::SpinUpParticles {
+        if matches!(
+            style,
+            IntroStyle::Curtain | IntroStyle::SpinUpParticles | IntroStyle::ScatterParticles
+        ) {
             self.capture_src = lift_capture_src(page);
         }
         self.upload_pending = true;
@@ -375,7 +385,10 @@ impl BattleIntro {
     /// the last uploaded page is still correct.
     pub fn refresh_captured_page(&mut self) -> Option<&Vram> {
         let landed = std::mem::take(&mut self.upload_pending);
-        if self.style == IntroStyle::SpinUpParticles {
+        if matches!(
+            self.style,
+            IntroStyle::SpinUpParticles | IntroStyle::ScatterParticles
+        ) {
             self.captured.as_ref()?;
             self.update_spinup_display();
             return self.captured.as_ref();
@@ -517,11 +530,12 @@ mod capture_landing_tests {
     }
 
     /// The capture is a one-shot and `refresh_captured_page` reports the
-    /// landing exactly once for a non-curtain style - the page's re-upload
-    /// contract.
+    /// landing exactly once for a style with no display model (the curtain
+    /// and the two particle styles re-upload theirs every frame) - the page's
+    /// re-upload contract.
     #[test]
     fn refresh_reports_the_landing_once_then_goes_quiet() {
-        let mut it = bare_intro(IntroStyle::ScatterParticles);
+        let mut it = bare_intro(IntroStyle::TileShatter);
         assert!(it.needs_capture());
         assert!(it.refresh_captured_page().is_none(), "nothing landed yet");
         let rgba = vec![0xFFu8; 2 * 2 * 4];

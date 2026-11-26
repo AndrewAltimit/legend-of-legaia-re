@@ -48,11 +48,13 @@ pub const PARTICLE_WASH_RGB: u32 = 0x0010_1010;
 /// The **curtain** no longer relies on this: its per-frame `0x80808` wash is
 /// carried as the CPU display model's decay
 /// ([`CURTAIN_DISPLAY_DECAY_5`], see the module docs), which is why its tick
-/// emits no wash primitive at all. The two `0x101010` washes this function
-/// still draws - the scatter field's and the swirl's late phase - keep the
-/// from-scratch caveat: their styles redraw nearly the whole display every
-/// frame, so the residual is the absence of a short motion trail behind the
-/// flying patches, not a wrongly-lit frame.
+/// emits no wash primitive at all, and neither does the scatter field's on
+/// the screen it shows: its `0x101010` comes off the style's display model
+/// ([`SCATTER_DISPLAY_DECAY_5`]) before the frame's particles land, so the
+/// primitive here falls on the black backdrop under the trail quads. The
+/// swirl's late-phase wash keeps the from-scratch caveat: its bands redraw
+/// nearly the whole display every frame, so the residual is the absence of a
+/// short motion trail, not a wrongly-lit frame.
 pub fn wash_prim(gp0_rgb_word: u32) -> ScreenPrim {
     display_rect_flat_quad(
         [
