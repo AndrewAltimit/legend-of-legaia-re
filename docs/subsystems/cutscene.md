@@ -1015,7 +1015,7 @@ flowchart LR
     B --> C["opurud<br/>Mist crawls"]
     C --> D["map01<br/>fly-in + title card"]
     D -->|"tile 0x1D, 0x5B"| E["town01<br/>pan, name entry, walk-out"]
-    A -.->|"confirm after GFLAG 26:<br/>intro skip"| E
+    A -.->|"Select held after GFLAG 26:<br/>intro skip"| E
 ```
 
 ### The five-scene chain
