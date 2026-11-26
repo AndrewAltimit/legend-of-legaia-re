@@ -805,6 +805,32 @@ impl ScriptGate {
             .any(|(bc, pc)| reaches(bc, pc))
     }
 
+    /// Seat the gate's wait on the context it met: retail's `+0x54` exactly.
+    /// The gate meets a wait once the engine's accumulator reaches retail's,
+    /// and the accumulator climbs by the frame step, so at step `4` it can
+    /// stand up to three past retail's and the wait ran out a game frame
+    /// early (`concend_field_door_hop`'s `P2[0]` `4A 78` at `+0x123`, which
+    /// bound flat `8`'s clip `26` at vsync `73` against retail's `77`).
+    /// Only a context standing on the gate PC whose accumulator is past
+    /// retail's is touched. A harness seat.
+    pub fn seat_wait(&self, world: &mut legaia_engine_core::world::World) {
+        if self.wait <= 0 {
+            return;
+        }
+        let (head, pc, wait) = (&self.head, self.pc, self.wait);
+        let seat = |tl: &mut legaia_engine_field::cutscene_timeline::CutsceneTimeline| {
+            if head_of(&tl.bytecode) == *head && tl.pc == pc && tl.ctx.wait_accum > wait {
+                tl.ctx.wait_accum = wait;
+            }
+        };
+        if let Some(tl) = world.cutscene.timeline.as_mut() {
+            seat(tl);
+        }
+        for tl in world.field_vm.helper_contexts.iter_mut() {
+            seat(tl);
+        }
+    }
+
     /// The pad word a gated seed holds on `tick`: from
     /// [`SCRIPT_RESUME_TICK`] on, `Cross` on every other tick while the
     /// gate's record sits in a dialog box short of the gate PC - the presses
