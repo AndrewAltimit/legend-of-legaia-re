@@ -994,6 +994,13 @@ monster strike closes on `DAMAGE` (the Ogre's on `battle_geremi_ogre_strike`,
 Cort's on `battle_jou_cort_181_strike`). Port: `BattleHud::push_popup` sets the
 cluster's style from its hit count.
 
+**A monster's string on the party opens it too.** The cluster is the action's, not
+the party's: the retail film of `battle_map03_heavy_grude_strike` reads `6 HIT` /
+`TOTAL 1392` beside Vahn once the sixth hit lands, the sum of the six banked hits
+(`207 + 251 + 227 + 204 + 209 + 294`), not the 180 HP he had, and holds it through the
+fall. The engine film of the same state draws it on the same frames at the same seat
+and value. Grade `capture`.
+
 **A row-aimed cast opens value rows instead.** The action seed `FUN_801E6D84`
 lists every living monster in `0x801F6978` when the target is the every-enemy code
 `9` and no lone survivor replaced it (`ctx[+0x24B]`), and always for spells `0x82`,
