@@ -447,6 +447,8 @@ fn a_summon_module_seeks_its_file_then_waits_on_the_drive() {
     eprintln!("[ok] head cues behind their arm's own gate: {gated:?}");
     // Gilium's arm 2 drains its countdown before the poll; Orb's polls at once.
     assert!(gated.contains(&923));
+    // Mule's arm 2 tests its band word after the poll.
+    assert!(gated.contains(&929));
     assert!(!gated.contains(&911));
     eprintln!("[ok] drive arms: {}", listed.join(" "));
     assert_eq!(
