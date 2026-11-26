@@ -2889,21 +2889,18 @@ short pair drifted the camera `11` to `34` units behind retail's by the second s
 motion and `120` behind through `0x1F` / `0x20`. With the term the camera reads retail's
 through the strike states' ends. Over the arts films the mean goes `.9478` to `.9517`:
 Tri-Somersault `.752` to `.817`, Super Ironhead `.900` to `.964`, Vahn's Chain `.900` to
-`.956` (late) and `.926` to `.971` (open). Three films fall on a knife edge of the census
-base. Gala's Chain (`.99` to `.93`, both films): its art pass prices `723` where retail's
-reads `717`, the census about `6` over retail's base on the art's own entry count, which
-tips the pass to step `4`; the same edge takes the retail-compare still
-`battle_jou_gala_finisher_hold_retail` from `.994` to `.657`. Dragon
-Fangs (`.896` to `.868`): Noa's two-ghost frames price `724` to `734` where retail's read
-`685` to `707`, step `4` against retail's `3` with or without the term, and the term moves
-which frames those are. Tornado Flame `.924` to `.917`.
+`.956` (late) and `.926` to `.971` (open). On the one-price census line three films fall
+on a knife edge of its base: Gala's Chain (`.99` to `.93`), whose commit pass prices `723`
+where retail's reads `717` and tips to step `4`, Dragon Fangs, whose two-ghost frames price
+`724` to `734` against retail's `685` to `707`, and Tornado Flame. On the leaves' counts
+priced unit by unit ([below](#priced-unit-by-unit)) the same frames price `719` and `709`
+to `717`, retail's step, and the arts read `.9656`.
 
-Tri-Somersault's remaining fall is the same edge on a ghost frame: the first frame outside
-the arts voice's polls that draws one ghost costs `692` on retail and `721` on the census,
-the line's base `27` over retail's there, and the port runs the next pass at step `4`
-where retail's runs `3`. Over the arts films' unpolled frames the census reads `+12`
-hblanks over retail's at the median with no ghost and `+22` with two. The ghosts
-themselves are priced right: the `--ghost-trace` recordings' one-ghost steps (Tri-Somersault,
+Tri-Somersault's other edge is a ghost frame: the first frame outside the arts voice's
+polls that draws one ghost costs `692` on retail and `721` on the one-price line, its base
+`27` over retail's there because the float rules keep the body primitives retail's closing
+shot stops drawing; the leaves' counts price it `707`, step `3`, and the film reads `.939`.
+The ghosts themselves are priced right on either: the `--ghost-trace` recordings' one-ghost steps (Tri-Somersault,
 Vahn's Chain, Dragon Fangs, the frames where only the ghost count changes) cost `91` to
 `129` hblanks, `105` on the mean, against the census's `103` to `110` for a party member's
 ghost; pricing a party ghost at a flat `90` lifted Tri-Somersault and Dragon Fangs and cost
