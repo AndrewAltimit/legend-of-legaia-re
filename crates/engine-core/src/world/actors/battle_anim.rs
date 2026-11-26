@@ -347,6 +347,11 @@ impl World {
             }
             self.tick_battle_impact_fx();
         }
+        // The tag-`0x67` arm's ribbon call, once a pass, on the game's
+        // stream (`World::deal_clip_ribbon`).
+        if only.is_none() {
+            self.deal_clip_ribbon();
+        }
         // The same pass's Mystic Shield pose and break
         // (`0x8004D534..0x8004D674`): once a pass - it counts nothing, it
         // seats the sphere and tests the break.

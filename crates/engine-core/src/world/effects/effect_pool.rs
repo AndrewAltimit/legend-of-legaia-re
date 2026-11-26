@@ -443,6 +443,33 @@ impl World {
         self.battle.move_fx_streak_quads = Some(quads);
     }
 
+    /// Gala's tag-`0x67` arm (Heaven's Drop, art record `0x2E`): on every
+    /// frame the committed clip's cursor sits in `0xB0..=0xF0`,
+    /// `FUN_8004CE2C`'s clip pass calls `FUN_801E1D98(&target[+0x3C], 0xC)`
+    /// (`0x8004D1E8..0x8004D248`), so its seven-plus-four-a-segment words
+    /// come off the game's stream inside the actor-pool walk, ahead of the
+    /// frame's draw. Dealt once a pass, through the battle view the pass
+    /// holds, and kept on `BattleState::clip_ribbon_quads` for the hosts to
+    /// draw as built. The hosts used to rebuild it at draw time on a private
+    /// generator and draw no words.
+    ///
+    /// PORT: FUN_8004CE2C (`0x8004D1E8..0x8004D248`, the tag-`0x67` ribbon call's draws)
+    pub(in crate::world) fn deal_clip_ribbon(&mut self) {
+        self.battle.clip_ribbon_quads = None;
+        let Some(c) = self.battle.clip_ribbon else {
+            return;
+        };
+        let mut points = [[0i16; 3]; 16];
+        points[0] = c.seat;
+        let ring = legaia_engine_cast::cast_module_camera::CastRibbonRing {
+            points,
+            trail_id: c.trail_id,
+            count: 1,
+        };
+        let (_, mut quads) = self.deal_ribbon_rands(&ring);
+        self.battle.clip_ribbon_quads = quads.pop();
+    }
+
     /// Each ribbon's start word and the packets the call built, the stream
     /// stepped past its draws.
     fn deal_ribbon_rands(

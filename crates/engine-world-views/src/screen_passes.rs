@@ -441,12 +441,10 @@ pub fn move_fx_streak_prims(
     by_link: bool,
 ) -> Vec<ScreenPrim> {
     use legaia_render_kernels::screen_prim::CornerDepth;
-    use legaia_render_kernels::streak_pass::clip_ribbon_quads;
     let anchor = |p: [f32; 3]| {
         let clip = *mvp * glam::Vec4::new(p[0], p[1], p[2], 1.0);
         (by_link && clip.w > 1e-4).then(|| CornerDepth::new([clip.z / clip.w; 4]))
     };
-    let frame = world.clock.display_frames as u32;
     let mut out = Vec::new();
     let mut push = |quads: Vec<legaia_render_kernels::afterimage::AfterimageQuad>,
                     depth: Option<CornerDepth>| {
@@ -473,12 +471,11 @@ pub fn move_fx_streak_prims(
         let at = [launch.0 as f32, launch.1 as f32 + lift, launch.2 as f32];
         push(quads.clone(), anchor(at));
     }
-    if let Some(c) = world.battle.clip_ribbon {
-        let seat = c.seat.map(f32::from);
-        push(
-            clip_ribbon_quads(seat, c.trail_id, mvp, frame),
-            anchor(seat),
-        );
+    if let (Some(c), Some(quads)) = (
+        world.battle.clip_ribbon,
+        world.battle.clip_ribbon_quads.as_ref(),
+    ) {
+        push(quads.clone(), anchor(c.seat.map(f32::from)));
     }
     out
 }
@@ -490,25 +487,18 @@ pub fn move_fx_streak_prims(
 /// The streak is the packets the pass's emitter built
 /// (`BattleState::move_fx_streak_quads`, dealt by `World::deal_move_fx_streak`
 /// on `FUN_801E09F8`'s gates: slot `0` in phase `1`, the counter running and
-/// the record's `+0x0E` list byte `0xFF`), drawn as built. The clip-tag ribbon (`FUN_8004CE2C` tag `0x67` ->
-/// `FUN_801E1D98(&target[+0x3C], 0xC)`) rides a physical art's clip instead
-/// and draws with or without a move-FX scene. Both clock on the world's
-/// display-frame counter.
-pub fn move_fx_streak_quads(world: &World, mvp: &glam::Mat4) -> Vec<AfterimageQuad> {
-    use legaia_render_kernels::streak_pass::clip_ribbon_quads;
-    let frame = world.clock.display_frames as u32;
+/// the record's `+0x0E` list byte `0xFF`), drawn as built, then the packets
+/// of Gala's clip-tag ribbon (`FUN_8004CE2C` tag `0x67` ->
+/// `FUN_801E1D98(&target[+0x3C], 0xC)`, `BattleState::clip_ribbon_quads`),
+/// which rides Heaven's Drop's clip rather than a move-FX scene.
+pub fn move_fx_streak_quads(world: &World, _mvp: &glam::Mat4) -> Vec<AfterimageQuad> {
     let mut out = world
         .battle
         .move_fx_streak_quads
         .clone()
         .unwrap_or_default();
-    if let Some(c) = world.battle.clip_ribbon {
-        out.extend(clip_ribbon_quads(
-            c.seat.map(f32::from),
-            c.trail_id,
-            mvp,
-            frame,
-        ));
+    if let Some(quads) = world.battle.clip_ribbon_quads.as_ref() {
+        out.extend(quads.iter().copied());
     }
     out
 }
@@ -544,7 +534,6 @@ fn cast_ribbon_prims_at(
     drawn: bool,
 ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
     use legaia_render_kernels::screen_prim::{CornerDepth, ScreenPrim};
-    use legaia_render_kernels::streak_pass::clip_ribbon_quads;
     let frame = world.clock.display_frames as u32;
     let pose = if drawn {
         world.battle_draw_pose()
@@ -616,7 +605,7 @@ fn cast_ribbon_prims_at(
             (None, Some(seed)) => {
                 legaia_render_kernels::streak_pass::ribbon_quads_seeded(&view, p, trail_id, seed).0
             }
-            (None, None) => clip_ribbon_quads(
+            (None, None) => legaia_render_kernels::streak_pass::clip_ribbon_quads(
                 at,
                 trail_id,
                 mvp,

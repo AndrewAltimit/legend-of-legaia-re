@@ -1378,6 +1378,10 @@ pub struct BattleState {
     /// as the retail per-frame call does. Hosts draw it through
     /// `legaia_render_kernels::streak_pass::clip_ribbon_quads`.
     pub clip_ribbon: Option<ClipRibbon>,
+    /// The packets this pass's tag-`0x67` ribbon call built
+    /// (`World::deal_clip_ribbon`, on the game's stream through the battle
+    /// view), drawn as built. `None` on a pass without the call.
+    pub clip_ribbon_quads: Option<Vec<legaia_render_kernels::afterimage::AfterimageQuad>>,
     /// This tick's streak ribbons from a cast module arm
     /// (`legaia_engine_cast::cast_module_camera::CaptureCamArm::ribbons`,
     /// PROT 0962 `0xA3`'s arm-4 ring): retail calls `FUN_801E1D98` once per
@@ -1961,6 +1965,7 @@ impl BattleState {
             return_mode: SceneMode::Field,
             field_camera_reseat: false,
             clip_ribbon: None,
+            clip_ribbon_quads: None,
             cast_ribbons: None,
             cast_ribbon_seeds: None,
             cast_ribbon_quads: None,
