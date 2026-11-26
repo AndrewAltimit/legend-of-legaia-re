@@ -9175,3 +9175,21 @@ phase = "menu"
 expected_game_mode = 0x17
 memory_card = "playthrough-endgame-7saves.mcr"
 topics = ["menu", "save screen", "load", "SLOT 2", "block grid"]
+
+[[scenarios]]
+label = "jou_gala_heavens_drop_strike_h6"
+backup_fingerprint = "0d5425d5e59d7d69098b77de6c6409c3aa0d7cac5d9f44eb2780d878d8dcec90"
+description = "jou battle, formation [0x1B, 0x1B, 0x1B] (three Theeders): Gala (party seat 2) 6 vsyncs into his Heaven's Drop strike loop (art 0x2E, the only art record carrying clip ribbon tag 0x67). RETAIL disc, pad only, no pokes: jou_field_card_walk played forward by autorun_battle_harvest.lua with the formation forced through the harvester's region-row rewrite, LEGAIA_MONSTER_TOUGH=1 and LEGAIA_SPIRIT_ROUNDS=2; saved 5546 vsyncs in. A --ribbon-trace replay logs ten FUN_801E1D98 calls returning to 0x8004D248, every 3 vsyncs over vsyncs 761-788."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "arts", "Gala", "Heaven's Drop", "ribbon", "jou", "harvest"]
+
+[[scenarios]]
+label = "jou_gala_heavens_drop_strike_h30"
+backup_fingerprint = "75061f1d627bec2f8551c0bf892b4005ad26a75f788d10af6393f1a2df2d42f6"
+description = "jou battle, formation [0x1B, 0x1B, 0x1B] (three Theeders): Gala (party seat 2) 30 vsyncs into his Heaven's Drop strike loop (art 0x2E, clip ribbon tag 0x67). RETAIL disc, pad only, no pokes: the same harvest as jou_gala_heavens_drop_strike_h6 (jou_field_card_walk, autorun_battle_harvest.lua, forced formation, LEGAIA_MONSTER_TOUGH=1, LEGAIA_SPIRIT_ROUNDS=2), saved 5570 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "arts", "Gala", "Heaven's Drop", "ribbon", "jou", "harvest"]
