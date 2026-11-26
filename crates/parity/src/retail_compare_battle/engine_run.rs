@@ -525,6 +525,11 @@ pub fn run_engine_battle(
     session.host.world.toggles.battle_poly_frame_cost = false;
     session.host.world.toggles.battle_surface_frame_cost = false;
     session.host.world.toggles.battle_frame_span_law = false;
+    // So does an art commit's keyframe decode (`battle_me_decode_cost`), a
+    // census-line term the table never priced: on, two strike stills'
+    // replays reached their capture a pass apart (camera
+    // `battle_cave01_theeder_strike` `1.000` to `.996`).
+    session.host.world.toggles.battle_me_decode_cost = false;
     if let Some((step, state, from, hold)) = battle.frame_step_seed() {
         session.host.world.seed_battle_frame_step(step, state);
         session.host.world.battle.frame_step_seed_from = from;
