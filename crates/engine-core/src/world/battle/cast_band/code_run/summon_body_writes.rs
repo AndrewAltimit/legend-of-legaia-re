@@ -682,6 +682,24 @@ impl World {
         // Orb's arm-9 call shape.
         if phase_in == 0xA {
             self.battle.raise_module_roster_panels();
+            self.horn_cures_the_party();
+        }
+    }
+
+    /// PROT 0930's heal arm cures every party seat below `ctx[+0]`: the
+    /// loop that restores each seat's HP clears its status word
+    /// (`sh zero,0x16e` at `0x801F7ACC`) whatever it held, and for a Stone
+    /// or Rot bit (`andi 0x3C` at `0x801F7A50`) first reloads the seat's
+    /// palette row and raises its limb bytes `+0x220..+0x223`
+    /// (`0x801F7A5C..0x801F7AC0`), which the engine draws off the status
+    /// list itself. The fold's heal is the spell's restore alone.
+    fn horn_cures_the_party(&mut self) {
+        let n = self.party.party_count.min(3);
+        for slot in 0..n {
+            if let Some(a) = self.actors.get_mut(usize::from(slot)) {
+                a.battle.field_flags = 0;
+            }
+            self.battle.status_effects.cure_all(slot);
         }
     }
 

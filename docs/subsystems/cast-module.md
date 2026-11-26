@@ -4027,6 +4027,14 @@ with him. Seated where the fight left him, arm `0xB`'s burst stood a hundred uni
 retail's in the frame, and the `0x9C` film's arm `0xB` read `.893` on every seat; re-seated
 it reads `.998` on `--retail-steps --rand-track` (`World::seat_party_for_horn`,
 `ModuleCamState::caster_saved`). Grade `disassembly` + `capture`.
+Horn's heal arm `0xA` cures as well as it heals: the loop over every seat below `ctx[+0]`
+stores `+0x14C += max - hp`, then clears the status word (`sh zero,0x16e` at
+`0x801F7ACC`) whatever it held, first reloading the seat's palette row and raising its
+limb bytes `+0x220..+0x223` for a Stone or Rot bit (`andi 0x3C` at `0x801F7A50`).
+The port cleared nothing, so a Venomed or Stoned member kept the ailment through the
+summon; it now clears each seat's status list on the arm's pass
+(`World::horn_cures_the_party`), and the summon walk compares it. Grade `disassembly`
++ differential.
 Mushura's arms 0 and 1 show the latched victim the band's freeze hid
 (`World::apply_mushura_writes`). Horn's seat visibility is carried
 (`World::apply_horn_writes`): arm 1 shows
