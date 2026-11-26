@@ -150,6 +150,13 @@ impl PondSession {
         self.reel_repeat_in = countdown;
     }
 
+    /// Seat the band check's hold countdown (`DAT_801D90EC`), the strike
+    /// credit's base, as a harness standing a waiting line at a strike does.
+    #[doc(hidden)]
+    pub fn seat_band_countdown(&mut self, countdown: i32) {
+        self.band.countdown = countdown;
+    }
+
     /// Seat the session on the line-break screen (state `0x28`) with its
     /// banner timer (`DAT_801D9164`) at `banner`, as a harness standing the
     /// pond on a retail state does.

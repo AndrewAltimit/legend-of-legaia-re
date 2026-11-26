@@ -265,6 +265,7 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
         }
         let fs = 1 + rng.below(3) as i32;
         let real = rng.below(2) == 0;
+        let strike_seeded = scenario % 3 == 1;
         let (facing, anchor) = if real {
             let lead =
                 legaia_engine_minigame_scenes::fishing_venue::party_placements(venue as usize)[0];
@@ -408,8 +409,12 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
             // (32 vsyncs) could fire, which the machine folds into the edge.
             // A waiting line is mostly left alone, so a fish bites; a fight
             // is reeled hard, so it ends one way or the other.
+            // A strike-seeded cast holds the reel through its wait, so the
+            // strike roll (`0x801D3270..0x801D3300`) and the hook it lands
+            // run on most of its waiting frames.
             let busy = match port.phase() {
                 PondPhase::Hooked => 8,
+                PondPhase::Waiting if strike_seeded => 9,
                 _ => 2,
             };
             let mut next = match rng.below(10) {
@@ -516,6 +521,11 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
             // The landing hands over to the machine's state `0x19`, whose
             // entry resets the band check and the cadence ring.
             if state_before == 1 && cpu.mem.rd16(LURE + 0x22) == 2 {
+                // A strike-seeded cast lands with a long band hold, the
+                // strike credit's base, on both sides.
+                if strike_seeded {
+                    port.seat_band_countdown([0x20, 0x40, 0x80, 0x100][rng.below(4) as usize]);
+                }
                 cpu.mem.wr32(BAND, port.band());
                 cpu.mem.wr32(COUNTDOWN, port.band_countdown() as u32);
                 for a in CADENCE {
