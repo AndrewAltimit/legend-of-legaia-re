@@ -631,6 +631,7 @@ fn seed_and_settle_cut(
             }
             if g.drive_resume(&mut session.host, t) {
                 resumed = true;
+                super::retail_obs::seat_side_band(&mut session.host.world, retail);
                 // The resume replays the spawning arm's track words between
                 // two ticks. With no director of its own the session leaves
                 // them queued, behind a mark the route above has already

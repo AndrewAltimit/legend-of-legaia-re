@@ -3815,6 +3815,16 @@ from the scene before (`arrival = { from = "town0e", door = 6 }`,
 `World::dialogue_owns_input` counts a modal cutscene record's box as it
 counts the other channels'.
 
+A record's side-band request is history of the same kind. `conc3`'s entry
+requests `2116` (`36 01 80 44 08`), the inn's `P2[9]` requests `2070` at `+0xCD`, and the
+ceremony `P2[10]` keys its runtime rows (`0x201` .. `0x214`, category `3`) out of
+`2070`'s bank until its own `2116` at its end. A card load runs the entry and not
+`P2[9]`, so the resumed ceremony keyed its cues into a bank that holds none of their
+programs, and nothing sounded. The seed stands the pair on the one the state holds
+(`_DAT_8007BABC` / `_DAT_8007BAA0`, settled) when it resumes the gate's record, through
+op `0x36` sub `1`'s own handler (`World::seat_side_band_request`); the record's own
+requests on its way to the gate replace it as retail's did.
+
 The sweep found the sub-op 9 defect: the port started a cutscene's new track
 at the select where retail holds it to the commit
 ([`script-vm.md`](script-vm.md#sub-op-9-selects-its-commit-starts-the-track)),
