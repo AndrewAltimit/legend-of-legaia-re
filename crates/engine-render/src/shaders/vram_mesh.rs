@@ -949,6 +949,14 @@ fn blend_pass_color(in: VsOut, front_facing: bool, mode: u32) -> vec4<f32> {
         prim = psx_cue_colour(apply_grade(prim, u.grade), u.depth_cue.rgb * 255.0, ir0);
     }
     let lit = psx_modulate(color.rgb, prim);
+    // The modulate before its saturation: the PCSX-Redux instrument blends
+    // it raw (`psx_blend::PCSX_MODULATE_MAX`), so a packet colour above
+    // `0x80` reaches its blend at up to twice the texel.
+    let raw_gain = select(
+        vec3<f32>(1.0),
+        max(color.rgb * prim / 128.0, vec3<f32>(0.0)) / max(lit, vec3<f32>(1e-6)),
+        lit > vec3<f32>(0.0),
+    );
     let geo_n = cross(dpdx(in.world_pos), dpdy(in.world_pos));
     let pg = scene_point_gain(in.world_w, in.normal, geo_n);
     let enhanced = dyn_window(
@@ -991,7 +999,9 @@ fn blend_pass_color(in: VsOut, front_facing: bool, mode: u32) -> vec4<f32> {
     // `(128 * B + t5 * c8) >> 8`; its mode 3 quarters the texel before the
     // modulate, `((t5 >> 2) * c8) >> 7`, as the console's `F >> 2` does not.
     if pcsx_dithered {
-        let m8 = floor(clamp(cued, vec3<f32>(0.0), vec3<f32>(1.0)) * 248.0 + 0.001);
+        // Unsaturated: `cued` is `texel5 / 31 * colour / 128`, up to
+        // `255 / 128`, and the emulator blends the raw product.
+        let m8 = floor(clamp(cued * raw_gain, vec3<f32>(0.0), vec3<f32>(255.0 / 128.0)) * 248.0 + 0.001);
         return vec4<f32>(psx_blend_term_pcsx_dithered(m8, psx_pcsx_dither_offset(in.clip_pos.xy), mode), 1.0);
     }
     let f5 = floor(clamp(cued, vec3<f32>(0.0), vec3<f32>(1.0)) * 31.0 + 0.001);
@@ -999,7 +1009,7 @@ fn blend_pass_color(in: VsOut, front_facing: bool, mode: u32) -> vec4<f32> {
         // `(t5 >> 2) * c8 >> 7`: the texel's share of the modulate, `cued`
         // over the texel, carried onto the shifted texel.
         let t5 = round(clamp(color.rgb, vec3<f32>(0.0), vec3<f32>(1.0)) * 31.0);
-        let gain = select(vec3<f32>(0.0), cued * 31.0 / max(t5, vec3<f32>(1.0)), t5 > vec3<f32>(0.0));
+        let gain = select(vec3<f32>(0.0), cued * raw_gain * 31.0 / max(t5, vec3<f32>(1.0)), t5 > vec3<f32>(0.0));
         let fk = min(floor(floor(t5 / 4.0) * gain + 0.001), vec3<f32>(31.0));
         return vec4<f32>(fk * (8.0 / 255.0), 1.0);
     }

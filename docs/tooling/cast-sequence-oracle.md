@@ -229,6 +229,14 @@ a store or a drift, one that grows names a rate.
 and CLUT rows is how a palette or texture reading is settled before a frame's colours are
 argued over: Iota's cycler rows match the kernel entry for entry.
 
+The same pair settles how a recorded pixel was built.
+[`ot_layers.py`](../../scripts/pcsx-redux/ot_layers.py) walks the ordering table the
+recording's frame handed the GPU, out of `ram_<vsync>.bin`, and prints every polygon
+covering a pixel in draw order (its colour there, its blend mode, the texel it samples
+from the state's VRAM) beside the pixel the VRAM holds. `LEGAIA_RAM_AT` counts vsyncs
+past the cast's begin. Viguro's arm-12 green floor was read this way
+([cast module](../subsystems/cast-module.md#prot-0909-viguro)).
+
 ### A capture-class roll against retail's
 
 A `--wrapper-trace` recording reads a cast's damage off its inputs rather than off the HP columns. V-Windhash from `battle_kor_ghost_knight_v_windhash_mid_cast` enters `FUN_801DD4B0` with power `0x7B`, the Ghost Knight's INT `+0x168 = 302` and Vahn guarding (`+0x1DE = 4`), leaves the roll at `750` against `500` and the finisher at `625`, so `125` lands. The engine on the same draws reads the same three pairs. A film whose child command was seeded before the seat pin (`LEGAIA_BATTLE_SEATS`) seats the fight in the formation's order, so the cast came from the other monster (INT `140`) and landed `63`: re-seed (`--reseed`) a recording copied from an older run before reading its numbers.

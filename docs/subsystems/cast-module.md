@@ -2588,10 +2588,16 @@ ring and a landed bolt's ribbons. Grade `capture`.
 (inner `1024`, outer `2976`, heights `-512` / `0`, level `3808` at the green's peak). A
 `--prim-calls` recording shows each drawn once a frame through the dispatcher with a
 `128`-packet object, the battle VRAM's texture page `0x8A` and CLUT row `490` match the
-engine's byte for byte, and both parts' model lists hold one slot. Retail's green floor
-still reads about twice the engine's ring over the frame's lower half (`G` `255` against
-`214..222`), and the engine's ring level runs a few ticks behind the pairing: what raises
-retail's green is open. Grade `capture`.
+engine's byte for byte, and both parts' model lists hold one slot. The recorded green floor
+is the PCSX-Redux instrument's arithmetic, not a second layer. A RAM image of an arm-12
+frame, its ordering table walked over the frame's VRAM, puts four layers on a floor pixel:
+the stage floor, the ring (`0x3E`, colour `(8, 246, 8)`, ABR `3`), and the stager's held
+additive fade (`0x2B`, `(0x73, 0x73, 0x9B)`, ABR `1`) over them. The recorded pixel is that sum
+with the ring's modulate unsaturated, `texel * 246 / 128` quartered (`G` `27` against `27`
+predicted, `31` where it saturates): that emulator clamps only the sum, where the console
+clamps the foreground first ([renderer](renderer.md#psx-mode-blends-at-the-gpus-5-bit-precision)).
+With the instrument blending the raw modulate, arm 12 reads `.978` against `.881` and the
+`0x87` film `.986` against `.964` on `--rand-track`. Grade `capture`.
 
 ### PROT 0910 (Swordie)
 

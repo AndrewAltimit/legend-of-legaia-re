@@ -171,11 +171,21 @@ pub fn pcsx_flat_term(mode: u8, f5: u8) -> f32 {
     })
 }
 
-/// The PCSX-Redux dithered term (8-bit units) for an 8-bit foreground `m8`
-/// at a pixel whose dither offset is `d` (`0..=7`, that emulator's table read
-/// as `7 - coeff`): the emulator sums `B8 = b5 << 3` with the foreground and
-/// rounds the sum's low bits up against the table (`applyDither`).
-pub fn pcsx_dithered_term(mode: u8, m8: u8, d: u8) -> f32 {
+/// The largest Gouraud foreground the PCSX-Redux software GPU blends: the
+/// 8-bit modulate `(t5 * c8) >> 4` at a full texel and a full packet colour,
+/// `(31 * 255) >> 4`. The emulator does not saturate the modulate before the
+/// blend (`getTextureTransColShadeXDither` adds or quarters the raw product
+/// and clamps only the sum), so a packet colour above `0x80` carries a
+/// foreground past `255` into the blend: a mode-3 layer at colour `246`
+/// over texel `28` adds `107`, not the `63` a saturated foreground would.
+pub const PCSX_MODULATE_MAX: u16 = (31 * 255) >> 4;
+
+/// The PCSX-Redux dithered term (8-bit units) for an 8-bit-scale foreground
+/// `m8` (`0..=`[`PCSX_MODULATE_MAX`], unsaturated) at a pixel whose dither
+/// offset is `d` (`0..=7`, that emulator's table read as `7 - coeff`): the
+/// emulator sums `B8 = b5 << 3` with the foreground and rounds the sum's low
+/// bits up against the table (`applyDither`).
+pub fn pcsx_dithered_term(mode: u8, m8: u16, d: u8) -> f32 {
     let (m, d) = (i32::from(m8), i32::from(d));
     let t = match mode & 3 {
         // (4 * b5 + (m >> 1) + d) >> 3 = (4 * b5 + 4 * ((m >> 1) + d) / 4) >> 3.
@@ -190,7 +200,7 @@ pub fn pcsx_dithered_term(mode: u8, m8: u8, d: u8) -> f32 {
 
 /// The PCSX-Redux dithered result on one channel: background `b5`, 8-bit
 /// foreground `m8`, dither offset `d`.
-pub fn pcsx_dithered5(mode: u8, b5: u8, m8: u8, d: u8) -> u8 {
+pub fn pcsx_dithered5(mode: u8, b5: u8, m8: u16, d: u8) -> u8 {
     let (b8, m, d) = (i32::from(b5) << 3, i32::from(m8), i32::from(d));
     let r = match mode & 3 {
         0 => (b8 >> 1) + (m >> 1),

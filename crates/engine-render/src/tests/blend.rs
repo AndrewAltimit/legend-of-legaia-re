@@ -743,7 +743,7 @@ fn psx_mode_blend_terms_land_the_pcsx_redux_result() {
                         "flat mode {mode} B={b8} F5={f5}"
                     );
                 }
-                for m8 in 0u8..=255 {
+                for m8 in 0u16..=psx_blend::PCSX_MODULATE_MAX {
                     for d in 0u8..8 {
                         let term = psx_blend::pcsx_dithered_term(mode, m8, d);
                         let out = psx_target_blend(mode, b8, term);
