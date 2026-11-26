@@ -9193,3 +9193,21 @@ phase = "battle"
 expected_game_mode = 0x15
 expected_active_scene = "jou"
 topics = ["battle", "arts", "Gala", "Heaven's Drop", "ribbon", "jou", "harvest"]
+
+[[scenarios]]
+label = "rugi_caruban_2_pre_fire_breath"
+backup_fingerprint = "9133842e5abad4eb24fd363454f634ded7575d1020f19378df290ecb0407bee3"
+description = "rugi battle, formation [0xAB] (one Caruban): the monster's turn at action state 0x0A, 7 vsyncs before its Fire Breath cast begins. RETAIL disc, pad only, no pokes: rugi_field_card_boot played forward by autorun_battle_harvest.lua with LEGAIA_TOUGH=2, LEGAIA_SAVE_PRE=1 and LEGAIA_FINISH=1; saved 3072 vsyncs in. A pre-cast seat for the Fire Breath focus and camera rows."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rugi"
+topics = ["battle", "monster cast", "Caruban", "Fire Breath", "pre-cast", "rugi", "harvest"]
+
+[[scenarios]]
+label = "rugi_caruban_3_pre_fire_breath"
+backup_fingerprint = "6aea0ea36667c7ae89dbb9e1e5b76fd172768c614a78173f0e5e667418ab5ad5"
+description = "rugi battle, formation [0xAC] (Caruban): the monster's turn at action state 0x0A just before its Fire Breath cast. RETAIL disc, pad only, no pokes: rugi_field_card_boot played forward by autorun_battle_harvest.lua with LEGAIA_TOUGH=2, LEGAIA_SAVE_PRE=1 and LEGAIA_SPIRIT_ROUNDS=12; saved 3072 vsyncs in. A second pre-cast seat for the Fire Breath rows."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rugi"
+topics = ["battle", "monster cast", "Caruban", "Fire Breath", "pre-cast", "rugi", "harvest"]
