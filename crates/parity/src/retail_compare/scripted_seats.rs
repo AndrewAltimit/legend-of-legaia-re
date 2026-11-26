@@ -90,6 +90,11 @@ pub struct BeatMoves {
     /// `0x38` CAM_CFG's `op0 & 0xF` and a `4C 51` seat's `depth & 0xF`, each
     /// an index into the SCUS `0x80073F04` table.
     pub turns: BTreeMap<u16, std::collections::BTreeSet<u16>>,
+    /// Every tile a beat walks a flat onto (`C7 <flat> xb zb mode`, the
+    /// walk-to-tile kernel's own tile decode): the walk turns its walker
+    /// along the leg, so a placement standing on the landing holds the
+    /// leg's heading.
+    pub landings: BTreeMap<u16, std::collections::BTreeSet<(i16, i16)>>,
 }
 
 /// The retail heading compass index `i` names in the SCUS `0x80073F04`
@@ -154,6 +159,16 @@ pub fn beat_move_targets(man: &[u8]) -> BeatMoves {
                         .push((move_to_world(*x_enc), move_to_world(*z_enc)));
                     if let Some(h) = compass_heading(depth & 0xF) {
                         out.turns.entry(flat).or_default().insert(h);
+                    }
+                }
+                InsnInfo::Yield {
+                    kind: legaia_scene_formats::field_disasm::YieldKind::Wide,
+                } if body.get(insn.pc) == Some(&0xC7) => {
+                    if let (Some(&xb), Some(&zb)) = (body.get(insn.pc + 2), body.get(insn.pc + 3)) {
+                        out.landings
+                            .entry(flat)
+                            .or_default()
+                            .insert((move_to_world(xb), move_to_world(zb)));
                     }
                 }
                 InsnInfo::CamCfg { op0, .. } => {
@@ -284,9 +299,14 @@ fn spawn_seats(
 const SPAWN_SETTLE_TICKS: usize = 16;
 
 /// The retail placements, standing on a seat, whose heading is a compass
-/// literal a beat turns them to ([`BeatMoves::turns`]), as heading seats:
-/// the seed stands the heading only where the engine already holds retail's
-/// position (`World::seed_placement_heading`).
+/// literal a beat turns them to ([`BeatMoves::turns`]), or who stand on a
+/// tile a beat walks them onto ([`BeatMoves::landings`]), as heading seats.
+/// `kor5` `P2[4]` walks flat `9` onto `(0x99, 0xA8)` with
+/// `C7 09 99 A8 32` and `P2[5]` re-seats him there with `A3 09 99 A8`, which
+/// moves it without a turn: `kor5_p2_5_pre_raise` holds the walk's heading
+/// `0x400`, where a seed that resumes `P2[5]` keeps its record's `0xC00`.
+/// The seed stands the heading only where the engine already holds
+/// retail's position (`World::seed_placement_heading`).
 pub fn scripted_heading_seats(beats: &BeatMoves, facings: &[ActorFacing]) -> Vec<WalkerSeed> {
     facings
         .iter()
@@ -296,6 +316,10 @@ pub fn scripted_heading_seats(beats: &BeatMoves, facings: &[ActorFacing]) -> Vec
                 .turns
                 .get(&a.flat)
                 .is_some_and(|t| t.contains(&((a.facing as u16) & 0x0FFF)))
+                || beats
+                    .landings
+                    .get(&a.flat)
+                    .is_some_and(|l| l.contains(&(a.x, a.z)))
         })
         .map(|a| WalkerSeed {
             flat: a.flat,
