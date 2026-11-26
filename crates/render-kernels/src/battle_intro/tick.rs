@@ -22,11 +22,36 @@ impl BattleIntro {
     /// the last call - from the entity's first frame on the first call, so a
     /// host that arms late catches up - and a call that finds the clock where
     /// it was re-emits the cached frame without stepping.
+    ///
+    /// The scatter style is the exception: its body holds the frame step at
+    /// [`SCATTER_FRAME_STEP`] (the floor store at `0x801CFE00`), so retail
+    /// draws it once every three clock units, integrating three units a
+    /// draw. It steps on the multiples of three the clock passes, at that
+    /// step, and the display shows each draw for three units, which is what
+    /// spaces a flying patch's trail as retail's is.
     pub fn advance_to(&mut self, elapsed: i16) -> IntroFrame {
         if let Some((last, frame)) = self.last_frame.as_ref()
             && *last == elapsed
         {
             return frame.clone();
+        }
+        if self.style == IntroStyle::ScatterParticles {
+            let step = i16::from(SCATTER_FRAME_STEP);
+            let target = elapsed.max(0) - elapsed.max(0) % step;
+            let mut e = match self.last_frame.as_ref() {
+                Some((last, frame)) if *last == target => return frame.clone(),
+                Some((last, _)) if *last < target => last + step,
+                // A clock that moved backwards: one draw at the new value.
+                Some(_) => target,
+                None => 0,
+            };
+            let mut frame = self.tick(e, SCATTER_FRAME_STEP);
+            while e < target {
+                e += step;
+                frame = self.tick(e, SCATTER_FRAME_STEP);
+            }
+            self.last_frame = Some((target, frame.clone()));
+            return frame;
         }
         let first = match self.last_frame.as_ref() {
             Some((last, _)) if *last < elapsed => last.wrapping_add(1),
@@ -96,8 +121,9 @@ impl BattleIntro {
                 // every step's wash.
                 if emit && style.stamp_field_16 {
                     out.prims.push(wash_prim(PARTICLE_WASH_RGB));
-                    self.pending_wash_5 =
-                        self.pending_wash_5.saturating_add(SCATTER_DISPLAY_DECAY_5);
+                    self.pending_wash_5 = self
+                        .pending_wash_5
+                        .saturating_add(SCATTER_DISPLAY_DECAY_5 * u16::from(frame_step));
                 }
                 // The model takes the wash as a decay, so it lands only the
                 // particles and the ring.

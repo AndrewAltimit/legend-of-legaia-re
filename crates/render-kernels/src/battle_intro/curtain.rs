@@ -50,6 +50,13 @@ pub const CURTAIN_DISPLAY_DECAY_5: u16 = 1;
 /// black in about half a second.
 pub const SCATTER_DISPLAY_DECAY_5: u16 = (super::PARTICLE_WASH_RGB as u16 & 0xFF) >> 4;
 
+/// The frame step the scatter style holds while it runs: its per-frame body
+/// stores `3` into the frame-step floor `DAT_8007B9D8` (`0x801CFE00`), and a
+/// PCSX-Redux film of formation `[136]` reads step `3` through the style.
+/// [`BattleIntro::advance_to`] draws the style once every this many clock
+/// units, at this step.
+pub const SCATTER_FRAME_STEP: u8 = 3;
+
 /// Where the port keeps its CPU model of the transition's display buffer in
 /// the cloned VRAM page, so the trail can be drawn as textured quads. Retail
 /// needs no such rect - on the console the display buffer *is* VRAM and the

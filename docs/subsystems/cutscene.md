@@ -2906,6 +2906,24 @@ through the style and the display changing every third vsync. A vacated pixel re
 25, 25, 19, 19` on consecutive frames: six levels a buffer every two frames, which is what fixed
 the model's rate at one level a unit rather than two. Grade `capture`.
 
+The port draws the style on retail's cadence and blend. `BattleIntro::advance_to` steps it on
+the multiples of three its clock passes, at step `3` (`SCATTER_FRAME_STEP`), so the display
+model lands a frame's patches once every three units as retail's buffers do; stepped once a
+unit, every patch smeared a continuous trail. The capture lands with the mask bit clear for this
+style: a moved patch is a semi-transparent packet, and two pixels in three of the display at the
+field exit carry no mask bit, so retail draws them opaquely. With the bit set, every moved patch
+added itself over the model's copy of its cell and the frame washed out to yellow.
+
+The engine side of the film is the retail-compare child for `retona_field_card_boot` run with
+`--battle 11` (the row the harvester's `LEGAIA_WANT=136` rolled), `--screenshot-every 1` and
+`LEGAIA_BATTLE_ARM_TICK=120`, so the fight is armed out of a field the window has drawn. Scored
+frame by frame on the retail-compare block metric, the film reads `.565` at its best pairing, the
+engine twelve vsyncs ahead. Six of them are retail's mode `8`, which runs before the transition
+mode starts and which the engine's transition does not model; the rest are unaccounted. The rest of the gap is one draw the port
+lacks: from about the twenty-fifth vsync retail grows a white starburst with a blue core at the
+player's screen position until it fills the frame, and the engine's frames there are black.
+Which routine draws it is open; none of the style bodies `FUN_801CF5BC` calls emits it.
+
 #### The fade's second argument is a blend mode, not a depth
 
 `func_0x80024EE4(layer, blend, rgb)` pushes a five-word untextured quad over the whole display
