@@ -2079,10 +2079,14 @@ the bag and its own spell list give it:
   HP is: Koru's 20000 is ten times a 1891-HP Gala but not a 2080-HP one in
   a Life Ring, and a party that measured the race by HP alone typed short
   strings into it and lost six times.
-- **Spells once the bag is dry.** Under three fifths of its HP with no
-  restorative left, it casts the healing spell it knows that restores the
-  most and that it can pay for (Spoon, 270 HP for 45 MP, for all three
-  duellists), and drinks the bag's largest MP item when it cannot pay.
+- **Spells before the bag.** Under three fifths of its HP it casts the
+  healing spell it knows that restores the most and that it can pay for
+  (Spoon, 270 HP for 45 MP, for all three duellists), and opens the bag once
+  the MP runs short; with the bag dry too, it drinks the bag's largest MP
+  item. Healed from the bag first, a Vahn at 262 MP ate Healing Shrooms
+  (200) with his Spoons unspent until Gi's Spirit combos outran them: from
+  six of the runs' own `nivora` saves on eight dealt streams each, the duels
+  took thirteen attempts past the first that way and one healed spell first.
 
 The spell heal is not only a duel's. In a party fight that forbids running,
 a caster with an affordable group heal casts it (Spoon restores ~1150 on
