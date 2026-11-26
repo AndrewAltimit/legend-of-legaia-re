@@ -1040,6 +1040,15 @@
           this._coinNumber(g, this.choice ? this.choice.pot : 0, 172, 218);
         }
       }
+
+      /* The exit state's fade to black (FUN_80024EE4(0, 2, ..), layer 0 in
+       * front of everything): the cabinet's exit clock times six, held to
+       * 0xFF (engine: CabinetFrame::exit_fade). Black at the same strength
+       * stands in for the subtractive quad, as for the all-clear fade. */
+      if (meta && meta.exitFade != null) {
+        g.fillStyle = `rgba(0,0,0,${meta.exitFade / 255})`;
+        g.fillRect(0, 0, HUD_W, HUD_H);
+      }
     }
 
     /* The retail between-match tally screen: letterboxed black bands top

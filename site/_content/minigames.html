@@ -1775,7 +1775,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         bakaView.frame(st.live ? st : null,
           Object.assign({}, bakaMeta, {
             chrome, cells: cab.cells || [], hud: cab.draws_hud !== false, potDigits: cab.pot_digits || [],
-            pause: cab.pause || null, clearFade: cab.clear_fade,
+            pause: cab.pause || null, clearFade: cab.clear_fade, exitFade: cab.exit_fade,
           }));
       }
     }
