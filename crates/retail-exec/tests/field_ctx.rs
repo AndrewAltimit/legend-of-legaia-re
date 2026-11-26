@@ -1184,8 +1184,11 @@ fn every_instruction_under_seeded_state_steps_as_retail_steps() {
             }
             for (name, off, width) in FIELDS {
                 let (r, p) = (rd(&mut cpu, off, width), port_field(&ctx, name));
-                // A field the port leaves to its host is `field_ctx`'s count.
-                if r != p && port_field(&seeded, name) != p {
+                // A field the port leaves to its host is `field_ctx`'s count;
+                // `4C 37` with a player to copy from leaves none (its height
+                // law store `+0x8E` included, `0x801E1018..0x801E1044`).
+                let copied = label == "4C 37" && host.player.is_some();
+                if r != p && (copied || port_field(&seeded, name) != p) {
                     wrong.push(format!("{name} retail {r:#x} port {p:#x}"));
                 }
             }
