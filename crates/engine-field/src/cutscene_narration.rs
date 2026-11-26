@@ -337,11 +337,10 @@ impl CutsceneNarration {
         out
     }
 
-    /// The lines on screen, top first, each with its PSX-space Y. Only lines
-    /// whose whole 16-pixel row lies inside [`Self::clip_window`] are
-    /// returned, because neither host scissors the text: retail's window
-    /// shows the rows at its two edges partially, which a host with a scissor
-    /// can reproduce from [`Self::all_lines`].
+    /// The lines whose whole 16-pixel row lies inside [`Self::clip_window`],
+    /// top first, each with its PSX-space Y. Retail's window shows the rows
+    /// at its two edges partially: the hosts draw [`Self::all_lines`] cut to
+    /// the window (`engine-screens::field_screens::cutscene_narration_stage_draws`).
     pub fn visible_lines(&self) -> Vec<NarrationLine<'_>> {
         let (top, bottom) = self.clip_window();
         self.slot_lines()

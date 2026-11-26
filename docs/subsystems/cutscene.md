@@ -1359,8 +1359,11 @@ line of `vozz_ozma_hatching_crawl` stood one pixel right of retail's; placed thi
 columns coincide and the state's image reads `.942` to `.953`. Grade `disassembly` + `capture`.
 
 **Port.** [`CutsceneNarration`](../../crates/engine-field/src/cutscene_narration.rs); its
-`RollerSeed` is read off the seed op before each block. Neither host scissors the text, so
-`visible_lines` returns only the rows wholly inside the clip window. The roller counts display
+`RollerSeed` is read off the seed op before each block. Both hosts draw the crawl through
+`engine-screens::field_screens::cutscene_narration_stage_draws`, which cuts every glyph quad to
+the clip window's rows, so a line entering at the foot or leaving at the head shows the part
+inside, as retail's `DR_AREA` pair leaves it. It draws in the dialogue white (`(206, 206, 206)`,
+ink 7), the colour a retail film of `opdeene`'s first crawl reads off every glyph. The roller counts display
 vsyncs: `World::tick` is one retail vsync and hands it `display_frame_step`, and the roller
 runs one pass of the handler per `frame_step` vsyncs (the cadence it was opened at), adding that
 step to its accumulator the way retail adds `DAT_1F800393`. Disc-gated
