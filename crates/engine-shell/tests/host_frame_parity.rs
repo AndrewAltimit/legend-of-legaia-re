@@ -646,8 +646,10 @@ fn prologue_skip_and_naming_frames_match_across_hosts() {
 /// of every 120 ticks: the grid's hand steps once on the press and then on
 /// the window kernel's auto-repeat (`0x14` vsyncs, then every three).
 fn naming_hold_pad(t: u32, f: &HostTraceFrame) -> u16 {
+    // The opening reaches the name entry through the intro skip, a held
+    // Select ([`prologue_skip_pad`]); Cross alone stays in the chain.
     if f.naming.is_none() {
-        return confirm_pad(t, f);
+        return prologue_skip_pad(t, f);
     }
     if (10..90).contains(&(t % 120)) {
         RIGHT
