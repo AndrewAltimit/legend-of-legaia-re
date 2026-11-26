@@ -789,8 +789,8 @@ impl World {
     }
 
     /// A record's `A2 F8 <id>` poke that binds a **party-bank** clip on the
-    /// player: retail binds it at the op with the cursor at `0` and draws
-    /// that frame (a PCSX-Redux film of the town01 opening: the hand-down's
+    /// player. Over a scene clip retail binds it at the op with the cursor at
+    /// `0` and draws that frame (a PCSX-Redux film of the town01 opening: the hand-down's
     /// end pokes the idle base, and the same frame reads `+0x5E = 2`,
     /// `+0x68 = 0`); the player's own tick steps it from the next frame.
     /// Without the seat the clip waited for the next frame's settle and drew
@@ -813,11 +813,19 @@ impl World {
         else {
             return;
         };
-        // Only over a scene clip: a bank pick the settle already made this
-        // frame (a script walk landing on the idle base) has bound and
-        // stepped in the player's own tick, as the same film's `1500` reads
-        // (`+0x68 = 8` on the frame the idle base lands).
-        if anim.playing_clip().0 != "scene" {
+        // Over a bank clip the pick binds and steps on the poke frame: the
+        // same film's `1500` reads `+0x68 = 8` on the frame a landed walk's
+        // idle base binds, and `kor5`'s walk film the same on its `P2[5]`
+        // walk's end. Only a pick that changes the slot.
+        let (source, id, _, _) = anim.playing_clip();
+        if source != "scene" {
+            if source == "bank" && id == bank_slot {
+                return;
+            }
+            let grid = self.clock.script_frame_delta();
+            if grid > 0 {
+                self.tick_field_player_anim_scaled(grid);
+            }
             return;
         }
         let Some(actor) = self.actors.get_mut(usize::from(slot)) else {
