@@ -1412,6 +1412,11 @@ pub struct BattleState {
     /// The packets [`Self::flight_ribbons`]' calls built, as
     /// [`Self::cast_ribbon_quads`] is for a module arm's ring.
     pub flight_ribbon_quads: Option<Vec<Vec<legaia_render_kernels::afterimage::AfterimageQuad>>>,
+    /// The packets this pass's move-FX streak emitter built
+    /// (`FUN_801E09F8` phase 1: one afterimage, or four chained ribbons, on
+    /// the game's stream), dealt by `World::deal_move_fx_streak` and drawn as
+    /// built. `None` on a pass the emitter did not run.
+    pub move_fx_streak_quads: Option<Vec<legaia_render_kernels::afterimage::AfterimageQuad>>,
     /// The part-emit accumulator `ctx[+0x328]`: the frame driver keeps its
     /// low nibble and adds `DAT_1F800393 << 3` every battle frame
     /// (`FUN_80046A20`, `0x8004713C..0x80047160`), and every body the anim
@@ -1962,6 +1967,7 @@ impl BattleState {
             flight_ribbons: None,
             flight_ribbon_seeds: None,
             flight_ribbon_quads: None,
+            move_fx_streak_quads: None,
             burn_emit_accum: 0,
             ambient_stored: legaia_engine_battle_vm::battle_ground_grid::GRID_FAR_BASE_NEUTRAL,
             backdrop_cue: 0,

@@ -441,9 +441,7 @@ pub fn move_fx_streak_prims(
     by_link: bool,
 ) -> Vec<ScreenPrim> {
     use legaia_render_kernels::screen_prim::CornerDepth;
-    use legaia_render_kernels::streak_pass::{
-        AFTERIMAGE_COUNTER_MIN, StreakSource, clip_ribbon_quads, streak_quads_scheduled,
-    };
+    use legaia_render_kernels::streak_pass::clip_ribbon_quads;
     let anchor = |p: [f32; 3]| {
         let clip = *mvp * glam::Vec4::new(p[0], p[1], p[2], 1.0);
         (by_link && clip.w > 1e-4).then(|| CornerDepth::new([clip.z / clip.w; 4]))
@@ -460,27 +458,20 @@ pub fn move_fx_streak_prims(
             prim
         }));
     };
-    if let Some(trail) = world.active_move_fx_trail_texpage() {
-        let block = world.move_fx_streak();
-        if let Some(src) = StreakSource::from_block(block.launch, block.half_width(), Some(trail)) {
-            let party = world
-                .battle_seat_map()
-                .is_party(world.battle_ctx.active_actor);
-            // The single afterimage projects the launch point pushed down
-            // `+0x120`; the ribbon anchors on the point itself
-            // (`streak_pass::project_streak_corners_mvp` /
-            // `project_ribbon_corners_mvp`).
-            let lift = if party && block.counter_word >= AFTERIMAGE_COUNTER_MIN {
-                f32::from(legaia_render_kernels::afterimage::SCREEN_Y_OFFSET)
-            } else {
-                0.0
-            };
-            let depth = anchor([src.launch[0], src.launch[1] + lift, src.launch[2]]);
-            push(
-                streak_quads_scheduled(&src, mvp, frame, block.counter_word, party),
-                depth,
-            );
-        }
+    // The pass's streak emitter built its packets on the game's stream
+    // (`World::deal_move_fx_streak`, `BattleState::move_fx_streak_quads`):
+    // drawn as built, at the launch point's depth (lifted `+0x120` for the
+    // single afterimage, which is the only one-packet case).
+    if let Some(quads) = world.battle.move_fx_streak_quads.as_ref()
+        && let Some(launch) = world.move_fx_streak().launch
+    {
+        let lift = if quads.len() == 1 {
+            f32::from(legaia_render_kernels::afterimage::SCREEN_Y_OFFSET)
+        } else {
+            0.0
+        };
+        let at = [launch.0 as f32, launch.1 as f32 + lift, launch.2 as f32];
+        push(quads.clone(), anchor(at));
     }
     if let Some(c) = world.battle.clip_ribbon {
         let seat = c.seat.map(f32::from);
@@ -496,41 +487,21 @@ pub fn move_fx_streak_prims(
 /// stage quads through `mvp` (the host's battle model-view-projection at the
 /// stage's 4:3).
 ///
-/// The streak is the pass retail runs once per move-FX frame
-/// (`FUN_801E09F8`'s schedule over the ported `FUN_801E1AB0` packet): the
-/// launch point the action effect script's terminator staged, fanned out at
-/// the staged half-width. It is gated on the move-FX scene being live - the
-/// trail texpage is scene-scoped, so the streak lasts exactly as long as the
-/// effect it trails. The clip-tag ribbon (`FUN_8004CE2C` tag `0x67` ->
+/// The streak is the packets the pass's emitter built
+/// (`BattleState::move_fx_streak_quads`, dealt by `World::deal_move_fx_streak`
+/// on `FUN_801E09F8`'s gates: slot `0` in phase `1`, the counter running and
+/// the record's `+0x0E` list byte `0xFF`), drawn as built. The clip-tag ribbon (`FUN_8004CE2C` tag `0x67` ->
 /// `FUN_801E1D98(&target[+0x3C], 0xC)`) rides a physical art's clip instead
 /// and draws with or without a move-FX scene. Both clock on the world's
 /// display-frame counter.
 pub fn move_fx_streak_quads(world: &World, mvp: &glam::Mat4) -> Vec<AfterimageQuad> {
-    use legaia_render_kernels::streak_pass::{
-        StreakSource, clip_ribbon_quads, streak_quads_scheduled,
-    };
+    use legaia_render_kernels::streak_pass::clip_ribbon_quads;
     let frame = world.clock.display_frames as u32;
-    let mut out = Vec::new();
-    if let Some(trail) = world.active_move_fx_trail_texpage() {
-        let block = world.move_fx_streak();
-        if let Some(src) = StreakSource::from_block(block.launch, block.half_width(), Some(trail)) {
-            // The schedule keys on the counter word and the acting side:
-            // party = afterimage shrinking toward the ribbon, monster =
-            // ribbon throughout. `ctx[+0x13] < 3` is a pool-slot test
-            // (`0x801E0C78`): a small party's first monster sits below
-            // engine slot `3`.
-            let party = world
-                .battle_seat_map()
-                .is_party(world.battle_ctx.active_actor);
-            out.extend(streak_quads_scheduled(
-                &src,
-                mvp,
-                frame,
-                block.counter_word,
-                party,
-            ));
-        }
-    }
+    let mut out = world
+        .battle
+        .move_fx_streak_quads
+        .clone()
+        .unwrap_or_default();
     if let Some(c) = world.battle.clip_ribbon {
         out.extend(clip_ribbon_quads(
             c.seat.map(f32::from),

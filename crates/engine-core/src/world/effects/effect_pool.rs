@@ -390,6 +390,59 @@ impl World {
         self.battle.flight_ribbon_quads = Some(quads);
     }
 
+    /// The move-FX streak emitter of `FUN_801E09F8`'s phase-1 arm, run where
+    /// the pass's counter walk runs and dealt on the game's stream: with slot
+    /// `0`'s phase byte `ctx[+0x24E]` at `1` and the counter non-zero before
+    /// the walk (`bne v1,v0,0x801E0F78` / `beq v0,zero,0x801E0CF8` at
+    /// `0x801E0C04..0x801E0C14`), and only for a record whose `+0x0E` list
+    /// byte is `0xFF` (`lbu v1,0xe(v0)` / `bne v1,0xff` at
+    /// `0x801E0C54..0x801E0C5C`), the loop of four calls the afterimage or
+    /// the ribbon ([`legaia_render_kernels::streak_pass::streak_pass_dealt`]).
+    /// Every other record draws no streak at all. The packets land on
+    /// `BattleState::move_fx_streak_quads`; the hosts draw them as built.
+    ///
+    /// The draws were missing from the stream before, and the hosts drew one
+    /// ribbon on a private generator, on every move whose effect scene
+    /// staged, whatever its list byte.
+    ///
+    /// PORT: FUN_801E09F8 (`0x801E0BF4..0x801E0CF0`, the phase-1 emitter loop and its gates)
+    pub(in crate::world) fn deal_move_fx_streak(&mut self, counter_before: u16) {
+        self.battle.move_fx_streak_quads = None;
+        let streak = self.casting.move_fx_streak;
+        if streak.phase != 1 || counter_before == 0 {
+            return;
+        }
+        let (Some(launch), Some(idx)) = (streak.launch, streak.move_id) else {
+            return;
+        };
+        let Some((list, trail)) = self.tables.move_power.as_ref().and_then(|cat| {
+            cat.record_at_index(usize::from(idx))
+                .map(|r| (r.raw[0x0E], r.raw[0x0B]))
+        }) else {
+            return;
+        };
+        if list != 0xFF {
+            return;
+        }
+        let party = self
+            .battle_seat_map()
+            .is_party(self.battle_ctx.active_actor);
+        let clamp = |v: i32| v.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
+        let point = [clamp(launch.0), clamp(launch.1), clamp(launch.2)];
+        let view =
+            legaia_render_kernels::gte::FieldGteView::from_battle_pose(&self.battle_cam_pose());
+        let (quads, state) = legaia_render_kernels::streak_pass::streak_pass_dealt(
+            &view,
+            point,
+            streak.counter_word,
+            party,
+            trail,
+            self.rng_state,
+        );
+        self.rng_state = state;
+        self.battle.move_fx_streak_quads = Some(quads);
+    }
+
     /// Each ribbon's start word and the packets the call built, the stream
     /// stepped past its draws.
     fn deal_ribbon_rands(

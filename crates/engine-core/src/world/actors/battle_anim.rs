@@ -1106,6 +1106,7 @@ impl World {
             if vsyncs > 0 {
                 let streak_before = self.casting.move_fx_streak.counter_word;
                 self.casting.move_fx_streak.tick_counter_by(vsyncs);
+                self.deal_move_fx_streak(streak_before);
                 self.tick_homing_slots_pass(vsyncs, streak_before);
             }
             return;
@@ -1115,7 +1116,9 @@ impl World {
             // 1): `ctx[+0x6C6]` falls 4 per frame, shrinking the trail's
             // half-width and scheduling the afterimage -> ribbon emitter
             // handoff.
+            let streak_before = self.casting.move_fx_streak.counter_word;
             self.casting.move_fx_streak.tick_counter();
+            self.deal_move_fx_streak(streak_before);
             self.tick_homing_slots();
         }
     }
