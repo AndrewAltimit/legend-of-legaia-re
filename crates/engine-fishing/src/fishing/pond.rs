@@ -1129,7 +1129,12 @@ impl PondSession {
 
     /// Back to the cast loop (state `10`): the working set of the cast goes,
     /// and the hosts hear [`PondEvent::Recast`].
+    ///
+    /// The shore arm also releases the reel's whirr, whatever the voice
+    /// word says (`FUN_800653C8(0x13)` at `0x801CF830`), so a reel still
+    /// sounding when the cast is given up stops with it.
     fn return_to_shore(&mut self) {
+        self.reel_voice.push(false);
         self.fight_species = None;
         self.line_record = 0;
         self.depth = 0;
