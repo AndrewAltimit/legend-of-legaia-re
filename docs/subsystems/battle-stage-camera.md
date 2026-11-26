@@ -2829,7 +2829,15 @@ SpecialStarter by the `sltiu 0x1B` branch to `0x8004BC4C`). The reader and its c
 `FUN_8002A9CC` run `512` instructions a decoded part-frame: run in the retail interpreter
 over every `readef.DAT` entry, each sits within `4%` of that (`retail-exec`'s
 `the_archive_reader_costs_its_part_frames`), so a `13`-frame Gala art costs about `93`
-hblanks at PCSX-Redux's two cycles an instruction and a `28`-frame Vahn art `200`. A
+hblanks at PCSX-Redux's two cycles an instruction and a `28`-frame Vahn art `200`. Entry
+by entry the count follows the codec's selector arms: a literal value costs about `75`
+instructions, a delta `82` or `95`, a lone nibble `96` or `97`, so the per-part-frame
+figure spreads `495` to `520` with each stream's mix, and a fit on the arms
+(`me_archive::reader_steps`) reads every compressed entry within `0.1%`
+(`the_archive_reader_costs_its_selector_arms`). The port prices a commit on its own
+entry's count, and on the law only for a clip that did not come from a compressed entry.
+Gala's two chain arts run `520` and `508` an instruction a part-frame, `94` and `92`
+hblanks. A
 `--cd-trace` recording of Dragon Fangs puts the first art's commit pass inside the reader
 for its first `100` hblanks, ahead of the shout's `CdlSetloc`; the SpecialStarter's voice is
 dispatched from the banner block before the decode, which is why Frost Breath's seek lands
@@ -2851,8 +2859,10 @@ motion and `120` behind through `0x1F` / `0x20`. With the term the camera reads 
 through the strike states' ends. Over the arts films the mean goes `.9478` to `.9517`:
 Tri-Somersault `.752` to `.817`, Super Ironhead `.900` to `.964`, Vahn's Chain `.900` to
 `.956` (late) and `.926` to `.971` (open). Three films fall on a knife edge of the census
-base. Gala's Chain (`.99` to `.93`, both films): its art pass prices `722` where retail's
-reads `717`, the census `4` over retail's base, which tips the pass to step `4`. Dragon
+base. Gala's Chain (`.99` to `.93`, both films): its art pass prices `723` where retail's
+reads `717`, the census about `6` over retail's base on the art's own entry count, which
+tips the pass to step `4`; the same edge takes the retail-compare still
+`battle_jou_gala_finisher_hold_retail` from `.994` to `.657`. Dragon
 Fangs (`.896` to `.868`): Noa's two-ghost frames price `724` to `734` where retail's read
 `685` to `707`, step `4` against retail's `3` with or without the term, and the term moves
 which frames those are. Tornado Flame `.924` to `.917`.

@@ -663,13 +663,25 @@ pub const fn floor_clip_walk_work(prims: u32) -> u16 {
 /// `98k`, Noa's `60`-frame `481k`).
 pub const ME_DECODE_STEPS_PER_PART_FRAME: u32 = 512;
 
-/// The hblanks a bank commit's `"ME"` decode adds to its pass on PCSX-Redux
-/// (two cycles an instruction, `2152` cycles an hblank): `parts * frames`
-/// part-frames at [`ME_DECODE_STEPS_PER_PART_FRAME`]. A `--cd-trace`
+/// The hblanks a bank commit's `"ME"` decode of `steps` instructions
+/// (`legaia_actor_formats::me_archive::reader_steps`) adds to its pass on
+/// PCSX-Redux (two cycles an instruction, `2152` cycles an hblank). A `--cd-trace`
 /// recording of Dragon Fangs (`jou_noa_dragon_fangs_super_open`) puts the
 /// first art's commit pass inside the reader for its first `100` hblanks,
 /// ahead of the shout's `CdlSetloc`, and the arts films' art-commit passes
 /// read `60..120` hblanks over their census.
+pub const fn me_decode_steps_work(steps: u32) -> u16 {
+    let c = (steps as u64 * 2 + 1076) / 2152;
+    if c > u16::MAX as u64 {
+        u16::MAX
+    } else {
+        c as u16
+    }
+}
+
+/// [`me_decode_steps_work`] on the per-part-frame law
+/// ([`ME_DECODE_STEPS_PER_PART_FRAME`]), for a clip whose entry's own count
+/// is not known.
 pub const fn me_decode_work(parts: u32, frames: u32) -> u16 {
     let c =
         (parts as u64 * frames as u64 * ME_DECODE_STEPS_PER_PART_FRAME as u64 * 2 + 1076) / 2152;

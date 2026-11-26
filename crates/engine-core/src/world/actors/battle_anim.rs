@@ -1620,10 +1620,15 @@ impl World {
                 n => u32::from(n),
             };
             if self.toggles.battle_me_decode_cost {
-                let w = legaia_engine_battle_loop::frame_clock::me_decode_work(
-                    parts,
-                    c.frame_count as u32,
-                );
+                // The reader's own count on the entry the clip was read
+                // from, else the per-part-frame law.
+                let w = match c.variant_track.stream_decode_steps {
+                    0 => legaia_engine_battle_loop::frame_clock::me_decode_work(
+                        parts,
+                        c.frame_count as u32,
+                    ),
+                    steps => legaia_engine_battle_loop::frame_clock::me_decode_steps_work(steps),
+                };
                 self.battle.me_decode_work = self.battle.me_decode_work.saturating_add(w);
             }
             // The derived pricing's own term, at the reader's measured

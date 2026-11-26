@@ -274,6 +274,9 @@ pub fn art_animation(
     // actor's committed record.
     anim.impact_class = record.impact_class;
     anim.variant_track.windows = record.variant_windows;
+    anim.variant_track.stream_decode_steps = archive
+        .entry_reader_steps(record.stream_source as usize)
+        .unwrap_or(0);
     Ok(anim)
 }
 
