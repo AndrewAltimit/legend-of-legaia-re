@@ -132,7 +132,11 @@ cuts short; the font is the dialog font of the first extracted tree at or
 above a path the viewer was given, or `extracted/` in the working directory.
 With no font found the title carries the key list instead. While a number is
 typed the title shows it; an out-of-range number says the valid range there.
-`Esc` cancels a typed number, and otherwise quits.
+`Esc` cancels a typed number, and otherwise quits. An entry with nothing to
+draw (a table, a script, a sound bank) is not left as an empty window: the
+window names it, says whether a sound is playing or nothing can be shown, and
+names the keys onward, with a number being typed under them
+(`blank_note_lines`).
 
 A `scene_tmd_stream` entry is previewed the way retail *places* it rather than
 drawn raw: object 1 dropped, and a second copy under the stage's transform

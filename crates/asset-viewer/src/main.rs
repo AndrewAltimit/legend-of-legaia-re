@@ -938,6 +938,7 @@ fn run(cmd: Cmd) -> Result<()> {
         ),
         font_atlas: None,
         help: true,
+        sound_only: false,
     };
     event_loop.run_app(&mut app).context("run event loop")?;
     match app.fatal {

@@ -60,6 +60,8 @@ pub(crate) struct App {
     /// The key help over the window: shown at start, closed by any key,
     /// reopened by `H` / `F1`.
     pub(crate) help: bool,
+    /// The current display plays a sound and draws nothing (a VAB sample).
+    pub(crate) sound_only: bool,
 }
 
 /// The dialog font of the first extracted tree found at or above `candidates`
@@ -87,6 +89,44 @@ fn help_lines(title: &str, browsing: bool) -> Vec<(String, bool)> {
     out.push(("H or F1: this help    Esc: quit".to_string(), false));
     out.push((String::new(), false));
     out.push(("Any key closes this help.".to_string(), false));
+    out
+}
+
+/// The lines over an entry that has nothing to draw: its name, what the
+/// window is doing instead (a sound playing, or nothing this viewer can show),
+/// the keys onward, and the go-to prompt while a number is typed. Without
+/// them such an entry is an empty window, and the name and the typed number
+/// live only in a title bar that fullscreen, a tiling desktop or a small
+/// window hides.
+fn blank_note_lines(
+    title: &str,
+    sound_only: bool,
+    browsing: bool,
+    prompt: Option<String>,
+) -> Vec<(String, bool)> {
+    let mut out = vec![(title.to_string(), true), (String::new(), false)];
+    out.push((
+        if sound_only {
+            "Sound only: playing the bank's first sample."
+        } else {
+            "Nothing in this entry this viewer can draw or play."
+        }
+        .to_string(),
+        false,
+    ));
+    out.push((
+        if browsing {
+            "N / P: next and previous    H: keys"
+        } else {
+            "H: keys    Esc: quit"
+        }
+        .to_string(),
+        false,
+    ));
+    if let Some(p) = prompt {
+        out.push((String::new(), false));
+        out.push((p, true));
+    }
     out
 }
 
@@ -182,8 +222,41 @@ impl App {
         }
     }
 
-    /// The help overlay's draws, scaled to stay legible on a large window.
+    /// The title without its own pointer to the help (the overlays name
+    /// the keys themselves).
+    fn bare_title(&self) -> &str {
+        self.base_title
+            .strip_suffix(self.keys_hint())
+            .map(|t| t.trim_end_matches([' ', '-']))
+            .unwrap_or(&self.base_title)
+    }
+
+    /// The help overlay's draws.
     fn help_draws(&self, surface: (u32, u32)) -> Vec<TextDraw> {
+        let lines = help_lines(self.bare_title(), self.browse_len().is_some());
+        self.text_draws(&lines, surface)
+    }
+
+    /// The note drawn over an entry with nothing to draw
+    /// ([`blank_note_lines`]).
+    fn blank_note_draws(&self, surface: (u32, u32)) -> Vec<TextDraw> {
+        let what = if self.browser.is_some() {
+            "PROT entry"
+        } else {
+            "item"
+        };
+        let lines = blank_note_lines(
+            self.bare_title(),
+            self.sound_only,
+            self.browse_len().is_some(),
+            self.goto.prompt(what),
+        );
+        self.text_draws(&lines, surface)
+    }
+
+    /// `lines` (text, strong) in the dialog font, wrapped to the window and
+    /// scaled to stay legible on a large one.
+    fn text_draws(&self, lines: &[(String, bool)], surface: (u32, u32)) -> Vec<TextDraw> {
         let Some(font) = &self.font else {
             return Vec::new();
         };
@@ -191,19 +264,13 @@ impl App {
         let max_chars = ((surface.0 as i32 / scale - 32) / 7).max(20) as usize;
         let mut out = Vec::new();
         let mut y = 16;
-        // The title's own pointer to this help is left off its first line.
-        let title = self
-            .base_title
-            .strip_suffix(self.keys_hint())
-            .map(|t| t.trim_end_matches([' ', '-']))
-            .unwrap_or(&self.base_title);
-        for (line, strong) in help_lines(title, self.browse_len().is_some()) {
-            let color = if strong {
+        for (line, strong) in lines {
+            let color = if *strong {
                 [1.0, 0.92, 0.55, 1.0]
             } else {
                 [0.88, 0.9, 0.95, 1.0]
             };
-            for part in wrap(&line, max_chars) {
+            for part in wrap(line, max_chars) {
                 for mut d in text_draws_for(&font.layout_ascii(&part), (16, y), color) {
                     d.dst = (
                         d.dst.0 * scale,
@@ -238,6 +305,7 @@ impl App {
 
     fn apply(&mut self, display: Display) {
         self.base_title = display.title.clone();
+        self.sound_only = display.audio.is_some();
         self.refresh_title();
         if let Some(r) = &self.renderer {
             self.texture = match display.image {
@@ -727,7 +795,23 @@ impl ApplicationHandler for App {
                     } else {
                         RenderTarget::Clear
                     };
-                    if let Err(e) = r.render(target) {
+                    // Nothing to draw: say so, rather than leave the window
+                    // empty.
+                    let note = match (&target, self.font_atlas.as_ref()) {
+                        (RenderTarget::Clear, Some(atlas)) => {
+                            Some((atlas, self.blank_note_draws(r.surface_size())))
+                        }
+                        _ => None,
+                    };
+                    let result = match &note {
+                        Some((atlas, draws)) => r.render(RenderTarget::TextOnly(&TextOverlay {
+                            atlas,
+                            draws,
+                            blend: &[],
+                        })),
+                        None => r.render(target),
+                    };
+                    if let Err(e) = result {
                         log::error!("render error: {e:#}");
                     }
                 }
@@ -756,4 +840,28 @@ fn digit_of(code: KeyCode) -> Option<u8> {
         Digit9 | Numpad9 => 9,
         _ => return None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An entry with nothing to draw names itself, says why the window is
+    /// empty, names the keys onward and echoes a number being typed.
+    #[test]
+    fn a_blank_entry_says_what_it_is_and_how_to_move_on() {
+        let lines = blank_note_lines("0004_town01", false, true, None);
+        assert_eq!(lines[0], ("0004_town01".to_string(), true));
+        assert!(
+            lines
+                .iter()
+                .any(|(l, _)| l.starts_with("Nothing in this entry"))
+        );
+        assert!(lines.iter().any(|(l, _)| l.starts_with("N / P")));
+        let sound = blank_note_lines("0012_vab", true, true, Some("Go to 7_".into()));
+        assert!(sound.iter().any(|(l, _)| l.starts_with("Sound only")));
+        assert_eq!(sound.last(), Some(&("Go to 7_".to_string(), true)));
+        let single = blank_note_lines("x.tim", false, false, None);
+        assert!(single.iter().any(|(l, _)| l.contains("Esc: quit")));
+    }
 }
