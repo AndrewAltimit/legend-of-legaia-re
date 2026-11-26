@@ -912,7 +912,13 @@ scene-change packet name, entry words `0x80073EF4` / `0x80073EF8` and arrival fa
 against the scene host's own conversion, which found the entry operand the scene host arms before
 the destination's initialiser taking the whole entry byte as the tile: on the 25 shipped scene
 changes whose entry byte asks for the far half of the tile (bit 7), the operand stood `0x3FC0` off
-the map until the player's re-seat after the initialiser.
+the map until the player's re-seat after the initialiser. The real World's op `0x23`
+(`a_tile_warp_lands_on_the_context_it_names`), with the player pointer and the per-scene MAN flag
+dealt, found its floor gate unported and the player context taking the NPC arm's tile bytes: a
+seated context kept its old `+0x16` where retail re-floors it, and the player's `+0x8C` / `+0x8D`
+moved where retail leaves them. The first does not show on screen, since the actor driver's height
+arm re-floors every placement every tick (`field_npc_height`); the second only reaches a script op
+that reads the player context's `+0x8C` / `+0x8D` after a `0x23`.
 The seat `4C 51` is the op the port hands its host whole, so a second pass steps it on the real `World`, as a live
 placement channel's op, and compares the tile on the context and on the drawn seat, the party-bank bit, `+0x62`,
 `+0x5C` and the stored heading. Every seat matched but the hide box: the host returned early on tile `(127, 127)`, a

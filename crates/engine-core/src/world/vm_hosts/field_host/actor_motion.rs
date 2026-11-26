@@ -361,6 +361,17 @@ impl FieldHostImpl<'_> {
     ) {
         // The VM's `is_player` is the bit; retail's is an identity compare.
         let is_player = is_player && self.ctx_is_player(ctx);
+        // The floor gate ahead of both arms (`0x801DEC28..0x801DEC68`): the
+        // seat's floor sample `FUN_80019278` into the context's `+0x16`.
+        if legaia_engine_vm::field::dispatch_leaves::op23_refloors(
+            ctx.flags,
+            self.world.party.scene_save_allowed,
+        ) {
+            ctx.world_y = self
+                .world
+                .sample_field_floor_height(i32::from(world_x as i16), i32::from(world_z as i16))
+                as i16 as u16;
+        }
         self.relink_seated_placement(ctx, is_player);
         // Scene-entry spawn-prologue pre-run: the record seats ITS OWN actor
         // (the VM already wrote the channel ctx position; the pre-run's

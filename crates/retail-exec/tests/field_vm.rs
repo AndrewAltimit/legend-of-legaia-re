@@ -62,7 +62,13 @@ impl FieldDialogMenuHost for Inert {
         true
     }
 }
-impl FieldActorHost for Inert {}
+impl FieldActorHost for Inert {
+    // The stub world's player pointer `_DAT_8007C364` never names the
+    // context the test runs, whatever its party-bank bit says.
+    fn is_player_context(&self, _ctx: &FieldCtx) -> bool {
+        false
+    }
+}
 impl FieldActorSpawnHost for Inert {
     fn actor_guard(&mut self, _actor_id: u8) -> Option<()> {
         self.hit.then_some(())

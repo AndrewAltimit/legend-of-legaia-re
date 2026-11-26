@@ -543,7 +543,9 @@ fn a_tile_warp_lands_on_the_context_it_names() {
     let gp = cpu.regs.r[GP];
     let clean = cpu.mem.clone();
     let mut rng = Rng(0x5741_5250);
-    let (mut own, mut other) = (0u32, 0u32);
+    let (mut own, mut other, mut player, mut refloored) = (0u32, 0u32, 0u32, 0u32);
+    // The floor sample op 23 stores under its gate: the empty World's floor.
+    cpu.hook(0x8001_9278, |r, _| r.r[2] = 0);
     let mut differ: BTreeMap<String, (u32, String)> = BTreeMap::new();
     for (script, pc, label) in corpus() {
         if label != "23" || (script[pc] & 0x80 != 0 && matches!(script[pc + 1], 0xF8 | 0xFB)) {
@@ -553,11 +555,25 @@ fn a_tile_warp_lands_on_the_context_it_names() {
         cpu.regs.r[GP] = gp;
         cpu.mem.load(SCRIPT, &script);
         cpu.mem.wr32(CTX + 0x94, SCRIPT);
+        let cross = script[pc] & 0x80 != 0;
+        // The player context now and then (`_DAT_8007C364`, the identity the
+        // arm compares at `0x801DEC7C`), and the per-scene MAN flag
+        // `_DAT_8007B6A8` that gates the floor sample.
+        let is_player = !cross && rng.below(3) == 0;
+        cpu.mem
+            .wr32(0x8007_C364, if is_player { CTX } else { 0x8012_8000 });
+        let scene_flag = rng.below(4) == 0;
+        cpu.mem.wr8(0x8007_B6A8, u8::from(scene_flag));
         let mut ctx = FieldCtx::default();
         for (name, off, width) in FIELDS {
             let mut v = rng.next();
             match name {
-                "flags" => v &= !0x0100_0400,
+                "flags" => {
+                    v &= !0x0100_0400;
+                    if is_player {
+                        v |= 0x0100_0000;
+                    }
+                }
                 "script_id" => v = rng.below(0x40),
                 _ => {}
             }
@@ -573,8 +589,9 @@ fn a_tile_warp_lands_on_the_context_it_names() {
             continue;
         }
         let mut w = legaia_engine_core::world::World::new();
-        w.field_vm.executing_channel = Some(0);
-        let cross = script[pc] & 0x80 != 0;
+        w.party.scene_save_allowed = scene_flag;
+        w.field_vm.executing_channel = (!is_player).then_some(0);
+        player += u32::from(is_player);
         if cross {
             let mut tctx = ctx.clone();
             tctx.script_id = u16::from(script[pc + 1]);
@@ -605,12 +622,15 @@ fn a_tile_warp_lands_on_the_context_it_names() {
         for (name, off, width) in FIELDS {
             let (mut r, mut p) = (rd(&mut cpu, off, width), port_field(&c, name));
             match name {
-                "world_y" | "script_id" => continue,
+                "script_id" => continue,
                 "flags" => {
                     r &= !2;
                     p &= !2;
                 }
                 _ => {}
+            }
+            if name == "world_y" && r == 0 && p == 0 {
+                refloored += 1;
             }
             if r != p {
                 wrong.push(format!("{name} retail {r:#x} port {p:#x}"));
@@ -631,7 +651,10 @@ fn a_tile_warp_lands_on_the_context_it_names() {
         .map(|(k, (n, ex))| format!("{k}: {n} e.g. {ex}"))
         .collect();
     assert!(report.is_empty(), "{}", report.join("\n"));
-    assert!(own > 100 && other > 500, "{own} {other}");
+    assert!(
+        own > 100 && other > 500 && player > 30 && refloored > 100,
+        "{own} {other} {player} {refloored}"
+    );
 }
 
 /// The answers a stubbed retail world gives the VM, read off the same RAM

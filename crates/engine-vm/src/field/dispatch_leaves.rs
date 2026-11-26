@@ -200,6 +200,16 @@ pub fn warp_entry_coord(b: u8) -> i16 {
     if b & 0x80 != 0 { base + 0x40 } else { base }
 }
 
+/// Whether op `0x23` re-floors the context it seats: never under the hover
+/// bit `0x20000000`, else under either class bit of `0x20200` or the
+/// per-scene MAN flag `_DAT_8007B6A8` (`0x801DEC28..0x801DEC68`, the sample
+/// `FUN_80019278` stored into `+0x16`). Any context, the player's included.
+///
+/// PORT: FUN_801DE840 (`0x801DEC28..0x801DEC68`, op `0x23`'s floor gate)
+pub fn op23_refloors(flags: u32, scene_flag: bool) -> bool {
+    flags & 0x2000_0000 == 0 && (flags & 0x0002_0200 != 0 || scene_flag)
+}
+
 /// The arrival facing op `0x3F` stores into `_DAT_80073EFC`: entry
 /// `dir & 7` of the SCUS halfword table at `0x80073F04`, the eight compass
 /// points `0, 0x200, .., 0xE00` of the 12-bit angle (`0x801DEB88..0x801DEBAC`).

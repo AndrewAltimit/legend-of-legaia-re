@@ -35,6 +35,14 @@ pub trait FieldActorHost {
         let _ = (ctx, world_x, world_z, is_player);
     }
 
+    /// Whether `ctx` is the player context `_DAT_8007C364` (`0x8007C348 +
+    /// 0x1C`), the identity op `0x23` compares at `0x801DEC7C`. The VM's
+    /// default reads the party-bank bit `0x1000000`; a host that knows which
+    /// context steps answers by identity.
+    fn is_player_context(&self, ctx: &FieldCtx) -> bool {
+        ctx.flags & 0x0100_0000 != 0
+    }
+
     /// Op `0x38` simple path, the actor-facing half: the compass-LUT entry
     /// `index` (`op0 & 0xF`) lands in the **resolved actor's** `+0x26` - the
     /// heading its renderer draws it at. `player` is `true` for the extended
