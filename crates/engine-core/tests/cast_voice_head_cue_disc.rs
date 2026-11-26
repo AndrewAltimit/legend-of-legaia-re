@@ -449,6 +449,12 @@ fn a_summon_module_seeks_its_file_then_waits_on_the_drive() {
     assert!(gated.contains(&923));
     // Mule's arm 2 tests its band word after the poll.
     assert!(gated.contains(&929));
+    // Iota's arm 2 leaves its countdown on a `j` to the busy return.
+    assert!(gated.contains(&921));
+    // Puera's and Slippery's countdowns leave one word ahead of the busy
+    // return, on a copy of its delay slot.
+    assert!(gated.contains(&922));
+    assert!(gated.contains(&920));
     assert!(!gated.contains(&911));
     eprintln!("[ok] drive arms: {}", listed.join(" "));
     assert_eq!(
