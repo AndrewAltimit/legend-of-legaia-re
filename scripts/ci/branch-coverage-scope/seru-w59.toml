@@ -160,3 +160,24 @@ image = "471f5e89a01ebb6f"
 range = "0x801F71FC..0x801F71FC"
 verdict = "unreachable"
 reason = "PROT 0915 arm 7's quarter hit leaving no HP (`beqz` on `+0x14C` at 0x801F71FC): the hit is clamped to HP - 1 (0x801F7174..0x801F718C), and the latched victim is a living monster the cast targeted, struck by nothing in the module before arm 7, so it keeps at least 1 HP."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "f0403708cf2879aa"
+range = "0x801F7EF4..0x801F7F0C"
+verdict = "unreachable"
+reason = "PROT 0928: the compiler's divide guards (`break` on a zero divisor, the `-1` / `0x80000000` overflow test) around `div v0,v1` at 0x801F7EF0, whose divisor is the speed scalar byte `0x1F80037D` (`lbu 0x69` off 0x1F800314 at 0x801F7EE8), which SCUS plants at 8: never 0 or -1."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "f0403708cf2879aa"
+range = "0x801F8314..0x801F8314"
+verdict = "unreachable"
+reason = "PROT 0928: the rounding fix-up of `/ 4` on the absolute value of a seat's sign-extended halfword `+0x34` (`lh` at 0x801F8300, negated below zero at 0x801F8310): the value is at most 0x8000, never negative, so the `bgez` is always taken."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "f0403708cf2879aa"
+range = "0x801F844C..0x801F844C"
+verdict = "unreachable"
+reason = "PROT 0928: the rounding fix-up of `/ 4` on the absolute value of a seat's sign-extended halfword `+0x34` (`lh` at 0x801F8438, negated below zero at 0x801F8448): the value is at most 0x8000, never negative, so the `bgez` is always taken."

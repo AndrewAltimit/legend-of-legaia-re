@@ -1012,11 +1012,13 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             });
             let mut puera_compared = std::collections::BTreeSet::new();
             let mut sideband_passes = 0u32;
-            // PROT 0908's fallen runs start each clip its arms stage on the
-            // creature two passes late, the clip before it still playing:
-            // its arms 6 and 7 hold on the clip that plays
-            // (`0x801F7328..0x801F7330`, `0x801F754C..0x801F7554`).
+            // PROT 0908's and 0928's fallen runs start each clip their arms
+            // stage on the creature two passes late, the clip before it
+            // still playing: 0908's arms 6 and 7 hold on the clip that plays
+            // (`0x801F7328..0x801F7330`, `0x801F754C..0x801F7554`), 0928's
+            // on clip 2 (`0x801F7890..0x801F7898`).
             let mut zenoir_clip = (0u8, 0u8);
+            let mut park_passes = 0u32;
             let mut mushura_fade = 0u32;
             let mut spent_side_passes = 0u32;
             busy_calls.set(0);
@@ -1195,9 +1197,16 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                         cpu.mem.wr32(a + 4, 0x1004_0100);
                     }
                     // A parked clip (`+0x21B` re-armed to `0xFF`) reaches
-                    // its park by the next pass.
+                    // its park by the next pass; on the fallen runs a pass
+                    // later, so the arms that wait on the park (PROT 0928's
+                    // `beq 0xFF` at `0x801F79DC`, `0x801F7A78`, `0x801F7B00`)
+                    // hold a pass on it.
                     if s == CREATURE && cpu.mem.rd8(a + 0x21B) == 0xFF {
-                        cpu.mem.wr8(a + 0x21B, 0);
+                        park_passes += 1;
+                        if !fallen || park_passes > 1 {
+                            cpu.mem.wr8(a + 0x21B, 0);
+                            park_passes = 0;
+                        }
                     }
                     let staged = cpu.mem.rd8(a + 0x1DA);
                     // On the fallen runs PROT 0933's creature is still on clip
@@ -1219,7 +1228,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                     let playing = match (s == CREATURE, lag) {
                         (false, _) if chase_clip => staged.max(1),
                         (true, true) => 4,
-                        (true, false) if entry == 908 && fallen => {
+                        (true, false) if matches!(entry, 908 | 928) && fallen => {
                             let (playing, late) = &mut zenoir_clip;
                             if staged != *playing {
                                 if *late == 0 {
