@@ -650,15 +650,19 @@ impl LegaiaRuntime {
     ///
     /// Drawn while the title's Continue screen is up, through the same
     /// `ui::title_band_sprites` kernel the live card uses, with
-    /// `ui::TitleBandState::backdrop`'s dim. Retail pivots to pure black once
-    /// a slot is confirmed, which is why the confirm phases draw nothing
-    /// (`ContinueScreen::shows_title_backdrop`).
+    /// the menu overlay's ramp (`ContinueScreen::title_backdrop_shade`): in
+    /// from the title's level as the window opens, and out to pure black
+    /// once a slot is confirmed.
     pub fn boot_title_backdrop_draws_json(&self, surface_w: u32, surface_h: u32) -> String {
-        if !self.boot_title_backdrop_visible() {
+        let shade = self
+            .boot_continue
+            .as_ref()
+            .and_then(legaia_engine_session::ContinueScreen::title_backdrop_shade);
+        let (true, Some(shade)) = (self.boot_title_backdrop_visible(), shade) else {
             return r#"{"active":false,"sprites":[]}"#.to_string();
-        }
+        };
         let (origin, scale) = stage_transform(surface_w.max(1), surface_h.max(1));
-        let sprites = ui::title_band_sprites(ui::TitleBandState::backdrop(), origin, scale);
+        let sprites = ui::title_band_sprites(ui::TitleBandState::backdrop(shade), origin, scale);
         serde_json::json!({
             "active": true,
             "sprites": sprites.iter().map(quad_json).collect::<Vec<_>>(),

@@ -1024,20 +1024,9 @@ impl TitleTickState {
     /// toward zero, clamped to a byte (`0x801E01F0..0x801E025C`): `0x80`
     /// (neutral) at rest, half that while the pre-roll is full.
     ///
-    /// PORT: FUN_801DD35C (`0x801E01D0..0x801E026C`, the backdrop shade)
+    /// [`backdrop_shade`] over this state's words.
     pub fn backdrop_shade(&self) -> Option<u8> {
-        if self.entry_word == 0 || self.alpha_b == 0x1000 {
-            return None;
-        }
-        // `slti 0x11` then `bgez`: the count is clamped high, then low.
-        let count = self.countdown.clamp(0, 16);
-        let span = 0x1000i32
-            .wrapping_sub(self.preroll / 2)
-            .wrapping_sub(self.alpha_b)
-            .wrapping_mul(8);
-        // `mult` / `mflo`, then the signed shift's round toward zero.
-        let shade = count.wrapping_mul(span) / 0x1000;
-        Some(shade.clamp(0, 0xFF) as u8)
+        backdrop_shade(self.entry_word, self.countdown, self.preroll, self.alpha_b)
     }
 
     pub(super) fn panel_fade_up(&mut self, scalar: i32) {
@@ -1139,3 +1128,24 @@ pub const GRID_COLUMNS: i32 = 5;
 
 /// Rows in that grid (`slti v0,v0,0x3` at `0x801E01B0`).
 pub const GRID_ROWS: i32 = 3;
+
+/// The brightness the title tick's tail draws the backdrop at, from its
+/// words: the entry word `0x8007BB00`, the attract countdown `0x801EF16C`,
+/// the pre-roll `0x801EF120` and alpha channel B `0x801EF194`; `None` when
+/// it draws none ([`TitleTickState::backdrop_shade`] spells the law out).
+///
+/// PORT: FUN_801DD35C (`0x801E01D0..0x801E026C`, the backdrop shade)
+pub fn backdrop_shade(entry_word: u32, countdown: i32, preroll: i32, alpha_b: i32) -> Option<u8> {
+    if entry_word == 0 || alpha_b == 0x1000 {
+        return None;
+    }
+    // `slti 0x11` then `bgez`: the count is clamped high, then low.
+    let count = countdown.clamp(0, 16);
+    let span = 0x1000i32
+        .wrapping_sub(preroll / 2)
+        .wrapping_sub(alpha_b)
+        .wrapping_mul(8);
+    // `mult` / `mflo`, then the signed shift's round toward zero.
+    let shade = count.wrapping_mul(span) / 0x1000;
+    Some(shade.clamp(0, 0xFF) as u8)
+}

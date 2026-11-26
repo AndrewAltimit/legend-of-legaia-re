@@ -120,6 +120,14 @@ impl ContinueStep {
 pub struct ContinueScreen {
     select: SaveSelectSession,
     flow: SaveScreenFlow,
+    /// The menu overlay's pre-roll `0x801EF120`: mode `0x18` runs it up
+    /// `0x80` a frame from the title's `0` to `0x1000` as the Load window
+    /// opens (`0x801E00C4..`), which dims the backdrop from `0x80` to `0x40`.
+    preroll: i32,
+    /// Alpha channel B `0x801EF194`: up `0x100` a frame once a slot is
+    /// confirmed (the epilogue's gate, `0x801DFDC8..`), back down `0x100` a
+    /// frame on the slot picker; at `0x1000` the backdrop is not drawn.
+    alpha_b: i32,
 }
 
 impl ContinueScreen {
@@ -129,6 +137,8 @@ impl ContinueScreen {
         Self {
             select: SaveSelectSession::title_continue(&card_port_rack(ports)),
             flow: SaveScreenFlow::new(),
+            preroll: 0,
+            alpha_b: 0,
         }
     }
 
@@ -152,7 +162,26 @@ impl ContinueScreen {
     /// (`FUN_801DD35C` calls `FUN_801E0418` while `_DAT_8007BB00` is set)
     /// and pivots to black once a slot is confirmed.
     pub fn shows_title_backdrop(&self) -> bool {
-        self.select.phase().shows_title_backdrop()
+        self.title_backdrop_shade().is_some()
+    }
+
+    /// The brightness the title art behind the screen draws at this frame,
+    /// or `None` once it has gone to black: the menu overlay's ramp
+    /// ([`legaia_engine_title::title_overlay::backdrop_shade`]) over the
+    /// screen's pre-roll and alpha channel B, the entry word raised and the
+    /// attract countdown held (the Load window does not run it down).
+    pub fn title_backdrop_shade(&self) -> Option<u8> {
+        legaia_engine_title::title_overlay::backdrop_shade(1, 16, self.preroll, self.alpha_b)
+    }
+
+    /// One frame of the backdrop's two ramps, at a frame step of one.
+    fn step_backdrop(&mut self) {
+        self.preroll = (self.preroll + 0x80).min(0x1000);
+        self.alpha_b = if self.select.phase().shows_title_backdrop() {
+            (self.alpha_b - 0x100).max(0)
+        } else {
+            (self.alpha_b + 0x100).min(0x1000)
+        };
     }
 
     /// Step the screen one frame on `edge`, the frame's just-pressed pad
@@ -168,6 +197,12 @@ impl ContinueScreen {
     /// notice over a fresh screen instead of closing on nothing.
     // REF: FUN_801DDCCC
     pub fn step(&mut self, edge: u16, ports: CardPorts<'_>) -> ContinueStep {
+        let step = self.step_screen(edge, ports);
+        self.step_backdrop();
+        step
+    }
+
+    fn step_screen(&mut self, edge: u16, ports: CardPorts<'_>) -> ContinueStep {
         if self.flow.tick_refusal(edge) {
             return ContinueStep::Running { blip: None };
         }
@@ -270,6 +305,30 @@ mod tests {
             ContinueStep::BackedOut { blip } => assert_eq!(blip, Some(MenuBlip::Cancel)),
             other => panic!("expected a back-out, got {other:?}"),
         }
+    }
+
+    /// The title art behind the slot pills fades from the title's `0x80` to
+    /// the rest level `0x40` over 32 frames, then to black over 16 once a
+    /// slot is confirmed (the `save_select_idle` state's ramp words).
+    #[test]
+    fn the_backdrop_dims_in_then_goes_to_black_on_a_confirm() {
+        let card = blank_card();
+        let ports = [Some(&card), None];
+        let mut screen = ContinueScreen::open(ports);
+        assert_eq!(screen.title_backdrop_shade(), Some(0x80));
+        for _ in 0..32 {
+            screen.step(0, ports);
+        }
+        assert_eq!(screen.title_backdrop_shade(), Some(0x40));
+        screen.step(CROSS, ports);
+        assert!(!screen.session().phase().shows_title_backdrop());
+        let mut frames = 1;
+        while screen.title_backdrop_shade().is_some() {
+            screen.step(0, ports);
+            frames += 1;
+            assert!(frames <= 16, "the fade outlasts alpha B's ramp");
+        }
+        assert_eq!(frames, 16);
     }
 
     /// A confirm on a blank card's grid never loads: the empty-block gate

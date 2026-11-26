@@ -13,16 +13,19 @@ use crate::*;
 /// Which title-TIM bands draw this frame, and how bright.
 ///
 /// `dim` is retail's save-screen backdrop: the title strips stay on screen
-/// behind the Load/Save chrome at roughly 45 % of their brightness, laid out
-/// by the menu overlay's own title drawer ([`title_strip_rows`]) rather than
-/// by the title card's composition. That is a separate knob from `alpha`,
+/// behind the Load/Save chrome at the menu overlay's ramp, one brightness
+/// byte (`0x80` neutral, `0x40` at rest behind the slot pills), laid out by
+/// the menu overlay's own title drawer ([`title_strip_rows`]) rather than by
+/// the title card's composition. That is a separate knob from `alpha`,
 /// which is the title's own fade-in ramp.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TitleBandState {
     /// Fade-in ramp, `0.0..=1.0`. `1.0` once the card is up.
     pub alpha: f32,
-    /// Backdrop dim - the save-screen level rather than the title level.
-    pub dim: bool,
+    /// Backdrop dim - the save-screen brightness byte the menu overlay's
+    /// tail computes (`legaia_engine_title::title_overlay::backdrop_shade`),
+    /// or `None` for the title's own level.
+    pub dim: Option<u8>,
     /// Draw the "PRESS START BUTTON" band (its own phase only).
     pub press_start: bool,
     /// `(cursor row, has focus)` when the NEW GAME / CONTINUE rows draw.
@@ -37,34 +40,36 @@ impl TitleBandState {
     pub fn card(alpha: f32) -> Self {
         Self {
             alpha,
-            dim: false,
+            dim: None,
             press_start: false,
             menu: None,
         }
     }
 
-    /// The save-screen backdrop: dim, no prompt, CONTINUE lit.
+    /// The save-screen backdrop at brightness `shade`: no prompt, CONTINUE
+    /// lit.
     ///
     /// The Load window opens from the title's CONTINUE row, so the title
     /// cursor `_DAT_8007B820` reads `1` whenever retail draws this backdrop
     /// (the `title_menu_idle` and `save_select_idle` states both hold `1`),
     /// and [`title_strip_rows`] lights that row and halves NEW GAME.
-    pub fn backdrop() -> Self {
+    pub fn backdrop(shade: u8) -> Self {
         Self {
             alpha: 1.0,
-            dim: true,
+            dim: Some(shade),
             press_start: false,
             menu: Some((1, true)),
         }
     }
 }
 
-/// Luminance the save-screen backdrop draws the title art at.
-///
-/// Retail has no alpha here: `FUN_801E02A4` re-emits the art with one
-/// brightness byte in all three RGB modulation slots, and `0x80` is the
-/// neutral level, so the engine's `0.45` lands at `0x3A`.
-pub const TITLE_BACKDROP_LUM: f32 = 0.45;
+/// The save-screen backdrop's brightness at rest behind the slot pills:
+/// the menu overlay's ramp with the pre-roll full and alpha channel B at
+/// zero, `16 * 8 * (0x1000 - 0x800) / 0x1000` (read off the
+/// `save_select_idle` state: pre-roll `0x1000`, B `0`, countdown `0x5DB`).
+/// Retail has no alpha here: `FUN_801E02A4` re-emits the art with this one
+/// byte in all three RGB modulation slots, `0x80` the neutral level.
+pub const TITLE_BACKDROP_REST: u8 = 0x40;
 
 /// Compose the title-TIM bands into stage-scaled [`SpriteDraw`]s.
 ///
@@ -96,10 +101,8 @@ pub fn title_band_sprites(
     let scale = stage_scale.max(1);
     let si = scale as i32;
     let alpha = state.alpha.clamp(0.0, 1.0);
-    if state.dim {
-        let brightness = (TITLE_BACKDROP_LUM * alpha * 128.0)
-            .round()
-            .clamp(0.0, 255.0) as u8;
+    if let Some(shade) = state.dim {
+        let brightness = (f32::from(shade) * alpha).round().clamp(0.0, 255.0) as u8;
         let continue_selected = state.menu.is_none_or(|(cursor, _)| cursor == 1);
         return title_strip_sprites(continue_selected, brightness, alpha, stage_origin, scale);
     }
@@ -366,19 +369,19 @@ mod tests {
     #[test]
     fn the_backdrop_is_the_menu_overlays_title_strip_stack() {
         let card = title_band_sprites(TitleBandState::card(1.0), (0, 0), 1);
-        let back = title_band_sprites(TitleBandState::backdrop(), (0, 0), 1);
+        let back = title_band_sprites(TitleBandState::backdrop(TITLE_BACKDROP_REST), (0, 0), 1);
         assert_eq!(back.len(), 5, "wordmark, two rows, two legal lines");
         // The wordmark lands where the retail GPU scan pinned the title quad.
         assert_eq!(back[0].src, (0, 0, 254, 148));
         assert_eq!((back[0].dst.0, back[0].dst.1), TITLE_ART_POS);
-        // Dimmed: brightness 0x3A through the 0xFF colour byte -> 0x39.
+        // Dimmed: the rest level 0x40 through the 0xFF colour byte -> 0x3F.
         assert!(back[0].color[0] < card[0].color[0]);
-        assert_eq!(back[0].color[0], 0x39 as f32 / 128.0);
+        assert_eq!(back[0].color[0], 0x3F as f32 / 128.0);
         // CONTINUE (the cursor row) keeps the level, NEW GAME halves it.
         assert_eq!(back[2].src, TITLE_STRIP_RECORDS[4]);
-        assert_eq!(back[2].color[0], 0x39 as f32 / 128.0);
+        assert_eq!(back[2].color[0], 0x3F as f32 / 128.0);
         assert_eq!(back[1].src, TITLE_STRIP_RECORDS[3]);
-        assert_eq!(back[1].color[0], 0x1C as f32 / 128.0);
+        assert_eq!(back[1].color[0], 0x1F as f32 / 128.0);
     }
 
     #[test]
@@ -389,7 +392,7 @@ mod tests {
         let mut st = TitleBandState::card(1.0);
         st.menu = Some((1, true));
         let card = title_band_sprites(st, (0, 0), 1);
-        let back = title_band_sprites(TitleBandState::backdrop(), (0, 0), 1);
+        let back = title_band_sprites(TitleBandState::backdrop(TITLE_BACKDROP_REST), (0, 0), 1);
         let place = |v: &[SpriteDraw]| {
             v.iter()
                 .rev()
