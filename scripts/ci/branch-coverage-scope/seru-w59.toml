@@ -195,3 +195,10 @@ image = "f69a9ec23b1185ea"
 range = "0x801F7E40..0x801F7E64"
 verdict = "unreachable"
 reason = "PROT 0930's clip-cycle arm at 0x801F7E34, the jump table's entry for phase 30 (the table at 0x801F69D8 sends 12..29 to the epilogue): the phase is stored only by the shared `+1` (0x801F7C70) from arms 0..10, so it never passes 11 and the arm is never dispatched."
+
+[[arm]]
+entry = "0x801F6A08"
+image = "756fcc7a853b8393"
+range = "0x801F6A7C..0x801F6A7C"
+verdict = "unreachable"
+reason = "PROT 0921's phase dispatch bound (`sltiu 0xC` / `beqz` at 0x801F6A78..0x801F6A7C): the module's one phase store is the shared `+1` (0x801F7DD0..0x801F7DE0), and its last arm 11 (0x801F7DE4) returns its busy word cleared (`sw zero,0x38(sp)` at 0x801F7FD4) without jumping to it, so the phase never passes 11."

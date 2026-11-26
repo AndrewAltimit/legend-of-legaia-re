@@ -1316,9 +1316,13 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                     // drained its word (`0x200` at `8 * step` a pass), as
                     // `gilium_summon_mid_cast` stands there `56` past it:
                     // the arm then re-enters on a spent word (`blez` at
-                    // `0x801F6BF4`).
-                    let long =
-                        entry == 923 && fallen && spent_side_passes == 0 && sideband_passes <= 80;
+                    // `0x801F6BF4`). PROT 0921's arm 1 drains and waits the
+                    // same way (`blez` at `0x801F6C90`, the side band at
+                    // `0x801F6CDC`).
+                    let long = matches!(entry, 921 | 923)
+                        && fallen
+                        && spent_side_passes == 0
+                        && sideband_passes <= 80;
                     let up = sideband_passes <= 3 || long || (1..=3).contains(&spent_side_passes);
                     cpu.mem.wr8(CTX + 0x276, if up { 8 } else { 0 });
                     sideband_held += usize::from(up);

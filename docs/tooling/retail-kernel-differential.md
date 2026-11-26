@@ -1242,6 +1242,19 @@ tick bodies that roll inside their tick (Theeder, Zenoir, Swordie, Juggernaut's 
 back whole over the live seats, undoing each roll's spirit fill and status strip; the row now folds back only what
 the tick changed (`World::fold_cast_seat_row`).
 
+**Empty seats and the wider seeds.** A monster seat the formation leaves empty holds a null record pointer
+`0x801C9348[seat - 3]` and a body pair of `(0, 0)`, so a read off its record lands in the kernel's low RAM
+(byte `0x1F` reads `0x81` in a cast's RAM image). The walk once seeded a record and a ground pair on every seat,
+and copied the scatter PROT 0915's arm 0 puts on an empty seat's ground pair into its body pair. Mushura's chase
+then traded its target onto such a seat and aimed by a reach and a bearing retail never sees; with the seats as
+retail leaves them its creature's bank `+0x48` is compared on every pass. The scripted rolls add `2`, which
+PROT 0915 quarters to its floor of `1`, and `0x500`, past the walk's HP when quartered or taken by two thirds.
+The cycle turns with the frame step. The fallen runs hold the side band until PROT 0921's and 0923's arm 1 has
+spent its word. They start PROT 0908's and 0928's creature clips two passes late and reach a park a pass late.
+PROT 0930's fallen runs seed an unhurt Venomed member and a Stoned one. These found two defects: Mushura's arm
+`0xD` levelled the bank one tick's share on the tick that hands over, and Horn's heal arm cleared no status
+(`sh zero,0x16e` at `0x801F7ACC`), so a Venomed or Stoned member kept the ailment through the summon.
+
 The images the walk does not run (PROT 0903, 0904, 0906, 0909..0913, 0918,
 0919) have ported tick bodies, which their own tick differentials compare; of
 their host's half only Theeder's and Gizam's side-band arm runs beside retail
