@@ -99,138 +99,138 @@ credits = 4
 
 [shortcuts.walked.default]
 box_face = 1
-examine_face = 31
-examine_far = 29
-examine_seat = 10
-restore_xz = 52
-touch_far = 1
-touch_seat = 29
+examine_face = 26
+examine_far = 31
+examine_seat = 4
+restore_xz = 47
+touch_far = 2
+touch_seat = 9
 
 [shortcuts.walked.seed_3]
 box_face = 1
-examine_face = 31
-examine_far = 29
-examine_seat = 10
-restore_xz = 52
-touch_far = 1
-touch_seat = 29
+examine_face = 24
+examine_far = 28
+examine_seat = 4
+restore_xz = 45
+touch_far = 2
+touch_seat = 9
 
 [shortcuts.walked.seed_4]
 box_face = 1
-examine_face = 31
-examine_far = 29
-examine_seat = 10
-restore_xz = 52
-touch_far = 1
-touch_seat = 29
+examine_face = 24
+examine_far = 28
+examine_seat = 4
+restore_xz = 45
+touch_far = 2
+touch_seat = 9
 
 [shortcuts.walked.seed_5]
 box_face = 1
-examine_face = 31
-examine_far = 29
-examine_seat = 10
-restore_xz = 52
-touch_far = 1
-touch_seat = 29
+examine_face = 24
+examine_far = 28
+examine_seat = 4
+restore_xz = 45
+touch_far = 2
+touch_seat = 9
 
 [shortcuts.walked.seed_6]
 box_face = 1
-examine_face = 31
-examine_far = 29
-examine_seat = 10
-restore_xz = 52
-touch_far = 1
-touch_seat = 29
+examine_face = 24
+examine_far = 28
+examine_seat = 4
+restore_xz = 45
+touch_far = 2
+touch_seat = 9
 
 [shortcuts.walked.seed_7]
 box_face = 1
-examine_face = 31
-examine_far = 29
-examine_seat = 10
-restore_xz = 52
-touch_far = 1
-touch_seat = 29
+examine_face = 25
+examine_far = 28
+examine_seat = 5
+restore_xz = 46
+touch_far = 2
+touch_seat = 9
 
 [shortcuts.walked.seed_8]
 box_face = 1
-examine_face = 31
-examine_far = 29
-examine_seat = 10
-restore_xz = 52
-touch_far = 1
-touch_seat = 29
+examine_face = 24
+examine_far = 28
+examine_seat = 4
+restore_xz = 45
+touch_far = 2
+touch_seat = 9
 
 [shortcuts.walked.seed_9]
 box_face = 1
-examine_face = 31
-examine_far = 29
-examine_seat = 10
-restore_xz = 52
-touch_far = 1
-touch_seat = 29
+examine_face = 24
+examine_far = 28
+examine_seat = 4
+restore_xz = 45
+touch_far = 2
+touch_seat = 9
 
 [shortcuts.walked.seed_10]
 box_face = 1
-examine_face = 31
-examine_far = 29
-examine_seat = 10
-restore_xz = 52
-touch_far = 1
-touch_seat = 29
+examine_face = 24
+examine_far = 28
+examine_seat = 4
+restore_xz = 45
+touch_far = 2
+touch_seat = 9
 
 [shortcuts.walked.seed_11]
 box_face = 1
-examine_face = 31
-examine_far = 29
-examine_seat = 10
-restore_xz = 52
-touch_far = 1
-touch_seat = 29
+examine_face = 24
+examine_far = 28
+examine_seat = 4
+restore_xz = 45
+touch_far = 2
+touch_seat = 9
 
 [shortcuts.walked.seed_12]
 box_face = 1
-examine_face = 31
-examine_far = 29
-examine_seat = 10
-restore_xz = 52
-touch_far = 1
-touch_seat = 29
+examine_face = 24
+examine_far = 28
+examine_seat = 4
+restore_xz = 45
+touch_far = 2
+touch_seat = 9
 
 [shortcuts.walked.seed_13]
 box_face = 2
-examine_face = 31
-examine_far = 29
-examine_seat = 10
-restore_xz = 52
-touch_far = 1
-touch_seat = 29
+examine_face = 24
+examine_far = 28
+examine_seat = 4
+restore_xz = 45
+touch_far = 2
+touch_seat = 9
 
 [shortcuts.walked.seed_14]
 box_face = 1
-examine_face = 31
-examine_far = 29
-examine_seat = 10
-restore_xz = 52
-touch_far = 1
-touch_seat = 29
+examine_face = 24
+examine_far = 28
+examine_seat = 4
+restore_xz = 45
+touch_far = 2
+touch_seat = 9
 
 [shortcuts.walked.seed_15]
 box_face = 1
-examine_face = 31
-examine_far = 29
-examine_seat = 10
-restore_xz = 52
-touch_far = 1
-touch_seat = 29
+examine_face = 24
+examine_far = 28
+examine_seat = 4
+restore_xz = 45
+touch_far = 2
+touch_seat = 9
 
 [shortcuts.walked.seed_16]
 box_face = 1
-examine_face = 35
-examine_far = 36
-examine_seat = 10
-restore_xz = 56
-touch_far = 1
-touch_seat = 29
+examine_face = 24
+examine_far = 28
+examine_seat = 4
+restore_xz = 45
+touch_far = 2
+touch_seat = 9
 
 [shortcuts.placed.default]
 box_face = 12
