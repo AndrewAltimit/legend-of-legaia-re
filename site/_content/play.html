@@ -2112,22 +2112,12 @@ div.play-vis-head { cursor: default; }
        * canvas click. The scene's track feeds itself through the engine's
        * per-tick op-0x35 routing; a canvas click resumes it as a backstop. */
       if (typeof view._enableAudio === 'function') view._enableAudio();
-      let hint = '';
-      /* Several retail scenes - every town, including Rim Elm - carry only
-       * rate-0 encounter regions, so walking them produces no fights by
-       * design. Say so, or a quiet town reads as a broken engine. */
-      try {
-        if (typeof view.rt?.scene_rolls_encounters === 'function'
-            && !view.rt.scene_rolls_encounters()) {
-          hint = ' No random encounters in this scene (retail) - head out to a field area to fight.';
-        }
-      } catch (e) {}
       /* A pack map runs over a retail base scene: name the map, not the
        * base scene it borrows its textures from. */
       const xmap = st && st.expansion_map;
       const running = xmap ? `${xmap.name || xmap.id} (expansion map)` : (active || label);
-      statusEl.textContent =
-        `Running ${running}. Click the canvas, then walk with the arrow keys.${hint}`;
+      statusEl.textContent = runningStatus(running);
+      statusScene = (st && st.scene) || active || label;
       window.__playState = st;
       canvas.focus();
     } catch (err) {
@@ -2736,8 +2726,40 @@ div.play-vis-head { cursor: default; }
     if (el.textContent !== text) el.textContent = text;
   }
 
+  /* The status line's scene, and the line itself for a running scene. */
+  let statusScene = null;
+  function runningStatus(running) {
+    /* The New Game opening's crawl scenes take no walking: say how to skip
+     * them instead (a held Select once the first crawl is up, as on the
+     * PlayStation). */
+    if (/^op(deene|stati|urud)$/.test(running)) {
+      return `Running ${running}: the New Game opening. Hold Select (Right Shift) to skip to Rim Elm.`;
+    }
+    let hint = '';
+    /* Several retail scenes - every town, including Rim Elm - carry only
+     * rate-0 encounter regions, so walking them produces no fights by
+     * design. Say so, or a quiet town reads as a broken engine. */
+    try {
+      if (typeof view?.rt?.scene_rolls_encounters === 'function'
+          && !view.rt.scene_rolls_encounters()) {
+        hint = ' No random encounters in this scene (retail) - head out to a field area to fight.';
+      }
+    } catch (e) {}
+    return `Running ${running}. Click the canvas, then walk with the arrow keys.${hint}`;
+  }
+
   function onState(st, fps) {
     setText(hud.scene, st.scene || '-');
+    /* The game changed scene by itself (a door, the opening chain, the
+     * Select skip into Rim Elm): the status line named the scene the page
+     * entered, and its encounter hint was that scene's. Follow the game, but
+     * only over a running-scene line, never over an error or a prompt, and
+     * not on a pack map, whose name the line carries instead. */
+    if (st.scene && statusScene && st.scene !== statusScene && !activePackMap
+        && /^(Running |Named the hero )/.test(statusEl.textContent)) {
+      statusScene = st.scene;
+      statusEl.textContent = runningStatus(st.scene);
+    }
     setText(hud.mode, st.mode);
     setText(hud.fps, fps);
     setText(hud.npcs, st.npcs);
