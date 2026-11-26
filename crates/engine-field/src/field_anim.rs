@@ -759,6 +759,19 @@ impl FieldPlayerAnim {
                 .is_some_and(|r| self.scene_clip.as_ref().is_some_and(|(c, _)| *c == r))
     }
 
+    /// Whether a script picked a scene clip after this frame's tick ran (a
+    /// seat or a poke writing the player's `+0x5C`) whose clip is resolved
+    /// but not yet bound: retail's op binds and steps it in the same frame
+    /// (the op calls `FUN_800204F8`).
+    pub fn script_pick_due(&self) -> bool {
+        self.owed == 0
+            && !self.holding
+            && self.scene_record.is_some_and(|r| {
+                self.playing_scene != Some(r)
+                    && self.scene_clip.as_ref().is_some_and(|(c, _)| *c == r)
+            })
+    }
+
     /// [`Self::tick_with_flags`] on the game-frame grid: `scale` is the
     /// vsyncs this tick's game frame credits (the world clock's
     /// `script_frame_delta`), and a tick that credits none - a vsync between

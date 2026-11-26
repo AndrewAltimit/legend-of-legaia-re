@@ -206,6 +206,7 @@ impl World {
             anim.resolve_scene_clip(bundle);
         }
         let moves = std::mem::take(&mut self.locomotion.player_move_cues);
+        let mut poked = None;
         if let Some(bundle) = scene_bundle {
             for id in moves {
                 // Moves 1 and 2 are the locomotion walk moves the movement
@@ -218,13 +219,32 @@ impl World {
                         .filter(|c| c.bone_count() == anim.idle.bone_count())
                 {
                     anim.bind_scripted(u16::from(id) - 1, clip);
+                    poked = Some(u16::from(id) - 1);
                 }
             }
         }
-        // The frame a script binds the player's scene clip steps it before
-        // the draw (`FUN_800204F8` binds and steps in one call). The anim
-        // tick ran before this drain and held for the clip; pay its step now
-        // that the clip is here.
+        // The poke binds and steps in the op: `A2 F8 <id>` writes `+0x5C`
+        // and calls the consumer `FUN_800204F8`, which re-points the clip,
+        // zeroes the cursor and steps it before the frame's draw. The
+        // player's own clip tick ran earlier in the frame (its node leads
+        // the actor-list walk), so the poked clip takes the frame's step
+        // here: a PCSX-Redux film of the town01 opening binds record 47 at
+        // cursor `8` on the frame record 46 latches its end (vsync `1558`).
+        // A seat (`4C 51` on the player) binds through the same consumer
+        // call, so any scene pick a script made after the tick binds here.
+        let grid = self.clock.script_frame_delta();
+        if grid > 0
+            && let Some(anim) = self.locomotion.player_anim.as_mut()
+        {
+            if let Some(record) = poked {
+                anim.select_scene_record(Some(record));
+            }
+            if poked.is_some() || anim.script_pick_due() {
+                self.tick_field_player_anim_scaled(grid);
+            }
+        }
+        // A tick that held for a scene pick whose clip resolves here owes the
+        // frame's step (`FieldPlayerAnim::bind_step_due`).
         if self
             .locomotion
             .player_anim

@@ -2381,12 +2381,19 @@ request in the frame tail's cue drain, after the frame's anim tick, and steps it
 cross-context poke takes a second step when the target's own tick runs later in the same walk
 (`World::bind_npc_scene_clip`).
 
-The opening's beat lengths still differ: retail holds the hand-raise `38` vsyncs and the
-hand-lowering `36`, the port `40` and `40`. Retail's player actor sits on the first actor list
-(`0x8007C34C`, tick `FUN_801D1344`) ahead of the placements' list, so its anim tick raises a
-one-shot's end latch before the script that spins on it runs in the same frame (record 46's last
-step and the bind of record 47 land on one frame, vsync `1558`). The port steps the field scripts
-before the player's locomotion and anim tick, so the spin sees the latch a frame later.
+The player's tick leads the frame. Retail's actor-list walk (`FUN_80016444` -> `FUN_8002519C`)
+runs list 0 first, and the player's node (tick `FUN_801D1344`: the pad step `FUN_801D01B0`, the
+settle `FUN_801D1BA0` with the clip tick `FUN_800204F8` at its tail, the touch dispatch and the
+camera update) is that list's first live node. The dialogue pager, the system channel
+(`FUN_801DA51C`) and the scene's record contexts follow it on list 0, then the ambient parts
+(list 1) and the placements (list 2) - a RAM walk of the lists in `town01`'s opening. So a record
+reads the player as this frame left it: the spin on Vahn's hand-raise (`AD F8 08`) sees the end
+latch the frame record 46 lands its last step and binds record 47 on that frame (vsync `1558`).
+The port runs the player's step, settle, motion test and clip tick ahead of the field scripts in
+the same order, and a record's poke or seat of a scene clip binds and steps it the frame it is
+made (the op calls the consumer). The poke of the idle base that ends the hand-lowering binds the
+party clip at cursor `0` on the poke frame, as retail's `+0x5E = 2`, `+0x68 = 0` at vsync `1628`.
+The opening's three beats then hold `38`, `34` and `36` vsyncs on both.
 
 A helper record's shot frames through the follow arm (`camera_view::field_follow_view`), which
 for a follow shot folds a negative eye depth into its magnitude. Under a scripted shot it keeps
