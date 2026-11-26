@@ -309,6 +309,10 @@ pub struct RetailObs {
     /// ([`retail_object_clips_ram`]): the walk film's seat, which runs on
     /// from the RAM's pass rather than drawing the displayed one.
     pub object_clips_ram: Vec<ObjectClipSeed>,
+    /// Each bind record's collision-exempt bits `+0x10 & 3`
+    /// ([`retail_object_exempt_bits`]): the walk film's seat of a door the
+    /// state holds open.
+    pub object_exempt: Vec<(u16, u32)>,
     /// The player's clip words ([`retail_player_clip`]), handed to the image
     /// child as `LEGAIA_SEAT_PLAYER_CLIP`.
     pub player_clip: Option<ObjectClipSeed>,
@@ -686,6 +690,11 @@ impl RetailObs {
             // parked flats `15..=17` hold cursor `132` in the state).
             object_clips_ram: if matches!(class, StateClass::Field | StateClass::WorldMap) {
                 retail_object_clips_ram(ram)
+            } else {
+                Vec::new()
+            },
+            object_exempt: if matches!(class, StateClass::Field | StateClass::WorldMap) {
+                retail_object_exempt_bits(ram)
             } else {
                 Vec::new()
             },

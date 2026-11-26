@@ -168,6 +168,17 @@ impl WalkFilm {
                 );
             }
         }
+        // A placed object the state holds collision-exempt (a door the player
+        // pushed open, `+0x10 & 3`) stops blocking from the film's first
+        // step. A harness seat; `LEGAIA_RC_NO_EXEMPT_SEAT=1` keeps the seed's.
+        if std::env::var_os("LEGAIA_RC_NO_EXEMPT_SEAT").is_none() {
+            for &(record, bits) in &retail.object_exempt {
+                session
+                    .host
+                    .world
+                    .seed_object_prop_exempt(usize::from(record), bits);
+            }
+        }
         if std::env::var_os("LEGAIA_RC_PART_DIAG").is_some() {
             for s in &retail.part_vm {
                 eprintln!(

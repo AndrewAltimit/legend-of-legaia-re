@@ -649,6 +649,28 @@ pub fn retail_object_draw_flags(ram: &[u8]) -> Vec<(u16, u8)> {
         .collect()
 }
 
+/// Each bind record's `(record +0x50, +0x10 & 3)`, off the first field
+/// actor in list order that carries it (as [`retail_object_models`] takes
+/// them). The bits are the collision exemption `FUN_801CF754` /
+/// `FUN_801CF9F4` skip on: a door's touch pass raises bit `0` (`31 00`) as
+/// its swing starts, so a state saved after a door opened holds it exempt,
+/// touch history a seat does not replay. `mei_house_door_pcsx` holds
+/// `town01`'s door at `0x08008881` with its clip at the open end; seated
+/// solid, the film's first step into the doorway struck it and ran its
+/// record a pass before retail's walk-on.
+pub fn retail_object_exempt_bits(ram: &[u8]) -> Vec<(u16, u32)> {
+    let mut seen = std::collections::BTreeSet::new();
+    crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .filter(|&n| game_anchors::u32_at(ram, n + 0x0C) == 0x8003_BC08)
+        .filter_map(|n| {
+            let record = game_anchors::u16_at(ram, n + 0x50);
+            seen.insert(record)
+                .then(|| (record, game_anchors::u32_at(ram, n + 0x10) & 3))
+        })
+        .collect()
+}
+
 /// Every field actor with a clip bound, first in list order per record
 /// (as [`retail_object_models`] takes them). A placed object's clip is touch
 /// and walk history - a door the player has just pushed open, a lid mid
