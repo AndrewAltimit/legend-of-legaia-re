@@ -1241,6 +1241,8 @@ fn an_attached_light_is_found_where_retail_finds_it() {
 /// (`*0x8007C364`).
 const HG_SCENE: u32 = 0x8013_0000;
 const HG_PLAYER: u32 = 0x8014_0000;
+/// The script-register table, `0x801C6460 + slot * 2`.
+const SLOT_TABLE: u32 = 0x801C_6460;
 
 const HOST_GLOBALS: [(u32, u8); 20] = [
     (0x8007_3EF4, 4), // op 3F, the destination-entry X and Z words
@@ -1286,6 +1288,8 @@ struct Recording {
     flags: u32,
     /// The player context's `+0x16`, seeded alike on retail's side.
     player_y: i16,
+    /// The script-register table `0x801C6460` (s16 per slot), seeded alike.
+    slots: Vec<i16>,
 }
 impl Recording {
     fn put(&mut self, at: u32, v: u32) {
@@ -1301,6 +1305,25 @@ impl FieldFlagsHost for Recording {
     }
     fn frame_delta(&self) -> u16 {
         self.inert.frame_delta()
+    }
+    fn slot_table_read(&self, slot: u8) -> i16 {
+        self.slots[usize::from(slot)]
+    }
+    // `4C CA` / `CB` / `CC` (`0x801E2930..0x801E29DC`): a slot set, or moved
+    // by the operand (the frame step for `0xFFFF`), as a 16-bit store.
+    fn slot_table_write(&mut self, slot: u8, value: i16) {
+        self.slots[usize::from(slot)] = value;
+        let at = SLOT_TABLE + 2 * u32::from(slot);
+        self.rows.insert(at, (2, value as u16 as u32));
+    }
+    fn slot_table_adjust(&mut self, slot: u8, delta: i16, subtract: bool) {
+        let old = self.slots[usize::from(slot)];
+        let new = if subtract {
+            old.wrapping_sub(delta)
+        } else {
+            old.wrapping_add(delta)
+        };
+        self.slot_table_write(slot, new);
     }
 }
 impl FieldSceneHost for Recording {
@@ -1642,7 +1665,11 @@ fn every_instruction_leaves_the_host_globals_as_retail_leaves_them() {
                 // from the same word on both sides, clear as before.
                 flags: [0, 0x0100_0000, 0x0200_0000, 0x0300_0000][rng.below(4) as usize],
                 player_y: rng.next() as i16,
+                slots: (0..0x100).map(|_| rng.next() as i16).collect(),
             };
+            for (i, &v) in host.slots.iter().enumerate() {
+                cpu.mem.wr16(SLOT_TABLE + 2 * i as u32, v as u16);
+            }
             cpu.mem.wr32(0x1F80_0394, host.flags);
             cpu.mem.wr16(HG_PLAYER + 0x16, host.player_y as u16);
             ramps.borrow_mut().clear();

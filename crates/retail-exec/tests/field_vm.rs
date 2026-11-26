@@ -498,6 +498,82 @@ fn a_take_item_unequips_only_on_a_bag_miss() {
     assert!(misses > 100 && hits > 100, "{misses} misses {hits} hits");
 }
 
+/// `4C 70..73`, the wall paints, stepped by the real `World` on a generated
+/// walk grid: retail walks rows `z0 + 1 .. z1 + 2` and columns `x0 .. x1 + 1`
+/// of `*(0x1F8003EC) + 0x4000` (`0x801E1C64..0x801E1E9C`), clearing or
+/// setting the high nibble (subs `0` / `1`) or the operand's bits shifted up
+/// (subs `2` / `3`). The rectangle is kept inside the 128 x 128 grid.
+/// Compared: the next PC and the whole grid.
+#[test]
+fn a_wall_paint_lands_where_retail_paints() {
+    differential!(prot(897, VM));
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    const MAP: u32 = 0x8010_0000;
+    const GRID: u32 = MAP + 0x4000;
+    cpu.mem
+        .load(OVERLAY_BASE, &d.read_entry(897).expect("PROT 0897"));
+    cpu.stub_outside = Some((OVERLAY_BASE, 0x8020_0000));
+    cpu.mem.wr8(0x1F80_0393, 1);
+    cpu.mem.wr32(CTX + 0x94, SCRIPT);
+    cpu.mem.wr32(0x1F80_03EC, MAP);
+    let gp = cpu.regs.r[GP];
+    let clean = cpu.mem.clone();
+    let mut rng = crate::common::Rng(0x5041_494E);
+    let mut painted = 0u32;
+    for round in 0..300u32 {
+        let sub = rng.below(4) as u8;
+        let x0 = rng.below(0x7F) as u8;
+        let x1 = if rng.below(8) == 0 {
+            rng.below(0x7F) as u8
+        } else {
+            x0 + rng.below(u32::from(0x7F - x0)) as u8
+        };
+        let z0 = rng.below(0x7E) as u8;
+        let z1 = if rng.below(8) == 0 {
+            rng.below(0x7E) as u8
+        } else {
+            z0 + rng.below(u32::from(0x7E - z0)) as u8
+        };
+        let mask = rng.next() as u8;
+        let mut script = vec![0x4C, 0x70 | sub, x0, z0, x1, z1];
+        if sub >= 2 {
+            script.push(mask);
+        }
+        script.push(0x21);
+        let grid: Vec<u8> = (0..0x4000).map(|_| rng.next() as u8).collect();
+
+        cpu.mem = clean.clone();
+        cpu.regs.r[GP] = gp;
+        cpu.mem.load(GRID, &grid);
+        cpu.mem.load(SCRIPT, &script);
+        assert_eq!(cpu.call(VM, &[SCRIPT, 0, CTX]), Stop::Returned);
+        let retail_pc = cpu.regs.r[2] as usize;
+        let retail = cpu.mem.read(GRID, 0x4000);
+
+        let mut w = legaia_engine_core::world::World::new();
+        w.load_field_collision_grid(&grid);
+        w.field_bytecode = script.clone();
+        w.field_pc = 0;
+        let port_pc = match w.step_field() {
+            Some(StepResult::Advance { next_pc }) => next_pc,
+            other => panic!("round {round}: {script:02x?} stepped {other:?}"),
+        };
+        assert_eq!(port_pc, retail_pc, "round {round}: {script:02x?}");
+        let wrong = (0..0x4000)
+            .filter(|&i| retail[i] != w.terrain.collision_grid[i])
+            .count();
+        assert_eq!(
+            wrong, 0,
+            "round {round}: {script:02x?} {wrong} cells differ"
+        );
+        painted += u32::from(retail != grid);
+    }
+    assert!(painted > 150, "{painted} rounds painted");
+}
+
 /// The party-record tests of op `4C`, stepped by the real `World` on
 /// generated records and a generated present-party list: `4C 8B` (a spell in
 /// the learned list `+0x13C` of a present member below character 3,
@@ -1010,6 +1086,7 @@ fn a_fog_reset_enables_the_regions_retail_enables() {
     });
     cpu.mem.wr8(0x1F80_0393, 1);
     cpu.mem.wr32(CTX + 0x94, SCRIPT);
+    cpu.step_budget = 20_000;
     let gp = cpu.regs.r[GP];
     let clean = cpu.mem.clone();
     let mut rng = crate::common::Rng(0x464F_4752);
@@ -1029,6 +1106,10 @@ fn a_fog_reset_enables_the_regions_retail_enables() {
         cpu.mem = clean.clone();
         cpu.regs.r[GP] = gp;
         cpu.mem.load(TABLE, &table);
+        // A record past the count, which the walk's exit test
+        // (`0x801E26D4..0x801E26E0`) keeps it off.
+        let guard: Vec<u8> = (0..0xB).map(|_| rng.next() as u8).collect();
+        cpu.mem.load(TABLE + (n * 0xB) as u32, &guard);
         cpu.mem.load(BANK, &bank);
         cpu.mem.wr32(0x8007_3ED8, if null { 0 } else { TABLE });
         cpu.mem.wr8(0x8007_3EDC, n as u8);
@@ -1036,6 +1117,11 @@ fn a_fog_reset_enables_the_regions_retail_enables() {
         assert_eq!(cpu.call(VM, &[SCRIPT, 0, CTX]), Stop::Returned);
         assert_eq!(cpu.regs.r[2], 2);
         let after = cpu.mem.read(TABLE, n * 0xB);
+        assert_eq!(
+            cpu.mem.read(TABLE + (n * 0xB) as u32, 0xB),
+            guard,
+            "round {round}: the walk stops at the count"
+        );
 
         let mut w = legaia_engine_core::world::World::new();
         if !null {
