@@ -41,3 +41,17 @@ image = "7ebef8d398069a6b"
 range = "0x8002F9E4..0x8002F9E4"
 verdict = "unported"
 reason = "the window emitter's kind-6 fill: each tile's width clipped to what is left of the row (min(tile w, right - x), 0x8002F9D4..0x8002F9EC) before the SPRT is linked; the port lays the fill as one rect (dialog_window_fill_rect) and emits no tiles, so the clip has no counterpart and window_emitter compares the rect"
+
+[[arm]]
+entry = "0x801E06C0"
+image = "a9697f6884de16a3"
+range = "0x801E0798..0x801E07C0"
+verdict = "unported"
+reason = "the save grid's focus gate: the focused cell draws dimmed (mode 3) and without its hand while the directory rescan request _DAT_801F0224 is up or the title tick's sub-mode _DAT_801F0204 is 0x0C / 0x0D (the load and save notices); slot_preview_grid_draws_at has no such input and always lights the focused cell. save_grid deals both words and compares the open case (mode 0 and the hand at the port's cursor)"
+
+[[arm]]
+entry = "0x801E06C0"
+image = "a9697f6884de16a3"
+range = "0x801E0804..0x801E0864"
+verdict = "unported"
+reason = "the grid's return value: the drawer's per-cell answer through the jump table at 0x801CF31C and the confirm mask 0x44 pick the slot or 0x80 into fp, which the routine returns; its one caller on the disc (jal at 0x801DFD94, PROT 0899) discards v0, so nothing consumes it and the port has no counterpart"

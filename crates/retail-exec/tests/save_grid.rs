@@ -42,6 +42,11 @@ type QuadCall = (u32, u32, i32, i32, u32);
 const SCANNED: u32 = 0x801F_2A68;
 const CLASSES: u32 = 0x801F_2A48;
 const OP_FLAG: u32 = 0x801F_0200;
+/// The hand stamp, the directory-rescan request and the title tick's
+/// sub-mode word the grid gates its focus on.
+const HAND: u32 = 0x8002_C488;
+const RESCAN: u32 = 0x801F_0224;
+const SUB_MODE: u32 = 0x801F_0204;
 
 #[test]
 fn the_grid_slides_every_cell_where_retail_does() {
@@ -56,25 +61,77 @@ fn the_grid_slides_every_cell_where_retail_does() {
     );
     cpu.stub(0x801E_3F74, 0);
     cpu.stub(0x801E_08D8, 0);
-    cpu.stub(0x8002_C488, 0);
-    let cells: Rc<RefCell<Vec<(u32, i32, i32)>>> = Rc::default();
+    // The hand the loop stamps beside the focused cell, `FUN_8002C488(x - 2,
+    // y - 4, 0x4E)`.
+    let hands: Rc<RefCell<Vec<(i32, i32, u32)>>> = Rc::default();
+    let h = hands.clone();
+    cpu.hook(HAND, move |r, _| {
+        h.borrow_mut()
+            .push((r.r[A0] as i32, r.r[A1] as i32, r.r[A2]));
+    });
+    let cells: Rc<RefCell<Vec<(u32, i32, i32, u32)>>> = Rc::default();
     let c = cells.clone();
     cpu.hook(CELL, move |r, _| {
         c.borrow_mut()
-            .push((r.r[A0], r.r[A1] as i32, r.r[A2] as i32));
+            .push((r.r[A0], r.r[A1] as i32, r.r[A2] as i32, r.r[A3]));
         r.r[V0] = 5;
     });
+    let rects = legaia_engine_ui::SaveMenuAtlasRects {
+        cursor: (7, 9, 16, 16),
+        load_empty_frame: Some((0, 0, 32, 32)),
+        ..Default::default()
+    };
+    let grid_cells = [legaia_engine_ui::SlotGridCell::default(); 15];
     let mut rng = Rng(0x534C_4F54);
     let mut ts: Vec<u32> = (0..=0x1000).step_by(0x40).collect();
     ts.extend((0..200).map(|_| rng.below(0x1001)));
+    let (mut lit, mut gated) = (0, 0);
     for t in ts {
         cpu.mem.wr32(SLIDE, t);
         cells.borrow_mut().clear();
+        hands.borrow_mut().clear();
         let (col, row) = (rng.below(5), rng.below(3));
+        // The focused cell draws lit, with the hand, unless a directory
+        // rescan is pending or a notice sub-mode (`0x0C` / `0x0D`) is up
+        // (`0x801E0798..0x801E07C4`).
+        let rescan = u32::from(rng.below(4) == 0);
+        let submode = [0x0B, 0x0B, 0x0C, 0x0D, 0x0E, 0x12][rng.below(6) as usize];
+        cpu.mem.wr32(RESCAN, rescan);
+        cpu.mem.wr32(SUB_MODE, submode);
+        let open = rescan == 0 && !matches!(submode, 0x0C | 0x0D);
         assert_eq!(cpu.call(GRID, &[col, row]), Stop::Returned, "t {t:#x}");
         let got = cells.borrow().clone();
         assert_eq!(got.len(), SLOT_GRID_COLS * SLOT_GRID_ROWS, "t {t:#x}");
-        for (i, &(slot, x, y)) in got.iter().enumerate() {
+        let focus = col + 5 * row;
+        for &(slot, _, _, mode) in &got {
+            let want = if open && slot == focus { 0 } else { 3 };
+            assert_eq!(mode, want, "t {t:#x} slot {slot} focus {focus} open {open}");
+        }
+        if open {
+            lit += 1;
+            // The port lights the focused cell and draws the hand where the
+            // loop stamps it.
+            let draws = legaia_engine_ui::slot_preview_grid_draws_at(
+                &rects,
+                &grid_cells,
+                focus as u8,
+                t as u16,
+                (0, 0),
+                1,
+            );
+            let hand: Vec<(i32, i32)> = draws
+                .iter()
+                .filter(|d| d.src == rects.cursor)
+                .map(|d| (d.dst.0, d.dst.1))
+                .collect();
+            let retail: Vec<(i32, i32)> = hands.borrow().iter().map(|h| (h.0, h.1)).collect();
+            assert_eq!(retail, hand, "t {t:#x} focus {focus}: the hand");
+            assert!(hands.borrow().iter().all(|h| h.2 == 0x4E));
+        } else {
+            gated += 1;
+            assert!(hands.borrow().is_empty(), "t {t:#x}: no hand while gated");
+        }
+        for (i, &(slot, x, y, _)) in got.iter().enumerate() {
             let (c, r) = (i as u32 % 5, i as u32 / 5);
             assert_eq!(slot, c + 5 * r, "t {t:#x} cell {i}");
             assert_eq!(y, 0x24 + 20 * r as i32, "t {t:#x} cell {i}");
@@ -86,6 +143,7 @@ fn the_grid_slides_every_cell_where_retail_does() {
             );
         }
     }
+    assert!(lit > 50 && gated > 50, "{lit} {gated}");
 }
 
 const BOX: u32 = 0x801E_4140;
