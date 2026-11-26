@@ -1054,11 +1054,9 @@ impl World {
             return;
         };
         // Retail entry-byte decode (`FUN_801DE840` case 0x3F): the low 7
-        // bits are the tile, the high bit selects the far half of the tile
-        // (`(b & 0x7F) * 0x80 + 0x40`, `+0x80` when bit 7 is set).
-        let half =
-            |b: u8| -> i16 { i16::from(b & 0x7F) * 128 + if b & 0x80 != 0 { 0x80 } else { 0x40 } };
-        let (ax, az) = (half(tile_x), half(tile_z));
+        // bits are the tile, the high bit selects the far half of the tile.
+        use legaia_engine_vm::field::dispatch_leaves::warp_entry_coord;
+        let (ax, az) = (warp_entry_coord(tile_x), warp_entry_coord(tile_z));
         let (wx, wz) = if rescue {
             self.nearest_standable_seat(ax, az)
         } else {
@@ -1081,7 +1079,8 @@ impl World {
     ///
     /// REF: FUN_801DE840 (case 0x3F facing write, table 0x80073F04)
     pub fn arm_arrival_facing(&mut self, dir: u8) {
-        self.locomotion.arrival_facing = i16::from(dir & 7) * 0x200;
+        self.locomotion.arrival_facing =
+            legaia_engine_vm::field::dispatch_leaves::warp_arrival_facing(dir);
     }
 
     /// Op `4C 3A`: the player's heading `+0x26` takes the arrival facing.

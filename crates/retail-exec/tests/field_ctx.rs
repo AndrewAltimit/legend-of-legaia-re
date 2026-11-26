@@ -1214,7 +1214,10 @@ fn an_attached_light_is_found_where_retail_finds_it() {
 /// The field VM's host globals the port's `FieldHost` hooks name one to one:
 /// `(address, width)`. A store the hook owns lands here on the port's side,
 /// as the hook's documentation spells it.
-const HOST_GLOBALS: [(u32, u8); 15] = [
+const HOST_GLOBALS: [(u32, u8); 18] = [
+    (0x8007_3EF4, 4), // op 3F, the destination-entry X and Z words
+    (0x8007_3EF8, 4),
+    (0x8007_3EFC, 4), // op 3F, the arrival facing
     (0x8007_B910, 4), // op 4C 4D, the audio duck level (scaled by 0x8008457C)
     (0x8007_BCD0, 4), // ops 4C 4A..4C, the horizon gate's scale / step / layer
     (0x8007_BCD4, 4),
@@ -1245,6 +1248,10 @@ struct Recording {
     /// Stores to words outside [`HOST_GLOBALS`] a hook names by an
     /// operand (op 43 07's rotation row): `address -> (width, value)`.
     rows: BTreeMap<u32, (u8, u32)>,
+    /// The scene names op `3F` handed the scene-change packet.
+    warps: Vec<String>,
+    /// How many of those warps carried a far-half entry byte.
+    half_tiles: usize,
 }
 impl Recording {
     fn put(&mut self, at: u32, v: u32) {
@@ -1262,7 +1269,18 @@ impl FieldFlagsHost for Recording {
         self.inert.frame_delta()
     }
 }
-impl FieldSceneHost for Recording {}
+impl FieldSceneHost for Recording {
+    fn scene_transition_named(&mut self, scene: &str, entry_x: u8, entry_z: u8, dir: u8) {
+        // `0x801DEB1C..0x801DEBAC`: the scene-change packet, then the entry
+        // words and the facing the scene host arms from these bytes.
+        use legaia_engine_vm::field::dispatch_leaves::{warp_arrival_facing, warp_entry_coord};
+        self.warps.push(scene.to_string());
+        self.put(0x8007_3EF4, warp_entry_coord(entry_x) as u16 as u32);
+        self.put(0x8007_3EF8, warp_entry_coord(entry_z) as u16 as u32);
+        self.put(0x8007_3EFC, i32::from(warp_arrival_facing(dir)) as u32);
+        self.half_tiles += usize::from((entry_x | entry_z) & 0x80 != 0);
+    }
+}
 impl FieldTerrainHost for Recording {}
 impl FieldCameraHost for Recording {
     fn set_camera_focus_override(&mut self, x_global: i16, z_global: i16) {
@@ -1453,6 +1471,25 @@ fn every_instruction_leaves_the_host_globals_as_retail_leaves_them() {
             }
         });
     }
+    // The name-based scene-change packet `FUN_8001FD44(name, index)` op 3F
+    // hands its copied name: the names, in call order.
+    let packets: std::rc::Rc<std::cell::RefCell<Vec<String>>> = Default::default();
+    {
+        let packets = packets.clone();
+        cpu.hook(0x8001_FD44, move |r, m| {
+            let at = r.r[4];
+            let name: Vec<u8> = (0..32)
+                .map(|k| m.rd8(at + k))
+                .take_while(|&b| b != 0)
+                .collect();
+            packets
+                .borrow_mut()
+                // The resolver `FUN_8001D7F8` lower-cases it; so does the
+                // port's name gate.
+                .push(String::from_utf8_lossy(&name).to_ascii_lowercase());
+        });
+    }
+    let (mut warped, mut half_tiles) = (0usize, 0usize);
     // The 32-bit operand reader op 43 07 loads its packed word through.
     cpu.hook(0x8003_CED8, |r, m| {
         let a = r.r[4];
@@ -1510,8 +1547,11 @@ fn every_instruction_leaves_the_host_globals_as_retail_leaves_them() {
                 ramps: Vec::new(),
                 duck_scale: cpu.mem.rd32(0x8008_457C),
                 rows: BTreeMap::new(),
+                warps: Vec::new(),
+                half_tiles: 0,
             };
             ramps.borrow_mut().clear();
+            packets.borrow_mut().clear();
             let mut seeds = BTreeMap::new();
             for (at, w) in HOST_GLOBALS {
                 let v = if w == 2 {
@@ -1563,6 +1603,15 @@ fn every_instruction_leaves_the_host_globals_as_retail_leaves_them() {
                 ));
             }
             ramped += usize::from(!retail_ramps.is_empty());
+            let retail_packets = packets.borrow().clone();
+            if retail_packets != host.warps {
+                wrong.push(format!(
+                    "scene packet retail {retail_packets:?} port {:?}",
+                    host.warps
+                ));
+            }
+            warped += host.warps.len();
+            half_tiles += host.half_tiles;
             if !wrong.is_empty() {
                 let e = differ.entry(label.clone()).or_default();
                 e.0 += 1;
@@ -1585,6 +1634,8 @@ fn every_instruction_leaves_the_host_globals_as_retail_leaves_them() {
     assert!(ran > 4000, "{ran}");
     assert!(ramped > 0, "no instruction ramps a hook-owned word");
     assert!(rows_held > 0, "no rotation row held");
+    eprintln!("{warped} scene changes, {half_tiles} with a far-half entry byte");
+    assert!(warped > 50, "{warped} scene changes");
     // Every hook's word is stored by some instruction of the corpus.
     for (at, _) in HOST_GLOBALS {
         assert!(

@@ -898,7 +898,12 @@ where the arm stores `+0x6C` (`0x801E08AC`); op `0x23` keeping the half-tile bit
 `+0x8D`, which the arm masks with `0x7F`; and op `0x3E`'s minigame warp clearing `0x80000` on the context running
 the script, where the arm clears it on the player object (`0x801E07BC..0x801E07D8`), so a door's warp left the
 player's walk lock up. A field the port leaves to its host is counted rather than compared, since the host there is
-inert; what the test holds is every store `step` makes itself.
+inert; what the test holds is every store `step` makes itself. Its host-globals pass holds op `0x3F`'s
+scene-change packet name, entry words `0x80073EF4` / `0x80073EF8` and arrival facing `0x80073EFC`
+against the scene host's own conversion, which found the entry operand the scene host arms before
+the destination's initialiser taking the whole entry byte as the tile: on the 25 shipped scene
+changes whose entry byte asks for the far half of the tile (bit 7), the operand stood `0x3FC0` off
+the map until the player's re-seat after the initialiser.
 The seat `4C 51` is the op the port hands its host whole, so a second pass steps it on the real `World`, as a live
 placement channel's op, and compares the tile on the context and on the drawn seat, the party-bank bit, `+0x62`,
 `+0x5C` and the stored heading. Every seat matched but the hide box: the host returned early on tile `(127, 127)`, a

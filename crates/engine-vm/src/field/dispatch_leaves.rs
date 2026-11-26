@@ -188,6 +188,27 @@ pub fn tile_center(b: u8) -> i16 {
     if b & 0x80 != 0 { base + 0x40 } else { base }
 }
 
+/// The world coordinate op `0x3F` stores for one of its entry bytes into
+/// the destination-entry words `0x80073EF4` / `0x80073EF8`: the low seven
+/// bits are the tile, `(b & 0x7F) << 7`, plus the half-tile `0x40`, plus
+/// another `0x40` when bit 7 asks for the far half (`0x801DEB20..0x801DEB7C`).
+/// Unlike [`tile_center`], a zero byte is tile `0`'s centre, `0x40`.
+///
+/// PORT: FUN_801DE840 (`0x801DEB20..0x801DEB7C`, op `0x3F`'s entry words)
+pub fn warp_entry_coord(b: u8) -> i16 {
+    let base = (i16::from(b & 0x7F) << 7) + 0x40;
+    if b & 0x80 != 0 { base + 0x40 } else { base }
+}
+
+/// The arrival facing op `0x3F` stores into `_DAT_80073EFC`: entry
+/// `dir & 7` of the SCUS halfword table at `0x80073F04`, the eight compass
+/// points `0, 0x200, .., 0xE00` of the 12-bit angle (`0x801DEB88..0x801DEBAC`).
+///
+/// PORT: FUN_801DE840 (`0x801DEB88..0x801DEBAC`, op `0x3F`'s arrival facing)
+pub fn warp_arrival_facing(dir: u8) -> i16 {
+    i16::from(dir & 7) * 0x200
+}
+
 /// The staged mode switch behind `4C 53` / `4C 54`: `FUN_801D65D8(target)`,
 /// `_DAT_8007BA3C` the settled target and `_DAT_8007B9C0` the stage. Each call is
 /// one frame's step and reports whether the switch is still in flight. The step

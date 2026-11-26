@@ -259,11 +259,12 @@ impl SceneHost {
     }
 
     /// Arm the entry operand from a **tile** pair, the form the field VM's
-    /// `0x3F` and the world-map arrival kernel carry: `(tile << 7) + 0x40`,
-    /// retail's tile-centre conversion.
+    /// `0x3F` carries: the destination-entry words that op stores
+    /// ([`legaia_engine_vm::field::dispatch_leaves::warp_entry_coord`]), the
+    /// low seven bits the tile and bit 7 its far half.
     pub fn set_entry_seat_tile(&mut self, tile_x: u8, tile_z: u8) {
-        let centre = |t: u8| ((i32::from(t) << 7) + 0x40) as i16;
-        self.set_entry_seat(centre(tile_x), centre(tile_z));
+        use legaia_engine_vm::field::dispatch_leaves::warp_entry_coord;
+        self.set_entry_seat(warp_entry_coord(tile_x), warp_entry_coord(tile_z));
     }
 
     /// The disc's inbound-arrival catalog, built on first use.
