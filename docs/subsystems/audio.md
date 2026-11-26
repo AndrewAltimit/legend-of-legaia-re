@@ -4215,12 +4215,10 @@ level tracks a frame-stepped retail one within `8` units across the ramp.
 | `cort_mystic_circle_mid_cast` | `0.962` | `-0.03` dB | | not split window by window |
 
 The channel also scores the rest of the Seru the library holds mid-cast, and Evil Medallion's Rage.
-Most read `0.986..0.999` on `cast` and `0.993..1.000` on `cast_core`. Five read `0.14..0.33`:
-`iota`, `puera`, `slippery`, `mule` and `jedo`. Their 10 ms level envelopes still agree with
-retail's at `0.76..0.96`, but only at a shift of `0.62..1.35` s, outside the seek window. So the
-engine plays the right sounds at the wrong time: the cast's offset or its seek wait. Rage reads
-`0.42`, best fitting `4.35` s late on a short engine recording. `zora_glare_petrify_post` is not
-scored, because its gate falls at the end of the cast and leaves the engine a third of a second.
+Five of them first read `0.14..0.33` with their level envelopes matching retail only `0.62..1.35` s
+apart. Frame-stepped against the engine's band log (`<wav>.band`), four were the port keying the
+voice at the wrong time ([a gate after the poll](#a-head-cue-behind-a-gate-the-detector-missed)) and
+one was the replay's hold ([the hold ends at the gate](#the-side-band-hold-ends-at-the-gate)).
 
 <a id="the-casts-step-is-pcsx-reduxs"></a>
 **The cast's step is PCSX-Redux's.** The battle frame step carries each pass's cost into the next
@@ -4402,8 +4400,8 @@ A state inside that seek seeds with an idle drive, so the engine's band ran the 
 vsyncs ahead of the recording and every sound of the cast with it: the two rows read `0.60` and `0.37`.
 The cast channel now seats what the seek has left off the state's own CD controller (`PSRCounter`
 while `DriveStatus` is `2`, plus the logical seek; `LEGAIA_SEAT_CAPTURE_SEEK_LEFT`, a harness seat), and the
-rows read `0.947` and `0.996`. The same controller holds the summon module seeks the
-[table below](#a-state-inside-a-drive-hold) names, which the seat does not reach yet.
+rows read `0.947` and `0.996`. The summon rows that read as whole-cast shifts were not seeks
+([below](#a-head-cue-behind-a-gate-the-detector-missed)).
 
 <a id="the-cast-channels-seek-window"></a>
 **The cast channel's seek window.** The drive's seek time is not one number: it varies across drives and
@@ -4459,25 +4457,34 @@ each the modelled seek less the `2`. The poll arm's `CdSync(1)` does wait the ta
 `30` vsyncs on Orb are unchanged. Voices moved `2..3` vsyncs earlier against mednafen; the ring's cues do not
 depend on the seek.
 
-<a id="a-state-inside-a-drive-hold"></a>
-**A state that stands inside a drive hold reads as a whole-cast shift.** Run over every mid-cast
-mednafen state rather than the ten the driver lists, most casts read as above, with the voice
-`+7` to `+18` vsyncs late against a residual fitted window by window. A few read very low
-because the whole cast sits one rigid distance from retail's, which no fit within a frame step can
-reach, and the distance is a property of where the state stands, not of the sound:
+<a id="a-head-cue-behind-a-gate-the-detector-missed"></a>
+**A head cue behind a gate the detector missed.** Mule, Iota, Puera and Slippery read as whole-cast
+shifts, and frame-stepping says why: their CD-XA voice keyed early in the port. Each module's cue
+arm returns busy on a gate of its own as well as the drive poll, and
+`head_cue_waits_arm_gate` read only Gilium's shape (a branch to the busy return ahead of the poll).
+Mule's PROT 0929 arm 2 tests its band word after the poll (`lh v0,0x6d8(s3)` / `bne v0,zero` at
+`0x801F6E24..0x801F6E2C`) before `0x170`. Iota's 0921 drains a countdown and leaves on a `j` to the
+busy return, with a `blez` over it to the poll. Puera's 0922 and Slippery's 0920 leave one word ahead
+of the busy return, on a copy of the poll branch's delay slot. Retail keys
+`mule_summon_mid_cast`'s voice `171` vsyncs from the state, on the pass `0x35` hands to `0x36`; the
+port keyed it at `+103`, `1.1` s early, and now keys it at `+178`. A `j` counts only with the branch
+over it to the poll, so a previous arm's closing jump to the shared busy return is not read as a
+gate (Theeder, Zenoir and Aluru test their band word on the arm ahead of the poll's).
 
-| State | Whole-cast shift (engine against retail) | Where the state stands (frame-stepped) |
-|---|---|---|
-| `vera_summon_mid_cast` | `-24.5` vsyncs | arm 3, `29` vsyncs ahead of arm 4 behind the `XA7` seek; the seed's drive is idle, so the port skips the hold |
-| `iota_summon_mid_cast`, `puera_summon_mid_cast` | `-24` vsyncs | the same hold |
-| `mule_summon_mid_cast` | `-60.5` vsyncs | arm 0 with the side-band stage `4`, its drop `55` vsyncs on |
-| `jedo_summon_mid_cast` | `+82` vsyncs | arm 2 with the stage `8`, its drop `33` vsyncs on |
+<a id="the-side-band-hold-ends-at-the-gate"></a>
+**The side-band hold ends at the gate.** A replay whose state stands on a side-band wait arm holds
+that arm busy until the band's other clocks reach the frame (`PhaseGate::steer`). The hold ran on for
+as long as the engine stood on the arm, so a child that plays on past its gate never ran the arm on
+the engine's own stage: `jedo_summon_mid_cast`'s arm 2 held until `0x35` ended, `76` vsyncs past
+retail's exit, and the voice keyed `1.3` s late. The hold now ends on the gated frame
+(`PhaseGate::release`). Harness-only.
 
-The seed stands the engine on the state's arm with an idle drive and a full side-band token
-(`World::tick_sideband_token` restarts its count): neither the seek in flight nor the part of the read
-already done is in RAM as a time the seed can place. These rows score the seed's instant, so a low number there
-is not a defect of the cast's sound. A rigid shift of the residual against the engine's recording
-(a window-by-window correlation scan) separates the two readings: a true sound difference has no single shift.
+**The recording opens on the band word.** The gate places a summon band's state at its arm's entry;
+the band word `ctx[+0x6D8]` places it inside the arm, and the recording opens there
+(`LEGAIA_DIAG_AUDIO_WAV_ARM`, the step track's `band_instant`). `slippery_summon_mid_cast` stands `8`
+vsyncs into arm 2. While the module's own seek is still ahead or in flight, the seek places the
+voice (the seek window fits it), and the recording opens at the gate. A recording that opens inside the Done band stops past the band's exit, so
+`zora_glare_petrify_post` (`0x51`) records the cast's tail. Harness-only.
 
 **A call behind its arm's own gate.** Gilium's PROT 0923 arm 2 drains a countdown (`0x801FA4F8`,
 `bgtz a1,0x801F8B5C` at `0x801F6CAC`) before it polls the drive and calls `0x16E`; the port raised the cue

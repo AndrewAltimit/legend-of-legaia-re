@@ -450,7 +450,8 @@ struct AudioWavRecorder {
     /// `LEGAIA_DIAG_AUDIO_WAV_ARM=state,phase,word`: the state's instant inside
     /// a summon band, as the step track names it. The recording opens on the
     /// first gated pass at or past it: under `(state, phase)` with the band word
-    /// `ctx[+0x6D8]` at or below `word`, or any later state or phase.
+    /// `ctx[+0x6D8]` at or below `word`, or any later state or phase. While the
+    /// module's own seek is ahead, the gate opens it.
     arm: Option<(u8, u8, i16)>,
     /// Whether the recording opened inside the Done band: a state taken
     /// there (`zora_glare_petrify_post`, `0x51`) stops on the band's exit,
@@ -542,12 +543,22 @@ impl PlayWindowApp {
         }
         let ticks = rec.last_tick.map_or(1, |t| tick.saturating_sub(t).max(1));
         rec.last_tick = Some(tick);
-        let at_arm = rec.arm.is_none_or(|(state, phase, word)| {
-            let w = &self.session.host.world;
-            let (s, p) = (w.battle_ctx.action_state, w.casting.module_phase);
-            s > state
-                || (s == state && (p > phase || (p == phase && w.battle_ctx.frame_timer <= word)))
-        });
+        // While the module's own seek is still ahead or in flight, the seek
+        // places the voice, not the word (the cast channel's seek window fits
+        // the voice after it): `vera_summon_mid_cast` stands on arm 3 behind the
+        // `XA7` seek, and Gilium, Gola Gola, Barra and Mushura ahead of theirs.
+        let casting = &self.session.host.world.casting;
+        let seek_ahead = casting
+            .drive_arms
+            .is_some_and(|(_, issued)| !issued || casting.drive.poll_busy());
+        let at_arm = seek_ahead
+            || rec.arm.is_none_or(|(state, phase, word)| {
+                let w = &self.session.host.world;
+                let (s, p) = (w.battle_ctx.action_state, w.casting.module_phase);
+                s > state
+                    || (s == state
+                        && (p > phase || (p == phase && w.battle_ctx.frame_timer <= word)))
+            });
         if rec.start.is_none() && at_arm && self.capture_gate_met() {
             let w = &self.session.host.world;
             eprintln!(
