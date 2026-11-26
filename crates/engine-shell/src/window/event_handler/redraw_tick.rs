@@ -771,6 +771,15 @@ impl PlayWindowApp {
                 if let Some((entries, cursor)) = env_cost_ring() {
                     world.seed_frame_cost_ring(entries, cursor);
                 }
+                // A capture inside a voice line's read (`LEGAIA_SEAT_XA_LEFT=
+                // <vsyncs>`, the recording's loaded frames from the gate):
+                // the polls run on from where retail's stood.
+                if let Some(left) = std::env::var("LEGAIA_SEAT_XA_LEFT")
+                    .ok()
+                    .and_then(|v| v.trim().parse::<u16>().ok())
+                {
+                    world.seat_battle_xa_left(left);
+                }
                 // The recording's frame phase (`LEGAIA_DIAG_CAST_SEQ_PASS_LEFT=
                 // left,step`): the vsyncs before its next pass shows, which a
                 // save taken inside a frame leaves short of the engine's fresh

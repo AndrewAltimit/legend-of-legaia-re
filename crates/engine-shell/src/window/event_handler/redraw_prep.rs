@@ -1022,6 +1022,17 @@ impl PlayWindowApp {
                 for s in seeds {
                     world.seat_battle_clip_cursor(usize::from(s.slot), s.clip, s.cursor);
                 }
+                // The body pairs `+0x3C` / `+0x40` the state's RAM holds are
+                // its own poses' (`FUN_8004998C`), not the replay's: a strike's
+                // attacker re-faces every pass onto its target's body pair, so
+                // a pair left on the replay's keyframe turned the attacker
+                // off retail's bearing from the first pass. Only on the strike
+                // band (`0x14..=0x20`), the states that re-face off the pairs:
+                // a cast module's gate stands its bodies on the module's own
+                // seats. A harness seat.
+                if (0x14..=0x20).contains(&world.battle_ctx.action_state) {
+                    world.refresh_battle_body_pairs_now();
+                }
             }
         }
         // Colour the ground grid from this frame's battle ambient (a summon

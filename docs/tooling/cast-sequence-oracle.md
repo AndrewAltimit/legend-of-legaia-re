@@ -1626,6 +1626,28 @@ when the gate opens (`LEGAIA_FILM_YAW`), beside the state's `rand()` word. Scyth
 reads `.953` to `.982` and V-Windhash `.933` to `.961`; of the set's other `--physical`
 films none falls by more than `.001` and none rises by more than `.004`. A harness seat.
 
+### The body pairs and the voice line at a physical film's gate
+
+A strike's attacker re-faces every pass onto its target's body pair `+0x3C` / `+0x40`
+([battle action](../subsystems/battle-action.md#the-strike-band-re-faces-the-attacker-every-pass)),
+and the gate seats every other body's clip and cursor off the state's RAM. The pairs were
+left on the poses the replay had struck, so the first pass re-faced the attacker onto a
+keyframe retail's bodies never held. `battle_ropeway_party_gala_flying_knee_mid`'s Killer
+Bee stood its pair at `(-3, -32)` in the replay where retail's reads `(5, -25)`, and Gala's
+heading, the Bee's after the hit and so case 7's yaw parted by `7` to `19` units for the rest
+of the action. The engine now decodes the pairs again off the seated poses
+(`World::refresh_battle_body_pairs_now`) on the gate's tick: the film reads `.889` to `.982`.
+
+A state saved inside a voice line's read holds the clip player's stop watch polling the
+drive (`FUN_8003D764`), which no field the seeds carry stands in for, and the replay's line
+ends wherever its own lead-in cued it. `battle_jou_party_vahn_chain_late`'s retail frames
+run nine vsyncs for `66` vsyncs past the gate, the replay's for `28`. The driver reads the
+span off the recording (`recording_xa_left`: a first frame past its step, then frames of six
+vsyncs or more, to the first that is not) and the engine stands the line there at the gate
+(`LEGAIA_SEAT_XA_LEFT`, `World::seat_battle_xa_left`). Of the arts and strike sets it seats
+Vahn's Chain late and Gala's Flying Knee late; a recording whose line is cued after the state
+(Tornado Flame's second frame is its cue pass) is left alone. Both are harness seats.
+
 ### The backdrop angle at the cast begin
 
 A stage that keeps backdrop object 1 (`0x8007B64B`) turns it by `step >> 1` every
