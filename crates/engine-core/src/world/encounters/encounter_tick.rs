@@ -206,11 +206,64 @@ impl World {
     /// Per-frame tick of the encounter session timers. Drives the
     /// `Transition` and `Grace` countdowns, and - while the session is in
     /// `Transition` - the field-to-battle intro state machine.
+    ///
+    /// A transition opens on retail's game mode `8`: the mode-table handler
+    /// `FUN_80025E68` copies (or loads) the intro overlay, runs `FUN_8003DE7C`
+    /// and calls the init `FUN_801CE8CC`, whose last act stores mode `9`; the
+    /// transition entity first ticks on the frame after. Nothing else runs in
+    /// that window - no field frame, no entity tick, no countdown - and the
+    /// display holds the field's last frame. Three PCSX-Redux captures (the
+    /// Queen Bee ambush and two `retona_field_card_boot` intros, a scatter and
+    /// a shatter) read the window as [`ENCOUNTER_JOLT_VSYNCS`] vsyncs, the
+    /// span the encounter jolt covers. The world holds the session for those
+    /// ticks before its first transition frame
+    /// ([`Self::hold_intro_load`]).
     pub fn tick_encounter(&mut self) {
+        if self.hold_intro_load() {
+            return;
+        }
         if let Some(session) = self.encounters.session.as_mut() {
             session.tick_frame();
         }
         self.tick_battle_intro();
+    }
+
+    /// The mode-`8` load window ahead of a transition's first tick: `true`
+    /// on each tick of it, when the session neither counts nor ticks the
+    /// intro. The encounter jolt starts with it (the entity SM's `0xFF`
+    /// stores precede the mode-`8` store) and runs out with it.
+    ///
+    /// The window's length is measured, not computed: the handler's work
+    /// (`FUN_80025E68`, the init's capture and its mask-bit loop) is CPU
+    /// time on retail.
+    // REF: FUN_80025E68, FUN_801CE8CC
+    fn hold_intro_load(&mut self) -> bool {
+        use legaia_engine_battle::encounter::EncounterPhase;
+        let in_transition = matches!(
+            self.encounters.session.as_ref().map(|s| s.phase()),
+            Some(EncounterPhase::Transition { .. })
+        );
+        if !in_transition {
+            self.encounters.intro_load_hold = None;
+            return false;
+        }
+        if self.battle.intro.is_some() {
+            return false;
+        }
+        let left = match self.encounters.intro_load_hold {
+            Some(left) => left,
+            None => {
+                self.encounter_rumble();
+                ENCOUNTER_JOLT_VSYNCS
+            }
+        };
+        if left == 0 {
+            self.encounters.intro_load_hold = Some(0);
+            return false;
+        }
+        self.tick_intro_rumble();
+        self.encounters.intro_load_hold = Some(left - 1);
+        true
     }
 
     /// The battle's **first monster id** - retail's `DAT_8007BD0C`, slot 0 of
@@ -329,7 +382,6 @@ impl World {
         // whose length a caller set to something else (a test or tool
         // shortening the bracket) keeps its own.
         if self.battle.intro.is_none() {
-            self.encounter_rumble();
             self.raise_hud_short_idle();
             self.silence_field_audio_for_intro();
             use legaia_render_kernels::battle_intro_styles::{

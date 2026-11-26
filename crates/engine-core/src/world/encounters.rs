@@ -10,4 +10,6 @@ mod party_abilities;
 mod region_setup;
 mod scripted_battles;
 
+#[cfg(test)]
+pub(crate) use encounter_tick::ENCOUNTER_JOLT_VSYNCS;
 pub use scripted_battles::*;

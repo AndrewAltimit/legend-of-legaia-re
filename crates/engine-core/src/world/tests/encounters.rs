@@ -843,6 +843,7 @@ fn the_battle_intro_sm_runs_through_the_transition_phase() {
 
     // Phase 0 arms the audio cue, phase 1 clears mesh assembly, phase 2 is the
     // BGM + bundle load - three ticks reach it.
+    run_intro_load(&mut world);
     world.tick_encounter();
     assert!(
         world.battle.intro.is_some(),
@@ -921,6 +922,7 @@ fn the_battle_intro_phase_zero_enqueues_the_battle_start_cue() {
         roll_q8: 0,
     });
     world.set_encounter_session(Some(session));
+    run_intro_load(&mut world);
     world.tick_encounter();
     let cues = world.drain_battle_sfx_cues();
     assert_eq!(cues.len(), 1, "one battle-start cue: {cues:?}");
@@ -954,6 +956,7 @@ fn the_battle_intro_phase_zero_enqueues_the_battle_start_cue() {
         roll_q8: 0,
     });
     world.set_encounter_session(Some(session));
+    run_intro_load(&mut world);
     world.tick_encounter();
     let cues = world.drain_battle_sfx_cues();
     assert_eq!(
@@ -1030,6 +1033,7 @@ fn a_field_track_the_battle_shares_is_reattached_at_the_completion() {
         roll_q8: 0,
     });
     world.set_encounter_session(Some(session));
+    run_intro_load(&mut world);
     world.tick_encounter();
     let _ = world.drain_field_events();
     world.swap_to_battle_bgm();
@@ -1076,6 +1080,7 @@ fn the_intro_drops_an_emitters_key_latch() {
         roll_q8: 0,
     });
     world.set_encounter_session(Some(session));
+    run_intro_load(&mut world);
     world.tick_encounter();
     assert_ne!(world.ambient.fx[0].state.flags & EMITTER_STOP_FLAG, 0);
     assert!(
@@ -1193,6 +1198,7 @@ fn the_swirl_transition_runs_its_own_252_frames() {
             roll_q8: 0,
         });
         world.encounters.session = Some(session);
+        run_intro_load(&mut world);
         let mut ticks = 0;
         let mut last_elapsed = 0;
         while matches!(
@@ -1275,6 +1281,7 @@ fn the_intro_seeders_draw_off_the_world_stream() {
     let draws = intro_seeder_draws(choice.style, choice.sub_style);
     assert!(draws > 0, "the ordinary encounter's style draws");
 
+    run_intro_load(&mut world);
     world.tick_encounter();
     assert_eq!(world.battle.intro_rand_state, 0x0963_2944);
     let mut expect = 0x0963_2944u32;
@@ -1320,4 +1327,54 @@ fn an_abandoned_battle_hands_the_bgm_word_back_to_the_field() {
             "field {field:?}: {evs:?}"
         );
     }
+}
+
+/// Tick through the mode-`8` load window that opens every transition
+/// (`World::tick_encounter`), so the next tick is the transition's first.
+fn run_intro_load(world: &mut World) {
+    for _ in 0..crate::world::encounters::ENCOUNTER_JOLT_VSYNCS {
+        world.tick_encounter();
+        assert!(
+            world.battle.intro.is_none(),
+            "the load window ticks no entity"
+        );
+    }
+}
+
+/// The transition opens on the load window: the jolt rumbles, nothing
+/// counts down and no entity ticks for its six vsyncs, then the entity's
+/// first tick follows.
+#[test]
+fn a_transition_opens_on_the_mode_8_load_window() {
+    use legaia_engine_battle::encounter::{EncounterPhase, EncounterRoll};
+    let mut world = World::new();
+    let mut session = legaia_engine_battle::encounter::EncounterSession::new(
+        legaia_engine_battle::encounter::EncounterTracker::new(
+            legaia_engine_battle::encounter::EncounterTable::default(),
+        ),
+    );
+    session.trigger_with(EncounterRoll {
+        formation_id: 3,
+        row_index: 0,
+        roll_q8: 0,
+    });
+    world.set_encounter_session(Some(session));
+    let remaining = |w: &World| match w.encounters.session.as_ref().map(|s| s.phase()) {
+        Some(EncounterPhase::Transition {
+            frames_remaining, ..
+        }) => frames_remaining,
+        _ => panic!("left the transition"),
+    };
+    let before = remaining(&world);
+    run_intro_load(&mut world);
+    assert_eq!(
+        world.rumble.motors.level, 0xFF,
+        "the jolt runs through the window"
+    );
+    assert_eq!(remaining(&world), before, "the window does not count down");
+    world.tick_encounter();
+    assert!(
+        world.battle.intro.is_some(),
+        "the entity ticks after the window"
+    );
 }

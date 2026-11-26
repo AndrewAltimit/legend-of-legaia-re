@@ -2955,11 +2955,31 @@ added itself over the model's copy of its cell and the frame washed out to yello
 
 The engine side of the film is the retail-compare child for `retona_field_card_boot` run with
 `--battle 11` (the row the harvester's `LEGAIA_WANT=136` rolled), `--screenshot-every 1` and
-`LEGAIA_BATTLE_ARM_TICK=120`, so the fight is armed out of a field the window has drawn. Matched
-on the radial brightness profile of the starburst below, the engine runs about eighteen vsyncs
-ahead of the film. Six of them are retail's mode `8`, which runs before the transition mode starts
-and which the engine's transition does not model; about three are the frame retail's
-double-buffered display shows a draw after the tick that built it; the rest are unaccounted.
+`LEGAIA_BATTLE_ARM_TICK=120`, so the fight is armed out of a field the window has drawn.
+
+#### The mode-8 window
+
+The transition does not start on the frame the encounter stores game mode `8`. The mode table's
+row `8` (`0x8007078C + 8 * 0x18`) names the handler `FUN_80025E68`, which copies the intro overlay
+out of its RAM cache (`efect MemCopy`, `gp+0x780 == 2`) or loads it (`efect OverLoad`), polls the
+CD stream (`FUN_8003DE7C(0)`) and calls the init; the init's last store is mode `9`, and the
+transition entity first ticks on that frame. The init's work is the window's length: its capture
+`DrawSync` / `StoreImage` and the loop ORing the mask bit over all `320 x 240` pixels of the
+readback (`0x801CEBF8..0x801CEC30`) run about four vsyncs on the film of formation `[136]`. A
+PCSX-Redux trace from the exit state reads the handler one vsync after the mode-`8` store, the
+pixel loop over the next three and a half, and the entity's first tick five vsyncs after the store,
+in the vsync the init stores mode `9`. The main loop also holds the handler while a CD read is in
+flight (`FUN_8003DE7C`'s poll at `0x800161C0`), which lengthens the window on a scene whose stream
+is still busy; the films of the two `retona` intros and the Queen Bee ambush read none.
+
+The world holds the encounter session for that window before its first transition tick
+(`World::tick_encounter`): six ticks, the span the encounter jolt's capture measures
+(`ENCOUNTER_JOLT_VSYNCS`), with the countdown and the entity both still and the field drawing its
+last frame. The CD-read hold is not modelled. Matched on the radial brightness profile of the
+starburst, the engine film then runs about thirteen vsyncs ahead of retail's, six fewer than
+without the window; about three of those are the frame retail's double-buffered display shows a
+draw after the tick that built it, and the starburst's halo, larger and brighter in the engine at
+the same transition clock, accounts for most of the rest of the profile fit.
 
 #### The init's parts: the starburst
 
