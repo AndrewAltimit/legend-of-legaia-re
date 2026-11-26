@@ -2815,10 +2815,12 @@ through the engine's screen-overlay path; the packet builders are in `render-ker
 `emit_spinup_ring`). The particle fields, the tile shatter and the early swirl are held to
 retail by the [kernel differential](../tooling/retail-kernel-differential.md), packet for packet:
 a tile past progress `0` fades toward black by its progress on the dispatcher's depth-cue bank,
-as retail's does. Two parts are not carried faithfully: the late-phase swirl (retail hands the
-band to the shatter renderer, which draws its quads as triangles spun about their own centroids
-and pushed apart; the port turns whole quads about the origin), and the spin-up ring, which models
-only the case-0 annulus of the multi-shape generator `FUN_80028158`.
+as retail's does. The late-phase swirl hands the band to the shatter renderer, which draws each
+quad as its two triangles, spun about their own centroids and pushed apart; the port runs the band
+through the same shatter kernel (`render-kernels::shatter`) with no deformation row, which the call
+stages none of (inference from its arguments, not yet held by the differential). The swirl film
+reads `.663` at its best pairing (`.641` when the port turned whole quads about the origin). The
+spin-up ring models only the case-0 annulus of the multi-shape generator `FUN_80028158`.
 
 #### Which style a battle gets
 

@@ -52,13 +52,15 @@ pub const SWIRL_WALL_RGB: u32 = 0x0040_4040;
 ///
 /// Past the late-phase frame the submit goes through `FUN_80029888` instead,
 /// the shatter renderer ([`crate::shatter`]) with draw word `(clock - 0x3C) *
-/// 4` and flag word `0x8180_8080`. That path is **not carried faithfully**:
-/// the shatter draws each quad as `POLY_FT3` triangles (`FUN_80029DD8`), each
-/// spun about its own centroid by `RotMatrix(a3 << 4, 0, a3 << 4)` and pushed
-/// out from the band's origin by `c * v >> 7`, where this function rotates
-/// the whole quad about the origin ([`SwirlBandDraw::late_arg`]). The
-/// retail kernel differential (`crates/retail-exec/tests/intro_swirl.rs`)
-/// compares the early phase only.
+/// 4` ([`SwirlBandDraw::late_arg`]) and flag word `0x8180_8080`: each quad
+/// is drawn as its two triangles `(v0, v1, v2)` / `(v1, v2, v3)`
+/// (`FUN_80029DD8`), each spun about its own centroid by `RotMatrix(v << 4,
+/// 0, v << 4)` and pushed out from the band's origin by `c * v >> 7`
+/// ([`crate::shatter::ShatterObject::triangle`], the default arm: the call
+/// stages no deformation row, so no burst offset and no flags - inference
+/// from the call's arguments), and drawn with no `NCLIP`. The retail kernel
+/// differential (`crates/retail-exec/tests/intro_swirl.rs`) compares the
+/// early phase only.
 ///
 /// PORT: FUN_801D1A20
 /// REF: FUN_80029888 (the late-phase dispatcher; far colour + roll staging)
@@ -69,14 +71,10 @@ pub fn emit_swirl_band(
     prims: &mut Vec<ScreenPrim>,
 ) -> bool {
     let tr = GteVec3::new(0, 0, band_z);
-    let rot = match draw.late_arg {
-        // `local_44 = param_4 << 4` feeds the Euler build's x and z lanes.
-        Some(n) => {
-            let a = (n << 4) as i16;
-            euler_rot_psx((a, 0, a))
-        }
-        None => GteMat3::IDENTITY,
-    };
+    if let Some(n) = draw.late_arg {
+        return emit_swirl_band_shattered(mesh, tr, n, draw, prims);
+    }
+    let rot = GteMat3::IDENTITY;
     let mut drawn = false;
     for seg in 0..swirl::COLUMNS - 1 {
         let p = draw.first_vertex + seg * swirl::VERTS_PER_COLUMN;
@@ -110,6 +108,65 @@ pub fn emit_swirl_band(
                 }),
                 prims,
             );
+        }
+    }
+    drawn
+}
+
+/// The late-phase band half through the shatter renderer: every ring and
+/// wall quad as its two triangles, each run through
+/// [`crate::shatter::ShatterObject::triangle`] in the band's local frame and
+/// projected at the band's depth, texels and colours as the early submit
+/// carries them.
+// REF: FUN_80029888, FUN_80029DD8
+fn emit_swirl_band_shattered(
+    mesh: &SwirlMesh,
+    tr: GteVec3,
+    late: i32,
+    draw: &SwirlBandDraw,
+    prims: &mut Vec<ScreenPrim>,
+) -> bool {
+    use crate::shatter::{ShatterObject, ShatterRow, SweepFrame};
+    let row = ShatterRow::default();
+    let mut obj = ShatterObject::new(late as u32 & 0xFFFF, &row, SweepFrame::MODEL);
+    let mut drawn = false;
+    for seg in 0..swirl::COLUMNS - 1 {
+        let p = draw.first_vertex + seg * swirl::VERTS_PER_COLUMN;
+        for (idx, rgb) in [
+            ([p, p + 1, p + 3, p + 4], SWIRL_RING_RGB),
+            ([p + 2, p, p + 5, p + 3], SWIRL_WALL_RGB),
+        ] {
+            for tri in [[0usize, 1, 2], [1, 2, 3]] {
+                let local: [[i16; 3]; 3] = std::array::from_fn(|i| {
+                    let v = mesh.vertices[idx[tri[i]]];
+                    [v.x, v.y, v.z]
+                });
+                let moved = obj.triangle(local);
+                let pc: [ProjCorner; 3] = std::array::from_fn(|i| {
+                    let m = moved[i];
+                    let q = |c: i32| c.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
+                    project_intro_corner(&GteMat3::IDENTITY, tr, (q(m[0]), q(m[1]), q(m[2])))
+                });
+                let uv: [(u8, u8); 3] = std::array::from_fn(|i| {
+                    let (u, v) = mesh.texels[idx[tri[i]]];
+                    (u as u8, v as u8)
+                });
+                drawn |= push_ft4_quad(
+                    &[pc[0], pc[1], pc[2], pc[2]],
+                    [uv[0], uv[1], uv[2], uv[2]],
+                    0,
+                    draw.tpage as u16,
+                    rgb,
+                    false,
+                    CullMode::DoubleSided,
+                    Some(DepthCue {
+                        ir0: 1,
+                        far: 0x80,
+                        max_sz: true,
+                    }),
+                    prims,
+                );
+            }
         }
     }
     drawn

@@ -1606,8 +1606,8 @@ quad wholly off the screen (`FUN_80044798`) and fades the colour toward black by
 The swirl's early submit `FUN_801D1A20` rides the same bank through its flag word's top byte, which
 also links each quad at its largest corner `SZ`; and under the double-sided `NCLIP` mask an edge-on
 quad still drops, which the port's double-sided arm had skipped. The tick `FUN_801D1888` matches. The
-late swirl, which hands the band to the shatter renderer `FUN_80029888`, is not carried faithfully and
-the test leaves it out.
+late swirl, which hands the band to the shatter renderer `FUN_80029888`, runs through the port's
+shatter kernel, but the test leaves it out.
 
 The procedural mesh builder `FUN_80028158` matches `effect_default_arm::build` byte for byte over
 every shape and texture mode; shapes 1 and 3 on the planes that start at `z` extrapolate vertex 6
