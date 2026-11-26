@@ -518,7 +518,7 @@ pub(super) fn play_beats(
                                     // from a player in (40..41, 81) facing
                                     // the intercom at (41, 83).
                                     if matches!(r, Run::Released) && flags_of_world(session) == fa {
-                                        talk_from_box(session, slot, t).unwrap_or(r)
+                                        talk_from_box(session, slot, t, &[]).unwrap_or(r)
                                     } else {
                                         r
                                     }
@@ -1882,7 +1882,20 @@ fn inside_box_tile(session: &NativeSession, t: (u8, u8)) -> bool {
 /// the intercom kept its password, Dr. Usha's door stayed shut, and every
 /// stream stopped in Uru Mais with Gala's cutscene (`uru` P2[28], gated on
 /// the `0x379` P1[15] raises) never spawned.
-pub(super) fn talk_from_box(session: &mut NativeSession, slot: u8, t: (u8, u8)) -> Option<Run> {
+///
+/// `others` are the box's other stands. A pad lean that fails from `t` is
+/// tried from each of them, walked to, before the placement: which stand's
+/// lean lands the facing probe on the actor turns on where the walk left the
+/// player and on the frame the step lands in (`jouinc` P1[8], whose
+/// (3..4, 9..10) box answered the lean from its first stand only while the
+/// player's tick ran after the scripts). The placement still starts from
+/// where the first lean began.
+pub(super) fn talk_from_box(
+    session: &mut NativeSession,
+    slot: u8,
+    t: (u8, u8),
+    others: &[(u8, u8)],
+) -> Option<Run> {
     if !pad_props() {
         return talk_from_box_as(session, slot, t, false);
     }
@@ -1895,6 +1908,32 @@ pub(super) fn talk_from_box(session: &mut NativeSession, slot: u8, t: (u8, u8)) 
     match r {
         Some(Run::Released) if flags_of_world(session) != before => r,
         Some(Run::Released) | None => {
+            for &o in others {
+                let goal = (i16::from(o.0), i16::from(o.1));
+                match pad_walk(session, goal, &pad_avoid(session, Some(goal)), 0) {
+                    Ok(Walk::Entered(s)) => return Some(Run::Entered(s)),
+                    Ok(Walk::Arrived) => {}
+                    Err(_) => continue,
+                }
+                if let Some(s) = center_on_box_tile(session, o) {
+                    return Some(Run::Entered(s));
+                }
+                let lean = talk_from_box_as(session, slot, o, true);
+                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                    eprintln!(
+                        "      [box-talk] P1[{slot}] pad lean from {o:?} (stood {:?}) -> {lean:?}",
+                        player_xz(session)
+                    );
+                }
+                match lean {
+                    Some(Run::Released) if flags_of_world(session) != before => return lean,
+                    Some(Run::Released) | None => {}
+                    other => return other,
+                }
+                if !walking(session) {
+                    return lean;
+                }
+            }
             restore_player_xz(session, start);
             talk_from_box_as(session, slot, t, false).or(r)
         }

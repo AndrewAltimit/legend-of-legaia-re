@@ -661,6 +661,16 @@ to Nivora set four rules the continuous hand plays by:
   only when the walk into the box happened to leave the lean on the
   right step, and a run that left `doman` short of Dr. Usha's `0x370`
   reached `nilboa` barred ([Nivora](#nivora)).
+- **A lean that misses leans again from the box's other stands.** Which
+  stand's lean lands the facing probe on the actor turns on where the walk
+  left the player and on the frame the step lands in. `jouinc` P1[8]
+  (box (3..4, 9..10)) answered the lean from its first stand only while
+  the player's tick ran after the field scripts; with retail's order the
+  lean from (4, 9) missed on two streams and the placement it fell back
+  on released the talk with no flag. The hand now walks to each other
+  stand and leans from there before it places anyone, and the placement
+  still starts from where the first lean began, so the intercom above
+  keeps its one placement.
 - **A box held by a member.** When the entry script tests a named member's
   actor on the same box as the leader's (`nilboa`'s `CD 31`), that member
   takes control and walks in, and control passes on until a leader stands
