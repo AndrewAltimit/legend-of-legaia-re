@@ -99,9 +99,17 @@ const INSTALLER: u32 = 0x801F_19EC;
 const DRIVE_BUSY_CALLS: u32 = 3;
 
 /// The `k`th roll on `seat`: small, middling and past a monster's HP in
-/// turn, so the floors, the `HP - 1` clamps and the kills all run.
+/// turn, so the floors, the `HP - 1` clamps and the kills all run. The two
+/// past the first four reach the arms that scale a roll before they clamp
+/// it: `2` quartered is `0`, which PROT 0915's hits floor at `1`
+/// (`0x801F7164..0x801F7170`, `0x801F78F0..0x801F78FC`), and `0x500`
+/// quartered (`320`) or taken by two thirds (`853`) still runs past the
+/// walk's `300` HP (PROT 0915's arm-7 `HP - 1` clamp at `0x801F7184`,
+/// PROT 0908's at `0x801F7794` and its sweep's kill at `0x801F7F04`).
+/// The run's frame step turns the cycle, so a module's first roll on a seat
+/// is not the same one at every step.
 fn scripted_roll(seat: usize, k: u32) -> u32 {
-    [0x10, 0x5A, 0x7D, 0x180][(seat + k as usize) % 4]
+    [0x10, 0x5A, 0x7D, 0x180, 0x2, 0x500][(seat + k as usize + usize::from(walk_step())) % 6]
 }
 const OUT_CENTRE: u32 = 0x8011_0000;
 const OUT_EXTENT: u32 = 0x8011_0100;
@@ -452,7 +460,15 @@ fn seed(cpu: &mut Cpu, module: &[u8], action: u8, code: u8, layout: Layout) {
             cpu.mem.wr32(a + o, 0);
         }
         let live = s < 3 || (3..3 + layout.monsters).contains(&s) || s == CREATURE;
-        let (x, z) = layout.ground(s);
+        // A monster seat the formation leaves empty keeps the zeroed record
+        // the battle's seating leaves it: its ground and body pairs read
+        // `(0, 0)`, which PROT 0915's chase aims at when it trades its
+        // target onto such a seat (`0x801F7B04..0x801F7B1C`).
+        let (x, z) = if live || s < 3 {
+            layout.ground(s)
+        } else {
+            (0, 0)
+        };
         for (o, v) in [(0x34u32, x), (0x38, z), (0x3C, x), (0x40, z)] {
             cpu.mem.wr16(a + o, v as u16);
         }
@@ -489,9 +505,17 @@ fn seed(cpu: &mut Cpu, module: &[u8], action: u8, code: u8, layout: Layout) {
     cpu.mem.wr32(c + 4, u32::MAX);
     cpu.mem.wr8(c + 0x21C, 0);
     cpu.mem.wr8(c + 0x21D, 2);
+    // The monster records `0x801C9348[seat - 3]`: one per seated monster
+    // and the creature's (`[4]`); a seat the formation leaves empty holds a
+    // null pointer, so a read off it lands in the kernel's low RAM, whose
+    // byte `0x1F` reads `0x81` in every retail image of a cast (the size
+    // class PROT 0915's reach poll takes for such a seat, `0x8004E394`).
     for i in 0..5 {
-        cpu.mem.wr32(RECORDS + i * 4, MONSTER_RECORD);
+        let seated = i < layout.monsters || i == 4;
+        cpu.mem
+            .wr32(RECORDS + i * 4, if seated { MONSTER_RECORD } else { 0 });
     }
+    cpu.mem.wr8(0x1F, 0x81);
     cpu.mem.wr8(SCALAR, SPEED_SCALAR as u8);
     // The battle's outcome byte reads `0xFF` while the fight runs; the range
     // poll `FUN_8004E2F0` answers out of reach on anything else
@@ -917,12 +941,18 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             // (`0x801F7524..0x801F753C`).
             for s in 3..7u32 {
                 let a = ACTOR + s * STRIDE;
-                let no_flinch = s == 4 || (entry == 903 && s == layout.victim && step % 2 == 0);
+                // PROT 0915's even-step runs do the same for its arm-7 hit
+                // (`0x801F7228..0x801F7238`).
+                let no_flinch =
+                    s == 4 || (matches!(entry, 903 | 915) && s == layout.victim && step % 2 == 0);
                 cpu.mem
                     .wr8(a + 0x1EF, if no_flinch { 0 } else { 0x10 + s as u8 });
                 cpu.mem.wr8(a + 0x1F0, 0x20 + s as u8);
                 cpu.mem.wr8(a + 0x1F1, 0x30 + s as u8);
-                cpu.mem.wr8(a + 0x1F2, (s & 1) as u8);
+                // The knockdown gate turns with the step, so each seat
+                // takes the flinch fork at some steps and the knockdown at
+                // others.
+                cpu.mem.wr8(a + 0x1F2, ((s + u32::from(step)) & 1) as u8);
             }
             // State `0x34`'s hide loop, which runs before the module's first
             // pass (`0x801E4B30..0x801E4B6C`, `battle_action::summon`): every
@@ -982,6 +1012,12 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
             });
             let mut puera_compared = std::collections::BTreeSet::new();
             let mut sideband_passes = 0u32;
+            // PROT 0908's fallen runs start each clip its arms stage on the
+            // creature two passes late, the clip before it still playing:
+            // its arms 6 and 7 hold on the clip that plays
+            // (`0x801F7328..0x801F7330`, `0x801F754C..0x801F7554`).
+            let mut zenoir_clip = (0u8, 0u8);
+            let mut mushura_fade = 0u32;
             let mut spent_side_passes = 0u32;
             busy_calls.set(0);
             // The band shadow: a world seated off the same records, the
@@ -1172,8 +1208,31 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                         && s == CREATURE
                         && staged == 5
                         && cpu.mem.rd8(CTX + 0x279) == 0x12;
+                    // PROT 0915's chase skips a monster still in a clip
+                    // (`lbu 0x1d9` / `bnez` at `0x801F7870..0x801F7878`):
+                    // each monster seat plays its staged clip a pass in
+                    // four of the arm's.
+                    let chase_clip = entry == 915
+                        && (3..7).contains(&s)
+                        && cpu.mem.rd8(CTX + 0x279) == 0xC
+                        && (pass + s) % 4 == 0;
                     let playing = match (s == CREATURE, lag) {
+                        (false, _) if chase_clip => staged.max(1),
                         (true, true) => 4,
+                        (true, false) if entry == 908 && fallen => {
+                            let (playing, late) = &mut zenoir_clip;
+                            if staged != *playing {
+                                if *late == 0 {
+                                    *late = 2;
+                                } else {
+                                    *late -= 1;
+                                    if *late == 0 {
+                                        *playing = staged;
+                                    }
+                                }
+                            }
+                            *playing
+                        }
                         (true, false) => staged,
                         _ => 0,
                     };
@@ -1185,8 +1244,13 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                     if !rewinding {
                         cpu.mem.wr16(NODES + s * 0x100 + 0x68, 0x7FFF);
                     }
+                    // A monster seat the formation left empty is not drawn:
+                    // its body pair stays the zeroed record's `(0, 0)`
+                    // whatever PROT 0915's arm 0 scatters onto its ground
+                    // pair (`0x801F6BC8..0x801F6C58`).
+                    let empty = (3 + layout.monsters..7).contains(&s);
                     for o in [0u32, 2, 4] {
-                        let v = cpu.mem.rd16(a + 0x34 + o);
+                        let v = if empty { 0 } else { cpu.mem.rd16(a + 0x34 + o) };
                         cpu.mem.wr16(a + 0x3C + o, v);
                     }
                 }
@@ -1207,7 +1271,14 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                     if st.countdown.0 <= 0 {
                         spent_side_passes += 1;
                     }
-                    let up = sideband_passes <= 3 || (1..=3).contains(&spent_side_passes);
+                    // PROT 0923's fallen runs hold it up until arm 1 has
+                    // drained its word (`0x200` at `8 * step` a pass), as
+                    // `gilium_summon_mid_cast` stands there `56` past it:
+                    // the arm then re-enters on a spent word (`blez` at
+                    // `0x801F6BF4`).
+                    let long =
+                        entry == 923 && fallen && spent_side_passes == 0 && sideband_passes <= 80;
+                    let up = sideband_passes <= 3 || long || (1..=3).contains(&spent_side_passes);
                     cpu.mem.wr8(CTX + 0x276, if up { 8 } else { 0 });
                     sideband_held += usize::from(up);
                 }
@@ -1215,6 +1286,7 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 // root motion, which the walk does not play: the creature
                 // stands on a monster seat in turn, a few passes on each, so
                 // the arm's live reach poll finds the row in and out of reach.
+                let mut seeded_bank = None;
                 if (entry, phase) == (915, 0xC) {
                     let s = 3 + (pass / 4) % layout.monsters;
                     let (x, z) = layout.ground(s);
@@ -1222,6 +1294,50 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                     for (o, v) in [(0x34u32, x), (0x38, z), (0x3C, x), (0x40, z)] {
                         cpu.mem.wr16(c + o, v as u16);
                     }
+                    // Every sixth pass the creature comes into the turn
+                    // banked as a long chase leaves it, past either level
+                    // side, and on every other such pass already facing its
+                    // target's bearing: the turn's ease on the bearing
+                    // (`0x801F7C68..0x801F7D10`) and its clamp at `0xF00`
+                    // (`0x801F7BD8..0x801F7BEC`).
+                    if pass % 6 == 5 {
+                        let bank =
+                            [0xF08u16, 0x804, 0x4, 0xFFC, 0x7F8, 0xC08][(pass / 12) as usize % 6];
+                        cpu.mem.wr16(c + 0x48, bank);
+                        seeded_bank = Some(bank);
+                        if pass % 12 == 11 {
+                            let t = cpu.mem.rd32(0x801F_8154);
+                            let ta = cpu.mem.rd32(ACTORS + 4 * (t & 7));
+                            let b = bearing_12bit_approx(
+                                z,
+                                x,
+                                cpu.mem.rd16(ta + 0x40) as i16,
+                                cpu.mem.rd16(ta + 0x3C) as i16,
+                            );
+                            cpu.mem.wr16(c + 0x46, b & 0xFFF);
+                        } else {
+                            // ... and on the others facing near zero and
+                            // standing a step to the monster's east, so the
+                            // struck monster's bearing lies more than a half
+                            // turn above the facing (`0x801F7A18..0x801F7A2C`).
+                            cpu.mem.wr16(c + 0x46, 0x10);
+                            for o in [0x34u32, 0x3C] {
+                                cpu.mem.wr16(c + o, (x + 0x40) as u16);
+                            }
+                        }
+                    }
+                }
+                // Arm `0xD` levels a bank on its first pass that stands
+                // within a pass of level, from below (`0x801F7E28..0x801F7E38`)
+                // or above (`0x801F7DE8..0x801F7DF0`).
+                if (entry, phase) == (915, 0xD) && mushura_fade == 1 {
+                    let bank = if walk_step().is_multiple_of(2) {
+                        0xFFC
+                    } else {
+                        0x4
+                    };
+                    cpu.mem.wr16(ACTOR + CREATURE * STRIDE + 0x48, bank);
+                    seeded_bank = Some(bank);
                 }
                 // PROT 0931's arm `0x16` waits for its creature's cursor to stand
                 // on `0x120` exactly (`0x801F7C80`).
@@ -1259,8 +1375,17 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 }
                 // The fades that ease the creature's colour word `+0x04` to
                 // zero are stubbed; PROT 0915's arm `0xD` and PROT 0917's
-                // `0xF` wait on it.
-                if matches!((entry, phase), (915, 0xD) | (917, 0xF)) {
+                // `0xF` wait on it. PROT 0915's word stands up for the arm's
+                // first passes (`0x801F7EB0..0x801F7EB8`), so the arm holds
+                // and its bank ease (`0x801F7DBC..0x801F7E64`) runs on.
+                if (entry, phase) == (915, 0xD) {
+                    mushura_fade += 1;
+                    let up = mushura_fade <= 6 / u32::from(walk_step()) + 1;
+                    cpu.mem.wr32(
+                        ACTOR + CREATURE * STRIDE + 4,
+                        if up { 0x0804_0201 } else { 0 },
+                    );
+                } else if (entry, phase) == (917, 0xF) {
                     cpu.mem.wr32(ACTOR + CREATURE * STRIDE + 4, 0);
                 }
                 // A monster a hit felled fades out: the tint pass eases its
@@ -1485,6 +1610,9 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                             act.move_state.world_y = p[1];
                             act.move_state.world_z = p[2];
                             act.battle.facing_angle = cpu.mem.rd16(a + 0x46);
+                            if let Some(b) = seeded_bank {
+                                act.battle.render_roll = b;
+                            }
                             // The loop counter `+0x21B` the walk's clip parks
                             // on, as the anim tick keeps it.
                             act.battle.hit_count_bound = cpu.mem.rd8(a + 0x21B);
@@ -2044,6 +2172,19 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                                 "PROT {entry:04} target {code} fallen {fallen} caster {} of {} pass {pass} arm {phase:#x}: seat {s} trio/rate retail {got:x?} port {port:x?}",
                                 layout.caster, layout.monsters
                             ));
+                        }
+                        // PROT 0915's creature banks as it falls, turns and
+                        // levels out (`+0x48`, arms 7, 8, 0xC and 0xD), which
+                        // the host draws as the body's roll.
+                        if entry == 915 && s == CREATURE {
+                            let rr = cpu.mem.rd16(a + 0x48) & 0xFFF;
+                            let pr = act.battle.render_roll & 0xFFF;
+                            if rr != pr {
+                                shadow_failures.push(format!(
+                                    "PROT {entry:04} target {code} fallen {fallen} caster {} of {} pass {pass} arm {phase:#x}: creature bank retail {rr:#x} port {pr:#x}",
+                                    layout.caster, layout.monsters
+                                ));
+                            }
                         }
                     }
                     shadow_passes += 1;
