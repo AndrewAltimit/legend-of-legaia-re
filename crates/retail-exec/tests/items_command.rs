@@ -38,6 +38,13 @@ const WINDOW_HI: u32 = 0x8007_B5EC;
 const BAG: u32 = 0x8008_5958;
 const LIST_CONFIRM_MASK: u32 = 0x801E_F0F0;
 const LIST_CANCEL_MASK: u32 = 0x801E_F0F4;
+/// The staged item and quantity phase 0 clears, the list state it seeds, and
+/// the list's paged pair the Arrange phase homes.
+const ITEM: u32 = 0x801E_46B0;
+const QTY: u32 = 0x801E_46B4;
+const LIST_STATE: u32 = 0x8007_BB94;
+const LIST_SCROLL: u32 = 0x8007_BB90;
+const LIST_SELECTED: u32 = 0x8007_BB98;
 
 fn session(ids: &[u8]) -> PauseItemsSession {
     let rows: Vec<PauseItemRow> = ids
@@ -85,7 +92,7 @@ fn the_items_command_window_routes_as_retail_does() {
     cpu.mem.wr32(LIST_CANCEL_MASK, 0x20);
     cpu.mem.wr32(BUSY, 0);
     let mut rng = Rng(0x434F_4D4D);
-    let mut endings = [0usize; 5];
+    let mut endings = [0usize; 6];
     for run in 0..2000 {
         let n = if rng.below(5) == 0 {
             0
@@ -105,12 +112,37 @@ fn the_items_command_window_routes_as_retail_does() {
             port.input_pad_edge(PadButton::Down.mask());
         }
         assert_eq!(port.focus, PauseItemsFocus::Command);
-        cpu.mem.wr32(STEP, 1);
+        // A third of the runs open the window: phase 0 clears the staged
+        // item and quantity, sets the list state to 4, drops the cursor's
+        // hide bit and moves to phase 1 (`0x801D7C4C..0x801D7C90`).
+        let opening = rng.below(3) == 0;
+        cpu.mem.wr32(STEP, u32::from(!opening));
         cpu.mem.wr32(SCREEN, 5);
-        cpu.mem.wr32(CURSOR, u32::from(port.command_cursor));
+        cpu.mem.wr32(
+            CURSOR,
+            u32::from(port.command_cursor) | if opening { 0x1000 } else { 0 },
+        );
         cpu.mem.wr32(EDGE, 0);
         cpu.mem.wr32(REPEAT, 0);
         cues.borrow_mut().clear();
+        if opening {
+            for (a, v) in [(QTY, 7), (ITEM, 9), (LIST_STATE, 0)] {
+                cpu.mem.wr32(a, v);
+            }
+            assert_eq!(cpu.call(COMMAND, &[]), Stop::Returned);
+            assert_eq!(
+                [
+                    cpu.mem.rd32(STEP),
+                    cpu.mem.rd32(CURSOR),
+                    cpu.mem.rd32(QTY),
+                    cpu.mem.rd32(ITEM),
+                    cpu.mem.rd32(LIST_STATE)
+                ],
+                [1, u32::from(port.command_cursor), 0, 0, 4],
+                "run {run}: the window opens"
+            );
+            endings[5] += 1;
+        }
 
         for frame in 0..40 {
             let raw: u16 = match rng.below(8) {
@@ -153,6 +185,36 @@ fn the_items_command_window_routes_as_retail_does() {
             if port.take_arrange().is_some() {
                 assert_eq!(step, 2, "{ctx}: Arrange");
                 endings[3] += 1;
+                // Phase 2 waits out the busy word, then runs the sort, homes
+                // the list (`_DAT_8007BB90` / `_DAT_8007BB98`), shows the
+                // cursor and returns to phase 1 (`0x801D7DE4..0x801D7E30`);
+                // the port's session is back on its command row already.
+                for (a, v) in [(LIST_SCROLL, 5), (LIST_SELECTED, 6)] {
+                    cpu.mem.wr32(a, v);
+                }
+                cpu.mem.wr32(BUSY, 1);
+                cpu.mem.wr32(EDGE, 0);
+                cpu.mem.wr32(REPEAT, 0);
+                assert_eq!(cpu.call(COMMAND, &[]), Stop::Returned);
+                assert_eq!(
+                    cpu.mem.rd32(STEP),
+                    2,
+                    "{ctx}: the sort waits on the busy word"
+                );
+                cpu.mem.wr32(BUSY, 0);
+                assert_eq!(cpu.call(COMMAND, &[]), Stop::Returned);
+                cpu.mem.wr32(BUSY, 0);
+                assert_eq!(
+                    [
+                        cpu.mem.rd32(STEP),
+                        cpu.mem.rd32(CURSOR),
+                        cpu.mem.rd32(LIST_SCROLL),
+                        cpu.mem.rd32(LIST_SELECTED)
+                    ],
+                    [1, u32::from(port.command_cursor), 0, 0],
+                    "{ctx}: the sort lands"
+                );
+                assert_eq!(port.focus, PauseItemsFocus::Command, "{ctx}");
                 break;
             }
             assert_eq!(step, 1, "{ctx}");
