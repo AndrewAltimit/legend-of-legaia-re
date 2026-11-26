@@ -80,10 +80,16 @@ The per-sub-op bodies are in the field-VM dump
 ### 0x4C nibble 0x30..0x3F - the ambient-particle master gate
 
 Sub-`0` and sub-`1` are a 2-byte pair that raise and clear one word,
-`_DAT_8007B854`, then exit via the STATE_RESUME path. Both stores sit in a
-jump delay slot (`0x801E0F38` `sw v0,-0x47ac(v1)` with `v0 = 1`; `0x801E0F44`
+`_DAT_8007B854`, and run on. Both stores sit in the delay slot of
+`j 0x801DF098` (`0x801E0F38` `sw v0,-0x47ac(v1)` with `v0 = 1`; `0x801E0F44`
 `sw zero,-0x47ac(v0)`), reached off the 16-entry nibble-3 jump table at
-`0x801CEEB8`.
+`0x801CEEB8`. `0x801DF098` is the dispatcher's `PC += 2` continue
+(`addiu s8,s8,2` / `j 0x801E3628`), the exit sub-`4` / sub-`B` / sub-`C` and
+op `0x31` take, so the context's slice goes on to its next op: a walk film of
+`vozz_ozma_hatching_hover` reads `P2[17]`'s `+0x9E` going from its `4A 3C`
+past `4C 31` to its `4A 08` in one pass. The port had ended the slice there,
+and every beat behind one of these ops ran a game frame late (`P2[17]` seated
+the Ozma shot's cast two vsyncs after retail).
 
 The word is the **ambient-particle master gate**, not an input lock. Its six
 references disc-wide, none of them pad state:

@@ -855,20 +855,20 @@ fn op_4c_n4_negative_value_sign_extends() {
 }
 
 #[test]
-fn op_4c_sub_3_sub_0_raises_ambient_particle_gate_and_yields() {
+fn op_4c_sub_3_sub_0_raises_ambient_particle_gate_and_runs_on() {
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &[0x4C, 0x30], 0);
-    assert_eq!(r, StepResult::Yield { resume_pc: 2 });
+    assert_eq!(r, StepResult::Advance { next_pc: 2 });
     assert_eq!(host.ambient_particle_gate_writes, vec![true]);
 }
 
 #[test]
-fn op_4c_sub_3_sub_1_clears_ambient_particle_gate_and_yields() {
+fn op_4c_sub_3_sub_1_clears_ambient_particle_gate_and_runs_on() {
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &[0x4C, 0x31], 0);
-    assert_eq!(r, StepResult::Yield { resume_pc: 2 });
+    assert_eq!(r, StepResult::Advance { next_pc: 2 });
     assert_eq!(host.ambient_particle_gate_writes, vec![false]);
 }
 

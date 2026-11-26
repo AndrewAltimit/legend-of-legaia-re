@@ -723,18 +723,16 @@ fn integration_jmp_then_advance_through_n4_immediate_writes() {
 }
 
 #[test]
-fn integration_yield_then_resume_then_advance() {
-    // Validates the Yield resume cycle composed with Advance:
-    //   00: 4C 30           sub-3 sub-0 (set field-input lock, Yield)
-    //   02: 4C 31           sub-3 sub-1 (clear lock, Yield)
+fn integration_particle_gate_ops_run_on_to_the_test() {
+    // The two gate arms continue through the dispatcher's `PC += 2` exit
+    // (`j 0x801DF098`), so a slice runs straight on to the test:
+    //   00: 4C 30           sub-3 sub-0 (raise the particle gate, Advance)
+    //   02: 4C 31           sub-3 sub-1 (clear it, Advance)
     //   04: 21              NOP (Advance)
     //   05: 2D 05           LFLAG_TST bit 5 (clear → Halt)
-    //
-    // After two Yields the host log should show [true, false]; after
-    // the NOP advances we hit the LFLAG_TST and halt.
     let bytecode = [
-        0x4C, 0x30, // gate raise + Yield
-        0x4C, 0x31, // gate clear + Yield
+        0x4C, 0x30, // gate raise
+        0x4C, 0x31, // gate clear
         0x21, // NOP
         0x2D, 0x05, // TEST bit 5 (clear → Halt)
     ];
@@ -746,9 +744,9 @@ fn integration_yield_then_resume_then_advance() {
     // Gate log must be exactly [true, false].
     assert_eq!(host.ambient_particle_gate_writes, vec![true, false]);
 
-    // Trace shape: Yield, Yield, Advance, Halt.
-    assert!(matches!(trace[0].1, StepResult::Yield { resume_pc: 2 }));
-    assert!(matches!(trace[1].1, StepResult::Yield { resume_pc: 4 }));
+    // Trace shape: Advance, Advance, Advance, Halt.
+    assert!(matches!(trace[0].1, StepResult::Advance { next_pc: 2 }));
+    assert!(matches!(trace[1].1, StepResult::Advance { next_pc: 4 }));
     assert!(matches!(trace[2].1, StepResult::Advance { next_pc: 5 }));
     let last = trace.last().unwrap().1.clone();
     assert!(matches!(last, StepResult::Halt { final_pc: 5 }));

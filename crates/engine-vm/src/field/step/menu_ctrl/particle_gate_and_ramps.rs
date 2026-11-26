@@ -15,17 +15,23 @@ pub(super) fn op_4c_n3<H: FieldHost>(
     match op0 & 0x0F {
         0 => {
             // sub-0 (0x801E0F38): raise the ambient-particle master gate
-            // `_DAT_8007B854`, exit via STATE_RESUME.
+            // `_DAT_8007B854` from the delay slot of `j 0x801DF098`, the
+            // dispatcher's `PC += 2` continue (`addiu s8,s8,2` /
+            // `j 0x801E3628`) that sub-4 / sub-B / sub-C and op `0x31` exit
+            // through. The record's slice runs on: a PCSX-Redux walk film of
+            // `vozz_ozma_hatching_hover` reads `P2[17]`'s `+0x9E` going from
+            // its `4A 3C` (`+0x4E1`) past `4C 31` (`+0x4EF`) to its `4A 08`
+            // (`+0x5B6`) in one pass.
             host.set_ambient_particle_gate(true);
-            StepResult::Yield {
-                resume_pc: pc + header_size + 1,
+            StepResult::Advance {
+                next_pc: pc + header_size + 1,
             }
         }
         1 => {
-            // sub-1 (0x801E0F44): clear the same gate.
+            // sub-1 (0x801E0F44): clear the same gate, the same continue.
             host.set_ambient_particle_gate(false);
-            StepResult::Yield {
-                resume_pc: pc + header_size + 1,
+            StepResult::Advance {
+                next_pc: pc + header_size + 1,
             }
         }
         2 => {
