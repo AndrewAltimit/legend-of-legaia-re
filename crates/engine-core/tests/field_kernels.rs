@@ -20,20 +20,29 @@ fn world_tick_drives_walk_idle_switch_into_pose_frame() {
     idle.set_step(16);
     walk.set_step(16);
     w.set_field_player_anim(Some(FieldPlayerAnim::new(idle, walk)));
-    // Standing frame: idle clip pose lands in the player's pose_frame.
+    // Standing frame: idle clip pose lands in the player's pose_frame, drawn
+    // after the tick's step (retail's `FUN_800204F8` steps before the draw).
     w.set_pad(0);
     let _ = w.tick();
     let pose = w.actors[0].pose_frame.clone().expect("idle pose set");
-    assert_eq!(pose.bone_outputs[0].0[0], 100, "idle record tag");
+    assert_eq!(pose.bone_outputs[0].0[0], 110, "idle record tag, frame 1");
     assert!(!w.locomotion.player_anim.as_ref().unwrap().walking);
     // Held direction: locomotion flags the move, the walk clip plays.
     w.set_pad(legaia_engine_system::input::PadButton::Up.mask());
     let _ = w.tick();
     let pose = w.actors[0].pose_frame.clone().expect("walk pose set");
-    assert_eq!(pose.bone_outputs[0].0[0], 0, "walk record restarts");
+    // A game frame of two vsyncs: the restart and two vsyncs' step.
+    assert_eq!(
+        pose.bone_outputs[0].0[0], 20,
+        "walk record restarts and steps"
+    );
     assert!(w.locomotion.player_anim.as_ref().unwrap().walking);
-    // Release: back to idle, restarted at frame 0.
+    // Release: the vsync between two game frames changes nothing; the next
+    // frame goes back to idle, restarted and stepped two vsyncs (the
+    // two-frame idle wraps to its first frame).
     w.set_pad(0);
+    let _ = w.tick();
+    assert!(w.locomotion.player_anim.as_ref().unwrap().walking);
     let _ = w.tick();
     let pose = w.actors[0].pose_frame.clone().expect("idle pose set");
     assert_eq!(pose.bone_outputs[0].0[0], 100);

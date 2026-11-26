@@ -221,6 +221,18 @@ impl World {
                 }
             }
         }
+        // The frame a script binds the player's scene clip steps it before
+        // the draw (`FUN_800204F8` binds and steps in one call). The anim
+        // tick ran before this drain and held for the clip; pay its step now
+        // that the clip is here.
+        if self
+            .locomotion
+            .player_anim
+            .as_ref()
+            .is_some_and(|a| a.bind_step_due())
+        {
+            self.tick_field_player_anim_scaled(0);
+        }
         let drained = std::mem::take(&mut self.npcs.anim_cues);
         let mut cues: Vec<(u8, u8)> = Vec::with_capacity(drained.len());
         for (slot, (count, base_id, frames)) in drained {

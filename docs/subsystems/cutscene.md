@@ -2361,14 +2361,17 @@ moved only the reverse bit, leaving the door shut through the dinner (disc-gated
 
 The restart is seated before the frame draws. `FUN_800204F8` binds a new clip (cursor `0`),
 consumes the request (`0x800205F8..0x80020630`: frame `0`, or the last frame under the reverse
-bit) and steps the cursor in one call, all ahead of the draw that reads `+0x68`, so no frame
-shows the cursor the request replaces. The New Game opening's walk-out leans on it: Vahn raises
-a hand to his head (scene record 45, clamped), holds it there (record 46), and lowers it by
-binding record 45 again with restart and reverse raised; a PCSX-Redux film from
-`s2_rimelm_town01` draws the reversed clip from cursor `136` on its first frame. The player's
-scripted clip (`FieldClipPlayer::tick_with`) seats the request before it emits the pose; emitted
-from the bound cursor instead, it drew record 45's frame `0`, the hand at Vahn's side, for one
-vsync between the two (disc-gated `opening_hand_on_head`).
+bit) and steps the cursor in one call, all ahead of the draw that reads `+0x68`, and it runs once
+a game frame with its step multiplied by the frame step (`0x80020660`). The New Game opening's
+walk-out shows each part of that: Vahn raises a hand to his head (scene record 45, clamped),
+holds it there (record 46), and lowers it by binding record 45 again with restart and reverse
+raised. A PCSX-Redux film from `s2_rimelm_town01` draws record 45 from cursor `8` on its bind
+frame, steps it `8` on every second vsync at frame step `2`, and draws the reversed clip from
+cursor `136`. The player's clip (`FieldPlayerAnim::tick_scaled`) steps on the same grid and
+emits the pose after the step; a scene pick whose clip the frame tail resolves takes the bind
+frame's step when it lands (`World::drain_field_anim_cues`). Emitted before its step, it drew
+record 45's frame `0`, the hand at Vahn's side, for one vsync between the hand on his head and
+the hand coming down (disc-gated `opening_hand_on_head`), and every pose a vsync behind retail.
 
 A helper record's shot frames through the follow arm (`camera_view::field_follow_view`), which
 for a follow shot folds a negative eye depth into its magnitude. Under a scripted shot it keeps

@@ -759,6 +759,15 @@ impl World {
     /// by [`World::tick`]'s field branch right after
     /// [`World::step_field_locomotion`].
     pub(crate) fn tick_field_player_anim(&mut self) {
+        // On the game-frame grid, as the NPC actors' clips step
+        // (`World::tick_actor_anims`).
+        let grid = self.clock.script_frame_delta();
+        self.tick_field_player_anim_scaled(grid);
+    }
+
+    /// [`Self::tick_field_player_anim`] for a tick crediting `grid` vsyncs
+    /// (`0` re-emits the last pose, or pays a bind step a held tick owes).
+    pub(crate) fn tick_field_player_anim_scaled(&mut self, grid: u16) {
         let Some(slot) = self.player_actor_slot else {
             return;
         };
@@ -771,7 +780,7 @@ impl World {
             return;
         };
         anim.set_clip_rate(self.locomotion.player_clip_rate);
-        let (pose, flags) = anim.tick_with_flags(actor.move_state.local_flags);
+        let (pose, flags) = anim.tick_scaled(actor.move_state.local_flags, grid);
         actor.move_state.local_flags = flags;
         actor.pose_frame = Some(pose);
     }

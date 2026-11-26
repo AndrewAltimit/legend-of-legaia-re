@@ -225,7 +225,7 @@ fn noas_getting_up_plays_once_and_holds() {
 /// The script slows the player's clip before a gesture: `CC F8 41 08` (rate
 /// `8 >> 1 = 4`), `A2 F8 14` (scene clip 20, 20 frames), `AD F8 08`, then
 /// `CC F8 41 10` back to 8. At rate 4 the clip's 320 cursor units take 80
-/// ticks to the end latch; retail takes 78 vsyncs from cursor 16 to 319
+/// vsyncs to the end latch; retail takes 78 vsyncs from cursor 16 to 319
 /// (`autorun_player_clip_beat.lua`, `LEGAIA_CAVE01_REENTRY=1`). The port
 /// stepped it at the pad's rate 8 and finished in half the time.
 #[test]
@@ -240,7 +240,7 @@ fn a_scripted_rate_slows_the_players_clip() {
         if s.clip == GESTURE && s.source == "scene" {
             // Each bind restarts the measurement: the first pass is cut by
             // the script's next pick a few cursor units short of the latch.
-            if s.cursor <= 4 {
+            if s.cursor <= 8 {
                 start = Some(ticks);
             }
             if let Some((c, t)) = prev
@@ -265,10 +265,12 @@ fn a_scripted_rate_slows_the_players_clip() {
     }
     let took = done.expect("the gesture reached its last frame");
     eprintln!("clip 20: {took} ticks from its bind to its last position");
-    // Four units a tick; the step onto the last position is the clamp's.
+    // Four units a vsync, taken once a game frame of two vsyncs (retail's
+    // `FUN_800204F8` times the frame step); the step onto the last position
+    // is the clamp's.
     assert!(
-        steps[..steps.len() - 1].iter().all(|&d| d == 4),
-        "rate 4 steps 4 cursor units a tick: {steps:?}"
+        steps[..steps.len() - 1].iter().all(|&d| d == 8),
+        "rate 4 steps 8 cursor units a game frame: {steps:?}"
     );
     assert!((76..=82).contains(&took), "rate 4 pass length {took}");
 }

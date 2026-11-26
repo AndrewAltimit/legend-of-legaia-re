@@ -40,8 +40,9 @@ to read first.
 Both sides also write the player's clip: retail's bound record `+0x5E`, cursor
 `+0x68` and rate `+0x6A`, the engine's bound clip, cursor and
 `locomotion.player_clip_rate`. A still seats the pose; these columns say how the
-pose moves. Retail's cursor steps once a pass, the engine's once a vsync at half
-the step, so the two meet on every second row.
+pose moves. Both cursors step once a pass by the step times the frame step, and
+draw after the step, so a row where the two frame grids agree reads the same
+cursor on both sides.
 
 Both sides write the region roll's step counter as `enc` (retail's `_DAT_8007B5FC`, the engine's `World::encounter_step_counter`), and the engine side seats it from the state's RAM: the steps left before a fight are walk history the card load does not carry, so a film from `karisto_sol_pre_encounter` (counter `14`) rolls its fight on retail's first tile crossing, and a `map02_field_door_hop` walk drains `42` a crossing on both sides. A harness seat; `LEGAIA_RC_NO_STEP_SEAT=1` keeps the seed's counter.
 
