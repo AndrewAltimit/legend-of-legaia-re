@@ -571,6 +571,19 @@ pub fn prologue_skip_held(held: u16) -> bool {
     held & legaia_engine_system::input::PadButton::Select.mask() != 0
 }
 
+/// The intro skip's fade, as `FUN_801D1344` asks `FUN_801D58F0` for it on the
+/// press frame (`0x801D152C..0x801D154C`): kind `2` (subtractive), black to
+/// white - so the screen goes to black - over `0x3C` frames, no delay, held
+/// (`-1`) until the scene change replaces it.
+pub const PROLOGUE_SKIP_FADE: legaia_engine_system::fade::FadeTemplate =
+    legaia_engine_system::fade::FadeTemplate {
+        kind: 2,
+        duration: 0x3C,
+        start_rgb: [0, 0, 0],
+        end_rgb: [0xFF, 0xFF, 0xFF],
+        mode: [0, -1, 0],
+    };
+
 /// Scratchpad flag-bit index (`26`) of [`PROLOGUE_HANDOFF_FLAG`]. This is
 /// the operand of the prologue cutscene's `GFLAG_SET` op (`0x2E 0x1A`); the
 /// data-driven arm [`World::arm_prologue_handoff_from_man`] matches a MAN

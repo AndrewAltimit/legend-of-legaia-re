@@ -1173,7 +1173,10 @@ buffer is empty in the `town01` opening saves.
   **held** word in the packed layout (dpad / system byte in bits 8..15, so
   Select + Start reads `0x900`), and `0x100` is Select - not Cross, and not an
   edge. It fires mid-narration too, since the crawl is timer-driven. The dev
-  word `_DAT_8007B868` is zero in retail.
+  word `_DAT_8007B868` is zero in retail. A PCSX-Redux film of the
+  `s1_newgame_field` state bears it out: Select held while the crawl shows takes
+  the screen to black within about 50 vsyncs and brings `town01` up some 390
+  vsyncs after the press; Cross held plays the crawl on.
 - **The trigger flag** (`_DAT_1F800394` bit 26) is set by the field VM's
   scratchpad-bit opcode `GFLAG_SET` (op `0x2E`, operand `0x1A`; `FUN_801DE840`
   runs `_DAT_1f800394 |= 1 << (idx & 0x1f)`). The only `GFLAG_SET 26` in
@@ -1189,7 +1192,10 @@ mirrors the `FUN_801D1344` gate: while the opening chain is playing
 (`World::cutscene.opening_chain_active`, set at the `opdeene` entry and carried
 through the later legs) and the trigger bit (`PROLOGUE_HANDOFF_FLAG` = `1 << 26`,
 in the engine's `_DAT_1F800394` mirror) is set, a held Select
-(`world::prologue_skip_held`, the press both play hosts hand it) clears the bit,
+(`world::prologue_skip_held`, the press both play hosts hand it) puts retail's
+fade up on its frame - `FUN_801D58F0(2, 0, 0xFFFFFF, 0, 0x3C, -1)`, a held fade
+to black - locks the player and clears the bit, and once the fade has run
+(`World::step_prologue_skip`) the hand-off
 tears down the playing narration / timeline and returns `town01`; the host then
 runs `BootSession::enter_field_live` on it.
 

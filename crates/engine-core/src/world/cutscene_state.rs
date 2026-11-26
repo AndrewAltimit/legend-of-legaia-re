@@ -157,6 +157,10 @@ pub struct CutsceneState {
     /// prologue cutscene scene is entered; cleared by the skip or by the
     /// `town01` opening entry.
     pub opening_chain_active: bool,
+    /// Frames left of the intro skip's fade to black: the skip press put the
+    /// fade up and the hand-off to `town01` waits for it
+    /// ([`crate::world::World::step_prologue_skip`]).
+    pub prologue_skip_fade: Option<u16>,
     /// The New Game's destination-entry operand
     /// ([`legaia_game_tables::new_game::NEW_GAME_ENTRY_SEAT`]), armed by
     /// [`crate::world::World::begin_new_game`] - retail's seed
@@ -212,6 +216,7 @@ impl CutsceneState {
             caption_alpha: 0.0,
             caption_shown_frames: 0,
             opening_chain_active: false,
+            prologue_skip_fade: None,
             new_game_entry_seat: None,
             capped: Vec::new(),
         }

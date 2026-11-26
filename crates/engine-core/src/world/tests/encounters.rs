@@ -589,6 +589,36 @@ fn prologue_handoff_fires_once_on_confirm_in_the_opening_chain() {
     assert_eq!(world.take_prologue_handoff(true), None);
 }
 
+/// The hosts' skip (`step_prologue_skip`): a held Select puts retail's
+/// `0x3C`-frame fade to black up and clears bit 26 on its frame, and the
+/// hand-off to `town01` comes when the fade has run, with the fade cleared
+/// for the scene behind it.
+#[test]
+fn the_intro_skip_fades_to_black_before_it_hands_off() {
+    let mut world = World::new();
+    world.set_active_scene_label(legaia_game_tables::new_game::OPENING_CUTSCENE_SCENE);
+    world.cutscene.opening_chain_active = true;
+    world.arm_prologue_handoff();
+    assert_eq!(world.step_prologue_skip(false), None);
+    assert!(world.presentation.fade.is_none());
+    assert_eq!(world.step_prologue_skip(true), None, "the press only fades");
+    assert_eq!(world.flags.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
+    let fade = world.presentation.fade.as_ref().expect("the fade is up");
+    assert_eq!(fade.kind, 2);
+    for _ in 0..0x3B {
+        assert_eq!(world.step_prologue_skip(true), None);
+        assert!(world.cutscene.opening_chain_active);
+    }
+    assert_eq!(
+        world.step_prologue_skip(false),
+        Some(legaia_game_tables::new_game::OPENING_SCENE)
+    );
+    assert!(world.presentation.fade.is_none());
+    assert!(world.cutscene.entering_town01_opening);
+    assert!(!world.cutscene.opening_chain_active);
+    assert_eq!(world.step_prologue_skip(true), None, "fires once");
+}
+
 /// The prologue skip's `town01` entry is not a free-roam picker visit. The
 /// skip clears the chain flag and the timeline before any host enters the
 /// scene, so a host that asked only "is the opening running?" (the browser
