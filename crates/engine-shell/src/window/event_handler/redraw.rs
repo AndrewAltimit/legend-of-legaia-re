@@ -818,7 +818,10 @@ impl PlayWindowApp {
                     self.battle_stage_scale(),
                 )
                 .unwrap_or((None, Vec::new()));
-            layout.1 = vec![cells];
+            // Retail's own cells, seated off a capture: always the sheet's
+            // colours (retail throws no heal numeral).
+            layout.1 =
+                vec![legaia_engine_screens::battle_value_readout::ValueRun { cells, heal: false }];
             return Some(layout);
         }
         legaia_engine_screens::battle_value_readout::battle_value_readout_layout(

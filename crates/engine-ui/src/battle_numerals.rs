@@ -68,6 +68,13 @@ pub const ARTS_BANNER_OT: u32 = 0;
 /// passthrough level of the PSX texture blend `texel * colour / 128`).
 pub const READOUT_COLOUR: u32 = 0x0080_8080;
 
+/// The modulation colour the heal-numeral enhancement's restore figure
+/// carries (`WorldToggles::heal_numerals`, a port enhancement: retail throws
+/// no numeral for a restore). The sheet is the damage figure's gold ramp, so
+/// a restore drawn at [`READOUT_COLOUR`] reads as a hit; this word halves red,
+/// doubles green and keeps most of the blue, turning the ramp green.
+pub const HEAL_READOUT_COLOUR: u32 = 0x0040_FF60;
+
 /// Clamp a stage coordinate into the `i16` the primitive record holds. A
 /// numeral seated off an actor that projected far off-screen is clamped
 /// rather than wrapped.
@@ -90,6 +97,16 @@ fn stage_i16(v: i32) -> i16 {
 /// the inclusive drawn width, which is why [`vr::DIGIT_GAP`] is `0`. Changing
 /// one without the other moves the run.
 pub fn readout_quad(rect: (i32, i32, u32, u32), uv: (u8, u8, u8, u8), ot_index: u32) -> ScreenPrim {
+    readout_quad_coloured(rect, uv, ot_index, READOUT_COLOUR)
+}
+
+/// [`readout_quad`] under modulation colour `color` (`0x00RRGGBB`).
+fn readout_quad_coloured(
+    rect: (i32, i32, u32, u32),
+    uv: (u8, u8, u8, u8),
+    ot_index: u32,
+    color: u32,
+) -> ScreenPrim {
     let (x0, y0) = (stage_i16(rect.0), stage_i16(rect.1));
     let x1 = stage_i16(rect.0 + rect.2.max(1) as i32 - 1);
     let y1 = stage_i16(rect.1 + rect.3.max(1) as i32 - 1);
@@ -98,7 +115,7 @@ pub fn readout_quad(rect: (i32, i32, u32, u32), uv: (u8, u8, u8, u8), ot_index: 
         uv: [(uv.0, uv.1), (uv.2, uv.1), (uv.0, uv.3), (uv.2, uv.3)],
         clut: GLYPH_CLUT,
         tpage: GLYPH_TPAGE,
-        color: READOUT_COLOUR,
+        color,
         gouraud: None,
         semi_transparent: false,
         ot_index,
@@ -110,12 +127,18 @@ pub fn readout_quad(rect: (i32, i32, u32, u32), uv: (u8, u8, u8, u8), ot_index: 
 /// square, made inclusive; the screen rect is whatever the pop ramp scaled it
 /// to.
 pub fn digit_quad(cell: &vr::ValueCell, ot_index: u32) -> ScreenPrim {
+    digit_quad_coloured(cell, ot_index, READOUT_COLOUR)
+}
+
+/// [`digit_quad`] under modulation colour `color` (`0x00RRGGBB`).
+fn digit_quad_coloured(cell: &vr::ValueCell, ot_index: u32, color: u32) -> ScreenPrim {
     let u1 = cell.u.saturating_add(cell.cell.saturating_sub(1));
     let v1 = cell.v.saturating_add(cell.cell.saturating_sub(1));
-    readout_quad(
+    readout_quad_coloured(
         (cell.x, cell.y, cell.w, cell.h),
         (cell.u, cell.v, u1, v1),
         ot_index,
+        color,
     )
 }
 
@@ -123,10 +146,21 @@ pub fn digit_quad(cell: &vr::ValueCell, ot_index: u32) -> ScreenPrim {
 /// quads. Zero-extent cells are skipped - a host must not emit a degenerate
 /// quad for a numeral that has not popped in yet.
 pub fn digit_run_prims(cells: &[vr::ValueCell], ot_index: u32) -> Vec<ScreenPrim> {
+    digit_run_prims_coloured(cells, ot_index, READOUT_COLOUR)
+}
+
+/// [`digit_run_prims`] under modulation colour `color` (`0x00RRGGBB`):
+/// [`READOUT_COLOUR`] for every numeral retail throws,
+/// [`HEAL_READOUT_COLOUR`] for the heal-numeral enhancement's restore figure.
+pub fn digit_run_prims_coloured(
+    cells: &[vr::ValueCell],
+    ot_index: u32,
+    color: u32,
+) -> Vec<ScreenPrim> {
     cells
         .iter()
         .filter(|c| c.w != 0 && c.h != 0)
-        .map(|c| digit_quad(c, ot_index))
+        .map(|c| digit_quad_coloured(c, ot_index, color))
         .collect()
 }
 

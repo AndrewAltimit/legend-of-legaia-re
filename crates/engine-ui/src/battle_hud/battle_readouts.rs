@@ -34,6 +34,10 @@ pub struct ValueCellView {
 /// host drawing the real cells must not tint them.
 pub const VALUE_READOUT_FALLBACK_COLOR: [f32; 4] = [1.0, 0.78, 0.24, 1.0];
 
+/// The font fallback's colour for the heal-numeral enhancement's restore
+/// figure (`battle_numerals::HEAL_READOUT_COLOUR` on the retail-art path).
+pub const HEAL_READOUT_FALLBACK_COLOR: [f32; 4] = [0.5, 1.0, 0.36, 1.0];
+
 /// One label of the combo counter cluster, as the fallback builder draws
 /// it: the word and its stage seat (`engine-battle-vm::battle_value_readout::
 /// ComboLabel`, minus the texel rect a VRAM-sampling host uses instead).

@@ -13,7 +13,23 @@ use legaia_engine_mode::mode::SceneMode;
 
 /// One frame's readout: the combo cluster, and one run of digit cells per live
 /// struck actor.
-pub type ValueReadoutLayout = (Option<vr::ComboCluster>, Vec<Vec<vr::ValueCell>>);
+pub type ValueReadoutLayout = (Option<vr::ComboCluster>, Vec<ValueRun>);
+
+/// One numeral's digit cells, and whether it is the heal-numeral
+/// enhancement's restore figure.
+///
+/// Retail throws no numeral for a restore (its applier and healing modules
+/// push nothing onto the ring), so a heal run exists only under
+/// `WorldToggles::heal_numerals`. Drawn in the damage sheet's own gold it
+/// read as a hit, so the enhancement draws it under
+/// [`legaia_engine_ui::battle_numerals::HEAL_READOUT_COLOUR`]. With the
+/// enhancement off no run is a heal, so the faithful mode draws every
+/// numeral, the fatal-decision heal's included, in the sheet's colours.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ValueRun {
+    pub cells: Vec<vr::ValueCell>,
+    pub heal: bool,
+}
 
 /// The readout's layout this frame, seated through `vp` (the host's battle
 /// camera, without the actor stage's world scale) at `world_scale`. `None`
@@ -84,6 +100,7 @@ pub fn battle_value_readout_layout_with(
             .filter(|c| !c.hidden)
             .map(|c| vr::combo_cluster(c.style, c.hits, c.total, c.slide())),
     };
+    let heal_tint = world.toggles.heal_numerals;
     let mut runs = Vec::new();
     for p in hud
         .popups_in_ring_order()
@@ -108,7 +125,10 @@ pub fn battle_value_readout_layout_with(
             step,
         );
         if !cells.is_empty() {
-            runs.push(cells);
+            runs.push(ValueRun {
+                cells,
+                heal: heal_tint && p.is_heal,
+            });
         }
     }
     Some((cluster, runs))
@@ -129,8 +149,17 @@ pub fn value_readout_prims(
     if let Some(c) = cluster.as_ref() {
         out.extend(bn::combo_cluster_prims(c, bn::COMBO_OT));
     }
-    for cells in runs {
-        out.extend(bn::digit_run_prims(cells, bn::POPUP_OT));
+    for run in runs {
+        let colour = if run.heal {
+            bn::HEAL_READOUT_COLOUR
+        } else {
+            bn::READOUT_COLOUR
+        };
+        out.extend(bn::digit_run_prims_coloured(
+            &run.cells,
+            bn::POPUP_OT,
+            colour,
+        ));
     }
     out
 }
@@ -138,7 +167,8 @@ pub fn value_readout_prims(
 /// The layout as **font text** for the frames before the battle VRAM
 /// exists, on the stage transform `origin` / `scale` the rest of the battle
 /// chrome uses: the combo cluster's words and digits, then each run's digits
-/// in `VALUE_READOUT_FALLBACK_COLOR`.
+/// in `VALUE_READOUT_FALLBACK_COLOR` (a heal run in
+/// `HEAL_READOUT_FALLBACK_COLOR`).
 pub fn value_readout_fallback_draws(
     font: &legaia_font::Font,
     layout: &ValueReadoutLayout,
@@ -171,14 +201,84 @@ pub fn value_readout_fallback_draws(
         ));
     }
     for run in runs {
-        let cells: Vec<ui::ValueCellView> = run.iter().map(view).collect();
+        let cells: Vec<ui::ValueCellView> = run.cells.iter().map(view).collect();
+        let colour = if run.heal {
+            ui::HEAL_READOUT_FALLBACK_COLOR
+        } else {
+            ui::VALUE_READOUT_FALLBACK_COLOR
+        };
         out.extend(ui::battle_value_readout_draws_for(
-            font,
-            &cells,
-            ui::VALUE_READOUT_FALLBACK_COLOR,
-            origin,
-            scale,
+            font, &cells, colour, origin, scale,
         ));
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use legaia_engine_ui::battle_numerals as bn;
+    use legaia_render_kernels::screen_prim::ScreenPrim;
+
+    /// The far-depth camera `battle_numerals`' own popup test lays out on.
+    fn far_vp() -> [f32; 16] {
+        let mut vp = [0.0f32; 16];
+        vp[0] = 4.096;
+        vp[5] = 4.096;
+        vp[10] = 4.096;
+        vp[15] = 4096.0;
+        vp
+    }
+
+    /// A restore's numeral and a hit's, both drawn once.
+    fn heal_and_hit(heal_numerals: bool) -> ValueReadoutLayout {
+        let mut world = World::new();
+        world.mode = SceneMode::Battle;
+        world.toggles.heal_numerals = heal_numerals;
+        let mut hud = BattleHud::new();
+        hud.push_heal(0, 200);
+        hud.push_damage(3, 326);
+        hud.tick_frame(Some(2));
+        battle_value_readout_layout_with(&world, &hud, &far_vp(), 1.0, |_| Some([0.0; 3]))
+            .expect("two live numerals")
+    }
+
+    fn colours(layout: &ValueReadoutLayout) -> Vec<u32> {
+        value_readout_prims(layout)
+            .iter()
+            .map(|p| match p {
+                ScreenPrim::Textured(q) => q.color,
+                _ => panic!("the readout is textured quads"),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_heal_numeral_enhancement_draws_its_restore_green() {
+        let layout = heal_and_hit(true);
+        let heal: Vec<bool> = layout.1.iter().map(|r| r.heal).collect();
+        assert_eq!(heal.iter().filter(|h| **h).count(), 1, "{heal:?}");
+        let cols = colours(&layout);
+        assert_eq!(
+            cols.iter()
+                .filter(|c| **c == bn::HEAL_READOUT_COLOUR)
+                .count(),
+            3,
+            "the restore's three digits"
+        );
+        assert_eq!(
+            cols.iter().filter(|c| **c == bn::READOUT_COLOUR).count(),
+            3,
+            "the hit's three digits stay gold"
+        );
+    }
+
+    #[test]
+    fn the_faithful_mode_draws_every_numeral_in_the_sheets_colours() {
+        // Off, the only heal numerals left are retail's own pushes (the
+        // fatal-decision heal), which retail draws off the same sheet.
+        let layout = heal_and_hit(false);
+        assert!(layout.1.iter().all(|r| !r.heal));
+        assert!(colours(&layout).iter().all(|c| *c == bn::READOUT_COLOUR));
+    }
 }
