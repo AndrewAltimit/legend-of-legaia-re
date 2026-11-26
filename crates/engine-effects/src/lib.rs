@@ -12,6 +12,7 @@
 #![forbid(unsafe_code)]
 
 pub mod action_effect_script;
+pub mod battle_intro_parts;
 pub mod effect_default_arm;
 pub mod effect_ribbon;
 pub mod effect_sprite_arm;

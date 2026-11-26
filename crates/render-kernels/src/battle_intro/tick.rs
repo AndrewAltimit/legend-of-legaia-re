@@ -143,6 +143,7 @@ impl BattleIntro {
                 let ring = emit && style.spin_up && emit_spinup_ring(ring_phase, &mut out.prims);
                 out.style_drawn = drawn || ring;
                 if style.spin_up || style.stamp_field_16 {
+                    self.pending_display_frames = self.pending_display_frames.saturating_add(1);
                     self.pending_particles.clear();
                     self.pending_particles
                         .extend_from_slice(&out.prims[particles_from..]);
@@ -202,6 +203,25 @@ impl BattleIntro {
                         let band = d.first_vertex / swirl::VERTS_PER_BAND;
                         out.style_drawn |= emit_swirl_band(mesh, zs[band], d, &mut out.prims);
                     }
+                }
+            }
+        }
+
+        // The init's parts tick with the actor list every frame and draw
+        // through the actor walk, over the style's packets (they link at
+        // their own depth, nearer than the particle buckets). On a display
+        // model they land with the frame's particles, so they trail as the
+        // rest of the never-cleared display does.
+        if let Some(parts) = self.parts.as_mut() {
+            parts.step(frame_step);
+            if elapsed != 0 {
+                let from = out.prims.len();
+                parts.emit(&mut out.prims);
+                out.style_drawn |= out.prims.len() > from;
+                if let WorkingSet::Particles { style, .. } = &self.set
+                    && (style.spin_up || style.stamp_field_16)
+                {
+                    self.pending_particles.extend_from_slice(&out.prims[from..]);
                 }
             }
         }

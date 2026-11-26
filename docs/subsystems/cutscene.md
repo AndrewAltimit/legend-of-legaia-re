@@ -2902,8 +2902,10 @@ composed from scratch over the backdrop, the port opened a black hole in the fie
 port keeps a CPU model of the display for this style, as it does for the curtain
 (`BattleIntro::update_spinup_display`, drawn back as the trail quads): seeded from the capture,
 uploaded under each frame's particles, and each frame's particles and ring rasterised into it
-(`screen_prim_raster::rasterize_onto_15bpp`). Retail double-buffers the display, so each buffer
-takes every second frame; the single model accumulates every frame (`inference`).
+(`screen_prim_raster::rasterize_onto_15bpp`). Retail double-buffers the display, and so does the
+model: it keeps both buffers and each drawn frame lands in the one two frames back, so a buffer
+takes every second frame's particles. One buffer stepped every frame doubles what the additive
+patches pile up.
 
 The scatter field (`FUN_801CFDA0`, the selector's arm for slot-0 monsters `0x4C`, `0x88` and
 `0xB3`) runs on the same display and differs by its wash: from the second frame on (entity clock
@@ -2914,16 +2916,16 @@ off holds; where a patch has flown, the field fades out, and each flying patch l
 trail. The drain scales the colour by the frame step, which the same body floors at `3`
 (`sw v0,-0x4628(v1)` at `0x801CFE00`), and lands on the buffer the frame draws into: two levels
 times the step every other frame, one 5-bit level a vsync on the displayed pixel. The port runs
-this style on the spin-up's display model and takes one level a clock unit off it
-(`SCATTER_DISPLAY_DECAY_5`) before the frame's particles land; composed over the backdrop, every
-departed patch opened black at once.
+this style on the spin-up's display model and takes two levels a clock unit
+(`2 * SCATTER_DISPLAY_DECAY_5`) off the buffer a frame draws into before the frame's particles
+land; composed over the backdrop, every departed patch opened black at once.
 
 A PCSX-Redux film of formation `[136]` (slot-0 monster `0x88`) from `retona_field_card_boot`,
 made with the harvester's `LEGAIA_INTRO_SHOTS` (a screenshot every vsync from the field exit,
 the frame step and floor beside it, and a state at the exit), reads step `3` and floor `3`
 through the style and the display changing every third vsync. A vacated pixel reads `31, 31,
-25, 25, 19, 19` on consecutive frames: six levels a buffer every two frames, which is what fixed
-the model's rate at one level a unit rather than two. Grade `capture`.
+25, 25, 19, 19` on consecutive frames: six levels a buffer every two frames, the pairs the
+two-buffer model reproduces. Grade `capture`.
 
 The port draws the style on retail's cadence and blend. `BattleIntro::advance_to` steps it on
 the multiples of three its clock passes, at step `3` (`SCATTER_FRAME_STEP`), so the display
@@ -2935,13 +2937,57 @@ added itself over the model's copy of its cell and the frame washed out to yello
 
 The engine side of the film is the retail-compare child for `retona_field_card_boot` run with
 `--battle 11` (the row the harvester's `LEGAIA_WANT=136` rolled), `--screenshot-every 1` and
-`LEGAIA_BATTLE_ARM_TICK=120`, so the fight is armed out of a field the window has drawn. Scored
-frame by frame on the retail-compare block metric, the film reads `.565` at its best pairing, the
-engine twelve vsyncs ahead. Six of them are retail's mode `8`, which runs before the transition
-mode starts and which the engine's transition does not model; the rest are unaccounted. The rest of the gap is one draw the port
-lacks: from about the twenty-fifth vsync retail grows a white starburst with a blue core at the
-player's screen position until it fills the frame, and the engine's frames there are black.
-Which routine draws it is open; none of the style bodies `FUN_801CF5BC` calls emits it.
+`LEGAIA_BATTLE_ARM_TICK=120`, so the fight is armed out of a field the window has drawn. Matched
+on the radial brightness profile of the starburst below, the engine runs about eighteen vsyncs
+ahead of the film. Six of them are retail's mode `8`, which runs before the transition mode starts
+and which the engine's transition does not model; about three are the frame retail's
+double-buffered display shows a draw after the tick that built it; the rest are unaccounted.
+
+#### The init's parts: the starburst
+
+Every arm of the init's style switch seats parts beside its seeder: draw-kind-4 move-VM records
+in the overlay's own image, handed to the SCUS stager `FUN_80021B04(pos, rot, record, 0x1000)` at
+position `(0, 0, 0x3C0)` with no rotation. Each is a transform node whose program sets an
+additive, double-sided colour word (op `0x0C`, mode byte `0xC9`; `0xCA` on two of the swirl's)
+and a default-arm node of the procedural ring / crown / star builder `FUN_80028158` (op `0x13`),
+then waits, sets its radius, level and spin rates (ops `0x14`, `0x0D`, `0x04`) and waits out its
+life before op `0x08` halts it.
+
+| Style | Records seated |
+|---|---|
+| scatter | `0x801D1F14`, `0x801D1F60`, `0x801D1FB0`; sub-style `> 0` adds `0x801D2000` three times and `0x801D2050`; `>= 2` adds `0x801D2000`, `0x801D2050` and `0x801D20A0` twice |
+| spin-up | `0x801D20F0`, `0x801D2134` |
+| tile shatter | `0x801D2178` |
+| curtain | none (the stub `FUN_801D1CD4`) |
+| swirl | `0x801D222C` five times, `0x801D2380`, `0x801D23D8`, `0x801D2278`, `0x801D22D0`, `0x801D2328` |
+
+The init also writes into some of the parts it was just handed, after their first VM run, several
+of the stores sitting in the delay slot of the next spawn's `jal` and so landing on the part the
+previous call returned: the scatter arm tints its three `0x801D2000` rings blue, green and red
+(`+0xA0`) and staggers their radii (`+0xB4` / `+0xB6`), the sub-style-2 set re-tints and delays
+four more (`+0x54`), and the swirl arm delays its second to fifth discs by `0x28` steps each.
+
+The parts live in the field actor list. The part tick `FUN_80021DF4` runs them each frame at the
+frame step times the speed byte `8`, and the actor walk `FUN_8001ADA4` (called from
+`FUN_8001D140`) draws them through `FUN_80043390` under the transition's GTE file: identity
+rotation, zero translation, `H = 0x80`, centre `(160, 114)`. None of the style bodies draws them.
+On the scatter film they are the white starburst with a blue core that grows at the screen centre
+from about the twenty-fifth vsync until it fills the frame: a PCSX-Redux write watch on its
+packets names `FUN_80043390` under that walk, and the seven actors it draws carry the scatter
+records at `+0x48`. A breakpoint on the part tick logs their state frame by frame, and the
+packets the film's ordering table holds 42 vsyncs past the exit sit where the transition's GTE
+file puts that state (the eight-ray star's tips 131..133 pixels out, the tinted rings' 53..59).
+On the shatter (a film of formation `[33, 68]` from the same state), its one part is the fan of
+thin rays behind the flying tiles. Grade `capture`.
+
+**Port.** `legaia_engine_effects::battle_intro_parts` seats each style's records out of the
+PROT 0979 image, ticks them on the move VM and the part tick's blocks, and draws them through the
+builder port `effect_default_arm` and the transition's projection, as gouraud quads at the
+resident patch's modulation (the builder's untextured packets sample page `0x1F`, CLUT `0x7F84`,
+grey `14`). The emitter holds them behind `render-kernels::battle_intro::IntroPartRuntime`,
+steps them in `BattleIntro::tick`, and lands them in the display model with the frame's
+particles. `engine-effects`'s `battle_intro_parts_disc` holds the seven scatter parts to the
+logged state after six, twelve and twenty-one ticks and their packets to the film's.
 
 #### The fade's second argument is a blend mode, not a depth
 

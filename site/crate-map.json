@@ -1587,6 +1587,7 @@
    "lib": true,
    "modules": [
     "action_effect_script",
+    "battle_intro_parts",
     "effect_default_arm",
     "effect_ribbon",
     "effect_sprite_arm",

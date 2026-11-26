@@ -45,9 +45,11 @@ pub const CURTAIN_DISPLAY_DECAY_5: u16 = 1;
 /// pixel drops `2 * step` levels every two frames, one level a vsync. A
 /// PCSX-Redux recording of formation `[136]` from `retona_field_card_boot`
 /// (step `3` throughout) shows exactly that: a vacated pixel reads `31, 31,
-/// 25, 25, 19, 19` on consecutive frames. The model is one buffer stepped once
-/// per clock unit, so it takes one level a unit; an undrawn pixel reaches
-/// black in about half a second.
+/// 25, 25, 19, 19` on consecutive frames. The model keeps the two buffers
+/// ([`BattleIntro::update_spinup_display`]) and washes the one a frame draws
+/// into by twice this per clock unit the frame covers; the displayed pixel
+/// then falls one level a unit, and an undrawn pixel reaches black in about
+/// half a second.
 pub const SCATTER_DISPLAY_DECAY_5: u16 = (super::PARTICLE_WASH_RGB as u16 & 0xFF) >> 4;
 
 /// The frame step the scatter style holds while it runs: its per-frame body
@@ -222,9 +224,14 @@ impl BattleIntro {
     /// the trail quads show under this frame's live particles), then this
     /// frame's particles and ring are rasterised into it for the next frame.
     /// Seeded from the field capture, which retail's init lands in both
-    /// display buffers. Retail's display is double-buffered, so each buffer
-    /// takes every second frame's particles; the single model here
-    /// accumulates every frame (an approximation, graded inference).
+    /// display buffers. Retail's display is double-buffered, and so is the
+    /// model: each frame draws into the buffer the frame two back drew into
+    /// (the wash coming off that buffer first, both frames' worth), so a
+    /// buffer takes every second frame's particles and a pixel the style no
+    /// longer draws holds for two frames between drops - the `31, 31, 25, 25,
+    /// 19, 19` the [`SCATTER_DISPLAY_DECAY_5`] film reads. One buffer stepped
+    /// every frame halves those holds and doubles what the additive patches
+    /// and the init's starburst parts pile up.
     pub(super) fn update_spinup_display(&mut self) {
         let (w, h) = (PSX_SCREEN_WIDTH as usize, PSX_SCREEN_HEIGHT as usize);
         if self.capture_src.len() < (usize::from(FIELD_CAPTURE_V_OFFSET) + h) * w {
@@ -233,13 +240,20 @@ impl BattleIntro {
         if self.display_accum.len() != w * h {
             let skip = usize::from(FIELD_CAPTURE_V_OFFSET) * w;
             self.display_accum = self.capture_src[skip..skip + w * h].to_vec();
+            self.display_accum_back = self.display_accum.clone();
         }
         let Some(page) = self.captured.as_mut() else {
             return;
         };
+        // Each frame drawn since the last refresh flips the buffer pair; the
+        // one on show is the one this frame draws into.
+        let frames = std::mem::take(&mut self.pending_display_frames);
+        if frames % 2 == 1 {
+            std::mem::swap(&mut self.display_accum, &mut self.display_accum_back);
+        }
         let wash = std::mem::take(&mut self.pending_wash_5);
         if wash != 0 {
-            decay_15bpp(&mut self.display_accum, wash);
+            decay_15bpp(&mut self.display_accum, wash.saturating_mul(2));
         }
         let r = CURTAIN_TRAIL_RECT;
         page.write_block(

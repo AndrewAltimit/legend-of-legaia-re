@@ -109,6 +109,19 @@ pub fn arm_battle_intro(host: &SceneHost, formation_id: u16, total: i32) -> Batt
         shade.as_deref().map(Vec::as_slice),
         host.world.battle.intro_rand_state,
     );
+    // The init's own parts, seated beside the style out of the same image
+    // (`legaia_engine_effects::battle_intro_parts`).
+    let parts = overlay.as_deref().and_then(|img| {
+        legaia_engine_effects::battle_intro_parts::IntroParts::seat(
+            intro.style(),
+            intro.sub_style(),
+            img,
+        )
+    });
+    let intro = intro
+        .with_parts(parts.map(|p| {
+            Box::new(p) as Box<dyn legaia_render_kernels::battle_intro::IntroPartRuntime>
+        }));
     log::info!(
         "battle intro style {:?} (sub {}) for formation slot0 {:#04x}, battle flags {:#04x}",
         intro.style(),
