@@ -121,6 +121,12 @@ pub struct EncounterState {
     /// the window opens, `Some(0)` once it has run. See
     /// `World::tick_encounter`.
     pub intro_load_hold: Option<u8>,
+    /// Field frames between a walked roll and its mode-`8` store still to
+    /// run before the load window opens (`World::hold_intro_load`): retail's
+    /// roll (`FUN_801D9E1C`) advances the encounter SM's state, and the next
+    /// frame's state `1` arm of `FUN_801DA51C` copies the formation and
+    /// stores mode `8`.
+    pub intro_store_lead: u8,
 }
 
 impl EncounterState {
@@ -141,6 +147,7 @@ impl EncounterState {
             battle_map_define: None,
             hud_short_idle_raises: 0,
             intro_load_hold: None,
+            intro_store_lead: 0,
         }
     }
 }

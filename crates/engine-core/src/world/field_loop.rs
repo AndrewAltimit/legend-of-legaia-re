@@ -106,8 +106,11 @@ impl World {
                             (i32::from(prev.0), i32::from(prev.1)),
                             (i32::from(tile.0), i32::from(tile.1)),
                         );
-                        if step || self.encounters.scripted_formation_pending {
-                            self.on_field_step();
+                        if (step || self.encounters.scripted_formation_pending)
+                            && self.on_field_step()
+                        {
+                            self.encounters.intro_store_lead =
+                                super::encounters::INTRO_STORE_LEAD_TICKS;
                         }
                     }
                     None => self.terrain.step_tile = Some(tile),

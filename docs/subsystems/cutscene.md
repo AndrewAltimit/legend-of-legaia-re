@@ -3012,6 +3012,20 @@ without the window; about three of those are the frame retail's double-buffered 
 draw after the tick that built it, and the starburst's halo, larger and brighter in the engine at
 the same transition clock, accounts for most of the rest of the profile fit.
 
+A walked roll does not store mode `8` on its own frame. `FUN_801D9E1C`'s success advances the
+encounter SM's state (`0x801DA2A0..0x801DA2AC`) and keeps the formation record at `+0x94`; the
+next frame's state-`1` arm of `FUN_801DA51C` copies the formation into `0x8007BD0C`, raises the
+jolt (`0x801DA70C..0x801DA718`) and stores mode `8` (`0x801DA724`). The mode-`8` handler runs on
+the frame after that. A per-vsync PCSX-Redux log of a walked `teien` fight reads the order
+against the first vsync showing mode `8` (`T`): the field sequence stopped at `T + 4`, mode `9`
+at `T + 8`, the battle-start cue's voices at `T + 10`, mode `0x14` at `T + 141`; the window is
+longer than the six-vsync minimum there, the state loaded eleven vsyncs before the roll. So a
+walked roll leads the load window by two ticks (`INTRO_STORE_LEAD_TICKS`): the roll's, and the
+store's, on which the jolt starts. On the window's minimum the port then keys the field off at
+`T + 3`, ticks the entity first at `T + 7` and attaches the battle theme at `T + 139`, the order
+of [the battle music timeline](audio.md#the-battle-music-timeline). A fight armed between ticks
+(`World::force_encounter`, a tool's direct battle) has no roll frame and opens the window at once.
+
 The swirl draws over the same never-cleared display. Its bands cover it early; past
 `LATE_PHASE_FRAME` they thin out, the tick arms the same `0x101010` wash, and the init's five
 expanding discs (`0x801D222C`) leave filled trails that whiten the centre. The port runs the swirl

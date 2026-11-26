@@ -1450,3 +1450,51 @@ fn the_intro_init_keys_the_field_off_inside_the_load_window() {
         "one key-off, on the init's tick of the window"
     );
 }
+
+/// A walked roll leads its load window by two frames: the roll's, and the
+/// mode-`8` store's a frame later. The jolt starts on the store, the init's
+/// key-off three ticks after it (retail's `T + 3`) and the entity's first
+/// tick seven after it (`T + 7`).
+#[test]
+fn a_walked_roll_stores_mode_8_a_frame_late_and_the_window_follows() {
+    use crate::world::encounters::{ENCOUNTER_JOLT_VSYNCS, INTRO_STORE_LEAD_TICKS};
+    use legaia_engine_battle::encounter::EncounterRoll;
+
+    let mut world = World::new();
+    let mut session = legaia_engine_battle::encounter::EncounterSession::new(
+        legaia_engine_battle::encounter::EncounterTracker::new(
+            legaia_engine_battle::encounter::EncounterTable::default(),
+        ),
+    );
+    session.trigger_with(EncounterRoll {
+        formation_id: 3,
+        row_index: 0,
+        roll_q8: 0,
+    });
+    world.set_encounter_session(Some(session));
+    world.set_battle_bgm(Some(2001));
+    // The roll's tick, as `live_field_tick` arms it.
+    world.encounters.intro_store_lead = INTRO_STORE_LEAD_TICKS;
+    let (mut keyed, mut first, mut jolt) = (None, None, None);
+    for t in 0..u32::from(INTRO_STORE_LEAD_TICKS + ENCOUNTER_JOLT_VSYNCS) + 3 {
+        world.tick_encounter();
+        if jolt.is_none() && world.rumble.motors.level == 0xFF {
+            jolt = Some(t);
+        }
+        if keyed.is_none()
+            && world
+                .drain_field_events()
+                .iter()
+                .any(|e| matches!(e, FieldEvent::Bgm { sub_op: 3, .. }))
+        {
+            keyed = Some(t);
+        }
+        if first.is_none() && world.battle.intro.is_some() {
+            first = Some(t);
+        }
+    }
+    // Tick 0 is the roll, tick 1 the store (`T`).
+    assert_eq!(jolt, Some(1), "the jolt starts with the store");
+    assert_eq!(keyed, Some(1 + 3), "the init keys the field off at T + 3");
+    assert_eq!(first, Some(1 + 7), "the entity first ticks at T + 7");
+}

@@ -17,6 +17,13 @@ pub const ENCOUNTER_JOLT_VSYNCS: u8 = 6;
 /// (the `jal`s from `0x801CEB74` on), which take the rest of the window.
 pub const INTRO_INIT_AUDIO_TICK: u8 = 2;
 
+/// Ticks a walked roll leads its load window by: the roll's own frame, and
+/// the next, on which the encounter SM's state `1` arm (`FUN_801DA51C`,
+/// `0x801DA5C0..0x801DA724`) copies the formation and stores mode `8` - the
+/// frame retail's per-vsync logs first read mode `8` on. The mode-`8`
+/// handler runs on the frame after the store.
+pub const INTRO_STORE_LEAD_TICKS: u8 = 2;
+
 impl World {
     /// Field-step trigger. Engines call this once per "the player walked
     /// one map cell" (typically when the player actor's grid coord moves)
@@ -252,11 +259,24 @@ impl World {
         );
         if !in_transition {
             self.encounters.intro_load_hold = None;
+            self.encounters.intro_store_lead = 0;
             self.audio.intro_audio_silenced = false;
             return false;
         }
         if self.battle.intro.is_some() {
             return false;
+        }
+        // A walked roll stores mode `8` a frame after it rolls, and the
+        // window opens on the frame after the store. The jolt's `0xFF`
+        // stores (`0x801DA70C..0x801DA718`) sit in the store's own arm.
+        if self.encounters.intro_load_hold.is_none() && self.encounters.intro_store_lead > 0 {
+            self.encounters.intro_store_lead -= 1;
+            if self.encounters.intro_store_lead == 0 {
+                self.encounter_rumble();
+                self.tick_intro_rumble();
+                self.encounters.intro_load_hold = Some(ENCOUNTER_JOLT_VSYNCS);
+            }
+            return true;
         }
         let left = match self.encounters.intro_load_hold {
             Some(left) => left,
