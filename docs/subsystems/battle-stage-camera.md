@@ -2607,6 +2607,14 @@ reads `3.06` to `3.38` by film, and `3.2` puts the frame's span on retail's vsyn
 (`arts_shout_census_cost`), on PCSX-Redux's timing only. The fit holds arts shouts alone, so
 every other line keeps `2.78`. Grade `capture`.
 
+A polled frame's end also runs under the polls: over the `80` fully polled frames of five
+recordings (the four above and Vahn's Chain late) the recorded cost reads the frame's vsync
+count right on `79` for any frame end from `28` to `40` hblanks, and on `76` at the unloaded
+frame's `20` (`FRAME_END_HBLANKS`). Priced at `34` on the arts shouts' polled frames, the arts
+films move by `.0004` on the mean and none gains (Tornado Flame `.924` to `.917`): the port's
+voiced frames already land on retail's lengths through the census ratio, so the end stays `20`.
+Grade `capture`.
+
 **Port.** `WorldToggles::battle_cd_timing` (`CdTiming`) picks the machine. `PcsxRedux`, the
 engine's default and every harness's, keeps the recordings' tables, the clamp `1063` and the
 overrun. `Console` is what players run: both play hosts seat `PLAY_BATTLE_CD_TIMING`
