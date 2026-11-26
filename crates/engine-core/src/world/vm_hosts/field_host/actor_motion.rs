@@ -473,6 +473,7 @@ impl FieldHostImpl<'_> {
                 .npcs
                 .anim_cues
                 .insert(slot, (1, move_id, Vec::new()));
+            self.world.npcs.poked_cues.insert(slot);
             self.world.script_npc_move(slot, move_id);
             let party_bank =
                 ctx.flags & legaia_engine_field::field_player_clip::PARTY_BANK_FLAG != 0;

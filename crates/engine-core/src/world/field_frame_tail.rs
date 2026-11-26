@@ -254,6 +254,7 @@ impl World {
             self.tick_field_player_anim_scaled(0);
         }
         let drained = std::mem::take(&mut self.npcs.anim_cues);
+        let poked = std::mem::take(&mut self.npcs.poked_cues);
         let mut cues: Vec<(u8, u8)> = Vec::with_capacity(drained.len());
         for (slot, (count, base_id, frames)) in drained {
             // Retail's `+0x5E` latch: a single-move cue is a `+0x5C` write,
@@ -308,9 +309,22 @@ impl World {
                 // one takes this frame's step here. A PCSX-Redux walk film of
                 // `town01_npc16_dialogue_first_page` draws each villager's
                 // stand / walk switch from cursor `8` on its bind frame.
+                //
+                // A script's poke (`22` / `A2`, the `4C 51` seat) binds and
+                // steps through the op's own consumer call, and the actor's
+                // tick steps the clip again later in the same walk: the
+                // record contexts tick on list 0, ahead of the placements
+                // (list 2). So a poked clip the hosts bind here takes both
+                // steps. A walk film of `vozz_ozma_hatching_hover` reads
+                // cursor `16`, two of the clip's `8` a pass, on the pass
+                // `P2[17]`'s `CC 07 51 7B 64 80 10` seats flat `7` on party
+                // clip `16`.
                 let grid = self.clock.script_frame_delta();
                 if was != now && grid > 0 && self.field_npc_clips_advance() {
                     self.tick_npc_clip_slot(slot, grid);
+                    if poked.contains(&slot) {
+                        self.tick_npc_clip_slot(slot, grid);
+                    }
                 }
                 r
             })
