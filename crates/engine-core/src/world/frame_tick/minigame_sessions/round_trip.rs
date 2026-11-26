@@ -174,7 +174,18 @@ impl World {
         // overlay init took the score over (dance / Baka / dome). No-op for
         // the two slots that never displaced it.
         self.restore_minigame_bgm();
-        self.mode = SceneMode::Field;
+        // The return warp makes no scene-kind test of its own: it latches
+        // MAIN INIT (`sh v0,-0x47C4(at)` at `0x80026038`, mode `2` with the
+        // field-entry word up) and the initializer brings back whatever the
+        // restored label names. An overworld departure - the fishing doors on
+        // `map02` / `map03` - is the overworld again; dropped into `Field` the
+        // engine ran a field tick over the kingdom map with no overworld
+        // controller.
+        self.mode = if legaia_engine_scene::scene::is_world_map_scene(&self.active_scene_label) {
+            SceneMode::WorldMap
+        } else {
+            SceneMode::Field
+        };
         // The field entry it lands in is MAIN INIT's warp arm, which takes
         // twenty seconds off a running escape clock (`0x8003B62C`).
         self.battle.escape_timer.field_return_penalty();
