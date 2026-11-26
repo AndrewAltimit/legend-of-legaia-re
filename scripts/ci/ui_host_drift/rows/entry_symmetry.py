@@ -90,6 +90,11 @@ HOTKEY_ONLY_WAIVERS: dict[str, str] = {
     "spawn_debug_effect_model": "the model-emitting twin of the probe above, "
     "same reasoning: it exists to prove the pool emits a model rather than a "
     "billboard for a chosen TMD index.",
+    "active_move_fx_trail_texpage": "a read accessor the move-FX spawn "
+    "hotkey logs after its debug spawn; it arms no phase and changes no world "
+    "state. The streak ribbons both hosts draw are dealt on the game stream "
+    "(`World::deal_move_fx_streak`, `World::deal_clip_ribbon`) and carry "
+    "their own texture page, so no draw path reads it any more.",
     "active_field_fx_render_nodes": "a read accessor the hotkey uses for its "
     "own on-screen readout of what the pool currently holds; it arms no phase "
     "and changes no world state.",
