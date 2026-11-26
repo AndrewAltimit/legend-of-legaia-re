@@ -1010,6 +1010,8 @@ The spin is therefore the cue alone, for over two seconds, and the theme arrives
 the fight. Phase 2 only reads the bundle: its `FUN_800567A8` is the debug print of
 `battle bgm %d`. Port: `World::silence_field_audio_for_intro` keys off the track
 (sub-op `3`, set `0` only) and voices `0x10..0x17` on the transition's first tick, and
+queues the sustained teardown of the init's own mode init `FUN_8001DCF8(0xA)`
+(`jal` at `0x801CE974`, ahead of the voice loop), and
 `World::enter_battle_from_formation` attaches, both hosts through
 `route_bgm_events`. A set above `0` leaves the field track alone until the attach, and
 `-1` plays it through.
@@ -2685,7 +2687,7 @@ Its callers:
 
 | Caller | Site | When |
 |---|---|---|
-| mode init `FUN_8001DCF8` | `0x8001DDA8` | every mode entry - a battle's start and the field init after it |
+| mode init `FUN_8001DCF8` | `0x8001DDA8` | every mode entry - the battle intro's init (`0x801CE974`), a battle's start and the field init after it |
 | battle anim commit `FUN_8004AD80` | `0x8004AE68` | any actor's commit whose staged clip `+0x1DA` differs from its latched clip `+0x1DB` (`0x8004AE54..0x8004AE60`); a re-commit of the same clip leaves the run sounding |
 | battle tint pass `FUN_80050120` | `0x8005040C` | a monster seat (`3..=6`) in its fade arm, while the low 24 bits of its render node's `+0x74` word are non-zero |
 | debug sound test | `overlay_debug_menu` | "stop all" |
@@ -2695,7 +2697,7 @@ So a monster's looping attack sound - the `bse.dat` row a clip's cue track rings
 Port: `SfxBank::release_sustained` is the teardown over the live voices; the
 anim commit raises `SfxRingOp::ReleaseSustained` in call order with the ring
 writes, `AudioDirector::apply_sfx_ring_ops` runs it ahead of the frame's drain,
-`route_world_sfx` runs it on the edge into or out of a battle, a scene load
+`route_world_sfx` runs it on the edge into or out of a battle, the battle intro's first tick queues it (the intro init's own mode init), a scene load
 queues it (`World::release_sustained_sfx`), and the defeat-fade pass
 (`World::tick_battle_defeat_sink`) queues it for every fading monster seat
 ahead of the sink's absorb / capture gates, as the tint pass's call sits. Measured on the same harness: the `map03` fight keys
