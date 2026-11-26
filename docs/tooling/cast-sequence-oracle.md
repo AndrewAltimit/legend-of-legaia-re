@@ -2650,6 +2650,20 @@ Three things the table and the recordings behind it say about the frame-cost mod
   ([the census](../subsystems/battle-stage-camera.md#the-census)); with
   `LEGAIA_DIAG_GPU_COST=<path>` the window logs it by class beside its own count.
 
+**How much of the image gap is the step.** Filming the enemy set with
+`--retail-steps` (each engine frame on the recording's own step, a harness seat)
+lifts its image mean from `.962` to `.977`, and the bottom rows close almost
+entirely: Zeto's Poisonous Bubbles `.883` to `.989`, Ironman's Jagged Earth `.893`
+to `.981`, Orb's Jewel Beam `.927` to `.963`, Kemaro's strike `.897` to `.970`. Each
+loses on one slipped frame. Retail runs a `0x2B` (or `0x20`) frame one vsync longer
+than the engine (Ironman's `730` and `766`-hblank frames take four vsyncs where the
+engine prices `722` and `720`; Zeto's takes three at `535` where the engine's reads
+`508`), and every later frame boundary then sits a vsync off retail's. On a
+close-up shot that one vsync is the whole loss: the camera, the bodies and the
+module's parts agree on the game clock, and the pairs that score `.45` are the
+ones where the engine has flipped and retail has not. The rows that stay low under
+the seat are where to look for drawn content (grade `capture`).
+
 ## Reading the report
 
 `report.md` opens with the mean, the minimum and the excluded counts. Then
