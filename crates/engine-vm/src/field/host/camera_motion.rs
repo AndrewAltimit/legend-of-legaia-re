@@ -155,8 +155,10 @@ pub trait FieldCameraMotionHost: FieldFlagsHost {
         true
     }
 
-    /// Write or ramp `_DAT_80073EE4` (op 0x4C nE sub-7, 7 bytes). The word's
-    /// reader is not identified, so the hook keeps its opcode coordinate.
+    /// Write or ramp `_DAT_80073EE4` (op 0x4C nE sub-7, 7 bytes), the field
+    /// wash colour: the field frame tick `FUN_801D1344` arms the
+    /// screen wash `FUN_8004695C` with it on every frame it is not `0xFFFFFF`
+    /// (`0x801D1420..0x801D1438`). No shipped script carries the op.
     ///
     /// `[4C, 0xE7, t0, t1, t2, d0, d1]`. Mixed-width operand: a 24-bit LE
     /// `target` at bytes 1..3 and a 16-bit LE `duration` at bytes 4..5.
@@ -166,8 +168,9 @@ pub trait FieldCameraMotionHost: FieldFlagsHost {
     ///
     /// Behaviour:
     /// - `duration == 0` → write `_DAT_80073EE4 = target` immediately.
-    /// - `duration != 0` → call `func_0x8003C5F0(0, &_DAT_80073EE4, 0,
-    ///   _DAT_80073EE4, target, duration)` to schedule the tween.
+    /// - `duration != 0` → call `func_0x8003C5F0(0, &_DAT_80073EE4, 3,
+    ///   _DAT_80073EE4, target, duration)`: a kind-3 (packed RGB) ramp over
+    ///   the signed duration (`0x801E3348..0x801E3370`).
     ///
     /// PC advances by 7. Hosts model the camera tween however they like.
     fn op4c_ne_sub7_ramp_73ee4(&mut self, target: u32, duration: u16) {

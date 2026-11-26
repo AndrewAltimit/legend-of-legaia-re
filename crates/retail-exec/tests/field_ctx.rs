@@ -780,6 +780,11 @@ struct Seeded {
     camera_glide: bool,
     /// The confirm mask is in this frame's new-press word.
     pressed: bool,
+    /// The player context's coordinates, when one is seated and is not
+    /// the stepping context (`0x801E0FB0..0x801E0FC8`'s two guards).
+    player: Option<PlayerCoords>,
+    /// `43 0E`'s mark reached the host.
+    marked: bool,
 }
 impl FieldFlagsHost for Seeded {
     fn global_flags(&self) -> u32 {
@@ -852,6 +857,9 @@ impl FieldActorSpawnHost for Seeded {
     fn actor_guard(&mut self, _actor_id: u8) -> Option<()> {
         Some(())
     }
+    fn op43_sube_mark_actor_flag_8(&mut self, _ctx: &mut FieldCtx) {
+        self.marked = true;
+    }
     fn op34_sub2_capture_pc(
         &mut self,
         _ctx: &FieldCtx,
@@ -879,7 +887,11 @@ impl FieldActorFxHost for Seeded {
         !self.light
     }
 }
-impl FieldPlayerHost for Seeded {}
+impl FieldPlayerHost for Seeded {
+    fn fetch_player_coords(&self, _ctx: &FieldCtx) -> Option<PlayerCoords> {
+        self.player
+    }
+}
 impl FieldHaltHost for Seeded {
     fn spawn_bracket(&self) -> bool {
         self.bracket
@@ -990,12 +1002,15 @@ fn every_instruction_under_seeded_state_steps_as_retail_steps() {
                 switch_stepping: false,
                 camera_glide: false,
                 pressed: false,
+                player: None,
+                marked: false,
             };
             if rng.below(4) == 0 {
                 // A pad that matches a compass entry.
                 host.pad = (host.pad & !0xF000) | (compass[rng.below(8) as usize] & 0xF000);
             }
             let mut halted = false;
+            let mut live_mover = false;
             let mut id = rng.below(0x40);
             match variant {
                 1 => {
@@ -1044,6 +1059,7 @@ fn every_instruction_under_seeded_state_steps_as_retail_steps() {
                     // live with its dead bit `+0x10 & 8` clear, or dead
                     // (`0x801E2B60..0x801E2B6C`).
                     let dead = rng.below(2) == 0;
+                    live_mover = !dead;
                     cpu.mem.load(0x8016_0100, &[0u8; 0x20]);
                     cpu.mem.wr32(0x8016_0110, if dead { 8 } else { 0 });
                     host.camera_glide = !dead;
@@ -1098,6 +1114,22 @@ fn every_instruction_under_seeded_state_steps_as_retail_steps() {
                     cpu.mem.wr32(0x8007_B6B0, (-1000i32) as u32);
                 }
                 _ => {}
+            }
+            // The player context `4C 37` copies from: seated coordinates
+            // on any player that is not this context.
+            let player = cpu.mem.rd32(PLAYER);
+            if player != 0 && player != CTX {
+                let p = PlayerCoords {
+                    world_x: rng.next() as u16,
+                    world_y: rng.next() as u16,
+                    world_z: rng.next() as u16,
+                    field_26: rng.next() as u16,
+                };
+                cpu.mem.wr16(player + 0x14, p.world_x);
+                cpu.mem.wr16(player + 0x16, p.world_y);
+                cpu.mem.wr16(player + 0x18, p.world_z);
+                cpu.mem.wr16(player + 0x26, p.field_26);
+                host.player = Some(p);
             }
             cpu.mem.wr32(FLAGS, host.flags);
             cpu.mem.wr32(PAD, host.pad);
@@ -1155,6 +1187,15 @@ fn every_instruction_under_seeded_state_steps_as_retail_steps() {
                 // A field the port leaves to its host is `field_ctx`'s count.
                 if r != p && port_field(&seeded, name) != p {
                     wrong.push(format!("{name} retail {r:#x} port {p:#x}"));
+                }
+            }
+            // `43 0E`'s walk finds the mover only in variant 8 (the hooked
+            // `FUN_8003CF04`); a live one takes the dead bit `+0x10 & 8`
+            // (`0x801DF904..0x801DF914`), as the port's host is told to.
+            if label == "43 0E" && variant == 8 && live_mover {
+                let marked = cpu.mem.rd32(0x8016_0110) & 8 != 0;
+                if marked != host.marked {
+                    wrong.push(format!("43 0E mark retail {marked} port {}", host.marked));
                 }
             }
             let flags = cpu.mem.rd32(FLAGS);
@@ -1285,6 +1326,8 @@ fn an_attached_light_is_found_where_retail_finds_it() {
                 switch_stepping: false,
                 camera_glide: false,
                 pressed: false,
+                player: None,
+                marked: false,
             };
             let mut ctx = FieldCtx::default();
             let port = match step(&mut host, &mut ctx, &script, pc) {
@@ -1340,7 +1383,10 @@ const HG_PLAYER: u32 = 0x8014_0000;
 /// The script-register table, `0x801C6460 + slot * 2`.
 const SLOT_TABLE: u32 = 0x801C_6460;
 
-const HOST_GLOBALS: [(u32, u8); 20] = [
+/// The story-flag bank `0x80085758`, 512 bytes.
+const FLAG_BANK: u32 = 0x8008_5758;
+
+const HOST_GLOBALS: [(u32, u8); 21] = [
     (0x8007_3EF4, 4), // op 3F, the destination-entry X and Z words
     (0x8007_3EF8, 4),
     (0x8007_3EFC, 4), // op 3F, the arrival facing
@@ -1361,6 +1407,7 @@ const HOST_GLOBALS: [(u32, u8); 20] = [
     (0x8007_BA66, 2),     // op 4C ED, the dither word
     (0x8007_BCAC, 4),     // op 4C 49, the camera-offset accumulator
     (HG_SCENE + 0x4A, 2), // op 4C 49, the scene record's camera offset
+    (0x8007_3EE4, 4),     // op 4C E7, the field wash colour the player tick arms
 ];
 
 /// `Inert`, with the hooks whose whole effect is a store to a
@@ -1448,6 +1495,16 @@ impl FieldCameraMotionHost for Recording {
     fn set_shake_amplitude(&mut self, value: u8) {
         self.put(0x8007_B630, value.into());
     }
+    // `4C E7` (`0x801E3320..0x801E3374`): a zero duration stores the colour,
+    // any other ramps it (kind 3, packed RGB) over the signed duration.
+    fn op4c_ne_sub7_ramp_73ee4(&mut self, target: u32, duration: u16) {
+        if duration == 0 {
+            self.put(0x8007_3EE4, target);
+        } else {
+            self.ramps
+                .push((0x8007_3EE4, target, i32::from(duration as i16) as u32));
+        }
+    }
     // `4C 49` (`0x801E1480..0x801E162C`): the scene record's `+0x4A` and the
     // accumulator `_DAT_8007BCAC`, written or ramped on the story-flag bits.
     fn write_camera_offset(&mut self, target: i16) {
@@ -1529,6 +1586,12 @@ impl FieldAudioHost for Recording {
 impl FieldPartyInventoryHost for Recording {
     fn op4c_nd_subc_item_held(&self, needle: u8) -> bool {
         self.inert.op4c_nd_subc_item_held(needle)
+    }
+    // `4C 32` (`0x801E0F48..0x801E0F64`): the 512-byte flag bank, zeroed.
+    fn clear_party_state_region(&mut self) {
+        for k in 0..0x80 {
+            self.rows.insert(FLAG_BANK + 4 * k, (4, 0));
+        }
     }
 }
 impl FieldDialogMenuHost for Recording {
@@ -1768,6 +1831,13 @@ fn every_instruction_leaves_the_host_globals_as_retail_leaves_them() {
             }
             cpu.mem.wr32(0x1F80_0394, host.flags);
             cpu.mem.wr16(HG_PLAYER + 0x16, host.player_y as u16);
+            // The flag bank under the instruction that clears it, seeded so
+            // a partial clear shows.
+            if label == "4C 32" {
+                for k in 0..0x80 {
+                    cpu.mem.wr32(FLAG_BANK + 4 * k, rng.next() | 1);
+                }
+            }
             ramps.borrow_mut().clear();
             packets.borrow_mut().clear();
             let mut seeds = BTreeMap::new();
