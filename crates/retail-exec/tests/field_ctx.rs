@@ -1237,7 +1237,12 @@ fn an_attached_light_is_found_where_retail_finds_it() {
 /// The field VM's host globals the port's `FieldHost` hooks name one to one:
 /// `(address, width)`. A store the hook owns lands here on the port's side,
 /// as the hook's documentation spells it.
-const HOST_GLOBALS: [(u32, u8); 18] = [
+/// The host-globals pass's scene record (`*0x801C6EA4`) and player context
+/// (`*0x8007C364`).
+const HG_SCENE: u32 = 0x8013_0000;
+const HG_PLAYER: u32 = 0x8014_0000;
+
+const HOST_GLOBALS: [(u32, u8); 20] = [
     (0x8007_3EF4, 4), // op 3F, the destination-entry X and Z words
     (0x8007_3EF8, 4),
     (0x8007_3EFC, 4), // op 3F, the arrival facing
@@ -1253,9 +1258,11 @@ const HOST_GLOBALS: [(u32, u8); 18] = [
     (0x8007_B780, 2), // op 4C 8A, the field light's three angles
     (0x8007_B782, 2),
     (0x8007_B784, 2),
-    (0x8007_B788, 4), // op 4C 8A, the packed back colour
-    (0x8007_B854, 4), // ops 4C 30 / 31, the ambient-particle gate
-    (0x8007_BA66, 2), // op 4C ED, the dither word
+    (0x8007_B788, 4),     // op 4C 8A, the packed back colour
+    (0x8007_B854, 4),     // ops 4C 30 / 31, the ambient-particle gate
+    (0x8007_BA66, 2),     // op 4C ED, the dither word
+    (0x8007_BCAC, 4),     // op 4C 49, the camera-offset accumulator
+    (HG_SCENE + 0x4A, 2), // op 4C 49, the scene record's camera offset
 ];
 
 /// `Inert`, with the hooks whose whole effect is a store to a
@@ -1275,6 +1282,10 @@ struct Recording {
     warps: Vec<String>,
     /// How many of those warps carried a far-half entry byte.
     half_tiles: usize,
+    /// The story-flag word `0x1F800394`, seeded alike on retail's side.
+    flags: u32,
+    /// The player context's `+0x16`, seeded alike on retail's side.
+    player_y: i16,
 }
 impl Recording {
     fn put(&mut self, at: u32, v: u32) {
@@ -1283,10 +1294,10 @@ impl Recording {
 }
 impl FieldFlagsHost for Recording {
     fn global_flags(&self) -> u32 {
-        self.inert.global_flags()
+        self.flags
     }
     fn set_global_flags(&mut self, value: u32) {
-        self.inert.set_global_flags(value)
+        self.flags = value;
     }
     fn frame_delta(&self) -> u16 {
         self.inert.frame_delta()
@@ -1317,6 +1328,43 @@ impl FieldCameraMotionHost for Recording {
     }
     fn set_shake_amplitude(&mut self, value: u8) {
         self.put(0x8007_B630, value.into());
+    }
+    // `4C 49` (`0x801E1480..0x801E162C`): the scene record's `+0x4A` and the
+    // accumulator `_DAT_8007BCAC`, written or ramped on the story-flag bits.
+    fn write_camera_offset(&mut self, target: i16) {
+        self.put(HG_SCENE + 0x4A, target as u16 as u32);
+    }
+    fn ramp_camera_offset(&mut self, target: i16, ticks: u16) {
+        self.ramps.push((
+            HG_SCENE + 0x4A,
+            i32::from(target) as u32,
+            i32::from(ticks as i16) as u32,
+        ));
+    }
+    fn write_camera_offset_player_relative(&mut self, target: i16, ticks: u16) {
+        // Bit 24: `BCAC = target`, `+0x4A = target + player+0x16`.
+        let raised = i32::from(target) + i32::from(self.player_y);
+        if ticks == 0 {
+            self.put(0x8007_BCAC, i32::from(target) as u32);
+            self.put(HG_SCENE + 0x4A, raised as u16 as u32);
+        } else {
+            let t = i32::from(ticks as i16) as u32;
+            self.ramps.push((0x8007_BCAC, i32::from(target) as u32, t));
+            self.ramps.push((HG_SCENE + 0x4A, raised as u32, t));
+        }
+    }
+    fn write_camera_offset_delta(&mut self, target: i16, ticks: u16) {
+        // Bit 25: `+0x4A = target`, `BCAC = target - player+0x16`.
+        let delta = i32::from(target) - i32::from(self.player_y);
+        if ticks == 0 {
+            self.put(HG_SCENE + 0x4A, target as u16 as u32);
+            self.put(0x8007_BCAC, delta as u32);
+        } else {
+            let t = i32::from(ticks as i16) as u32;
+            self.ramps.push((0x8007_BCAC, delta as u32, t));
+            self.ramps
+                .push((HG_SCENE + 0x4A, i32::from(target) as u32, t));
+        }
     }
 }
 impl FieldScreenHost for Recording {
@@ -1528,6 +1576,8 @@ fn every_instruction_leaves_the_host_globals_as_retail_leaves_them() {
         let a = r.r[4];
         r.r[2] = u32::from(m.rd8(a)) | u32::from(m.rd8(a + 1)) << 8 | u32::from(m.rd8(a + 2)) << 16;
     });
+    cpu.mem.wr32(0x801C_6EA4, HG_SCENE);
+    cpu.mem.wr32(0x8007_C364, HG_PLAYER);
     let gp = cpu.regs.r[GP];
     let clean = cpu.mem.clone();
     // The disc corpus, then every op over generated operand bytes, so an
@@ -1588,7 +1638,13 @@ fn every_instruction_leaves_the_host_globals_as_retail_leaves_them() {
                 rows: BTreeMap::new(),
                 warps: Vec::new(),
                 half_tiles: 0,
+                // Only `4C 49`'s two bits: the other flag readers answer
+                // from the same word on both sides, clear as before.
+                flags: [0, 0x0100_0000, 0x0200_0000, 0x0300_0000][rng.below(4) as usize],
+                player_y: rng.next() as i16,
             };
+            cpu.mem.wr32(0x1F80_0394, host.flags);
+            cpu.mem.wr16(HG_PLAYER + 0x16, host.player_y as u16);
             ramps.borrow_mut().clear();
             packets.borrow_mut().clear();
             let mut seeds = BTreeMap::new();
