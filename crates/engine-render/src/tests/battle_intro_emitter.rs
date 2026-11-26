@@ -1492,9 +1492,10 @@ mod curtain_accumulation {
 // ---------------------------------------------------------------------------
 
 /// `FUN_801CFDA0` arms `0x101010` on every frame after the first and nothing
-/// clears the display, so what no particle redraws fades two 5-bit levels a
-/// frame - the trail a flown patch leaves - where the spin-up, which arms no
-/// wash, keeps it.
+/// clears the double-buffered display, so what no particle redraws fades one
+/// 5-bit level a vsync (two levels times the step on each buffer, each buffer
+/// every other frame) - the trail a flown patch leaves - where the spin-up,
+/// which arms no wash, keeps it.
 mod scatter_display {
     use super::*;
     use legaia_render_kernels::battle_intro::{PARTICLE_WASH_RGB, SCATTER_DISPLAY_DECAY_5};
@@ -1522,12 +1523,13 @@ mod scatter_display {
     }
 
     #[test]
-    fn the_wash_is_two_levels_a_frame() {
+    fn the_display_fades_one_level_a_step() {
+        // Two levels off a buffer per draw, each buffer every other frame.
         assert_eq!(
             SCATTER_DISPLAY_DECAY_5,
-            ((PARTICLE_WASH_RGB & 0xFF) >> 3) as u16
+            ((PARTICLE_WASH_RGB & 0xFF) >> 3) as u16 / 2
         );
-        assert_eq!(SCATTER_DISPLAY_DECAY_5, 2);
+        assert_eq!(SCATTER_DISPLAY_DECAY_5, 1);
     }
 
     #[test]
@@ -1539,7 +1541,7 @@ mod scatter_display {
             "the probe needs a lit pixel: {first:?}"
         );
         for (k, p) in px.iter().enumerate() {
-            let want = first.map(|c| c.saturating_sub(2 * k as u16));
+            let want = first.map(|c| c.saturating_sub(k as u16));
             assert_eq!(levels(*p), want, "frame {k}: the first frame is not washed");
             assert_eq!(p & 0x8000, 0x8000, "the model stays opaque");
         }

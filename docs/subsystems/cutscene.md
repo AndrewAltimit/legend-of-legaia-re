@@ -2891,14 +2891,20 @@ The scatter field (`FUN_801CFDA0`, the selector's arm for slot-0 monsters `0x4C`
 `+0x1A` non-zero) it arms `func_0x8004695C(0x101010)` (`0x801CFE1C..0x801CFE24`), which the
 frame driver drains as a subtractive full-screen quad in the farthest OT bucket, ahead of every
 particle. A patch at rest is opaque and redraws its own cell, so the field that has not peeled
-off holds; where a patch has flown, the field fades out over about sixteen frames, and each
-flying patch leaves a fading trail. The port runs this style on the spin-up's display model and
-takes the wash off it (`SCATTER_DISPLAY_DECAY_5`, two 5-bit levels) before the frame's particles
-land; composed over the backdrop, every departed patch opened black at once. The drain scales the
-colour by the frame step, which the same body floors at `3` (`sw v0,-0x4628(v1)` at
-`0x801CFE00`); the emitter steps once per clock unit and the model once per presented frame, so
-two levels a unit is the same fade over the same clock span. No retail state stands before one
-of the three fights, so the trail is `disassembly`-grounded, not compared against a capture.
+off holds; where a patch has flown, the field fades out, and each flying patch leaves a fading
+trail. The drain scales the colour by the frame step, which the same body floors at `3`
+(`sw v0,-0x4628(v1)` at `0x801CFE00`), and lands on the buffer the frame draws into: two levels
+times the step every other frame, one 5-bit level a vsync on the displayed pixel. The port runs
+this style on the spin-up's display model and takes one level a clock unit off it
+(`SCATTER_DISPLAY_DECAY_5`) before the frame's particles land; composed over the backdrop, every
+departed patch opened black at once.
+
+A PCSX-Redux film of formation `[136]` (slot-0 monster `0x88`) from `retona_field_card_boot`,
+made with the harvester's `LEGAIA_INTRO_SHOTS` (a screenshot every vsync from the field exit,
+the frame step and floor beside it, and a state at the exit), reads step `3` and floor `3`
+through the style and the display changing every third vsync. A vacated pixel reads `31, 31,
+25, 25, 19, 19` on consecutive frames: six levels a buffer every two frames, which is what fixed
+the model's rate at one level a unit rather than two. Grade `capture`.
 
 #### The fade's second argument is a blend mode, not a depth
 

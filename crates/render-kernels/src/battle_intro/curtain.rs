@@ -34,17 +34,21 @@ pub const CURTAIN_MIDPASS_DECAY_5: u16 = 0x10;
 /// undrawn display pixel takes ~31 frames to reach black.
 pub const CURTAIN_DISPLAY_DECAY_5: u16 = 1;
 
-/// The scatter style's per-frame display wash (`FUN_801CFDA0`'s
-/// `func_0x8004695C(0x101010)`, armed on every frame after the first) as a
-/// 5-bit-channel step: `0x10 >> 3`, two levels a frame, so an undrawn display
-/// pixel reaches black in about sixteen frames.
+/// The scatter style's display wash (`FUN_801CFDA0`'s
+/// `func_0x8004695C(0x101010)`, armed on every frame after the first) as the
+/// fade one display pixel shows per clock unit: **one** 5-bit level.
 ///
-/// The drain (`FUN_80046978`) scales the colour by the frame step, which the
-/// scatter body floors at `3` (the `0x801CFE00` store), so a retail frame takes
-/// `2 * step` levels off while its clock moves `step`. The emitter steps once
-/// per clock unit and the display model once per presented frame, so two
-/// levels a step is the same fade over the same clock span.
-pub const SCATTER_DISPLAY_DECAY_5: u16 = (super::PARTICLE_WASH_RGB as u16 & 0xFF) >> 3;
+/// The wash takes `0x10 >> 3 = 2` levels times the frame step off the buffer
+/// the frame draws into (the drain `FUN_80046978` scales by the step, which
+/// the scatter body floors at `3`, the `0x801CFE00` store). The display is
+/// double-buffered, so each buffer is washed every other frame: an undrawn
+/// pixel drops `2 * step` levels every two frames, one level a vsync. A
+/// PCSX-Redux recording of formation `[136]` from `retona_field_card_boot`
+/// (step `3` throughout) shows exactly that: a vacated pixel reads `31, 31,
+/// 25, 25, 19, 19` on consecutive frames. The model is one buffer stepped once
+/// per clock unit, so it takes one level a unit; an undrawn pixel reaches
+/// black in about half a second.
+pub const SCATTER_DISPLAY_DECAY_5: u16 = (super::PARTICLE_WASH_RGB as u16 & 0xFF) >> 4;
 
 /// Where the port keeps its CPU model of the transition's display buffer in
 /// the cloned VRAM page, so the trail can be drawn as textured quads. Retail
@@ -185,7 +189,7 @@ impl BattleIntro {
     /// display, and its screen wash is what tells the two apart: each frame
     /// after the first it subtracts `0x101010` (the farthest OT bucket, ABR
     /// `2`, ahead of every particle), so where a patch has flown away the
-    /// field fades to black over about sixteen frames and a flying patch
+    /// field fades to black over about half a second and a flying patch
     /// leaves a fading trail, rather than the hole opening at once that a
     /// frame composed over the black backdrop shows. A patch at its rest pose
     /// is opaque and redraws its own cell each frame, so the field that has
