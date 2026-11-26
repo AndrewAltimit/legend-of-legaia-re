@@ -489,13 +489,14 @@ pub struct WorldToggles {
     /// in every state retail itself produces cleanly, so the guard is an
     /// identity there.
     pub hp_readout_guard: bool,
-    /// Heal numerals (enhancement, **on** by default): a battle restore that
-    /// retail lands with no numeral - an item's HP / MP / revive arm of
-    /// `FUN_800402F4`, the Life Grail tick, the Lost Grail's Final Heal, the
-    /// AI companion's heal and a catalog heal cast - throws a heal-coloured
-    /// number over its patient. Retail pushes none of them onto the
-    /// damage-number ring, so off (and under [`Self::pin_retail`]) only the
-    /// HP figure rolls up. Presentation only: no HP, readout or RNG change.
+    /// Heal numerals (enhancement, **off** by default, `--heal-numerals` opts
+    /// in): a battle restore that retail lands with no numeral - an item's
+    /// HP / MP / revive arm of `FUN_800402F4`, the Life Grail tick, the Lost
+    /// Grail's Final Heal, the AI companion's heal and a catalog heal cast -
+    /// throws a heal-coloured number over its patient. Retail pushes none of
+    /// them onto the damage-number ring, so off (the default, and always
+    /// under [`Self::pin_retail`]) only the HP figure rolls up. Presentation
+    /// only: no HP, readout or RNG change.
     pub heal_numerals: bool,
     /// Stoned-seat rescale (a fix of a retail oversight, **on** by default):
     /// Iota's exit (PROT 0921 arm `0xB`) stands every row seat back at unity
@@ -783,7 +784,7 @@ impl WorldToggles {
             tetsu_spar_fix: true,
             jewel_fix: false,
             hp_readout_guard: true,
-            heal_numerals: true,
+            heal_numerals: false,
             stone_scale_fix: true,
             spirit_ap: SPIRIT_AP_RETAIL,
             damage_ap: DAMAGE_AP_RETAIL,
@@ -1017,7 +1018,6 @@ mod fidelity_tests {
                 "fortress_encounter_fix",
                 "tetsu_spar_fix",
                 "hp_readout_guard",
-                "heal_numerals",
                 "stone_scale_fix",
                 "battle_entry_off_axis"
             ]
@@ -1039,6 +1039,7 @@ mod fidelity_tests {
         t.flee_exp = true;
         t.exp_rate_permille = 2000;
         t.jewel_fix = true;
+        t.heal_numerals = true;
         t.spirit_ap = 64;
         t.damage_ap = -50;
         t.seru_catch_pct = Some(100);

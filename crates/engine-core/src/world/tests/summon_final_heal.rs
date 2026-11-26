@@ -267,6 +267,8 @@ fn final_heal_revives_and_consumes_one_lost_grail() {
     let mut eq = rec.equipment();
     eq.slots[5] = 0xE7;
     rec.set_equipment(eq);
+    // The heal-numeral enhancement is opt-in; turn it on to see its figure.
+    world.toggles.heal_numerals = true;
 
     world.apply_final_heal_revives();
 
@@ -283,7 +285,7 @@ fn final_heal_revives_and_consumes_one_lost_grail() {
         "the Final Heal bit clears with no second Grail equipped"
     );
     // Retail throws no numeral (`FUN_801E6968` pushes nothing); the
-    // heal-numeral enhancement, on by default, throws the revive's HP.
+    // heal-numeral enhancement, turned on above, throws the revive's HP.
     assert!(
         world
             .battle

@@ -2140,8 +2140,8 @@ The HUD is fed by `World` events:
   nothing onto the ring, and the HP figure rolls up on the readout word alone
   ([battle round loop](battle-round-loop.md)). The port throws the
   `push_heal` numeral for every one of them under the **heal numerals**
-  enhancement (`WorldToggles::heal_numerals`, on by default; off under
-  `pin_retail`, `--retail` and the page's Retail-faithful), through the
+  enhancement (`WorldToggles::heal_numerals`, off by default and turned on
+  by `--heal-numerals`; always off under `pin_retail`, `--retail` and the page's Retail-faithful), through the
   one gate `World::push_heal_numeral`, which the spell-catalog fold
   (`World::fold_spell_outcome`) takes too. The figure is the damage sheet's
   own digits under a green modulation word

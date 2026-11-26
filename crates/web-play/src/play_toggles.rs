@@ -412,8 +412,8 @@ impl LegaiaRuntime {
         self.page_toggles.tweaks.stone_scale_fix
     }
 
-    /// The heal numerals, the native `--no-heal-numerals` inverted (on by
-    /// default): a battle restore throws a heal-coloured number where retail
+    /// The heal numerals, the native `--heal-numerals` (off by default): a
+    /// battle restore throws a heal-coloured number where retail
     /// only rolls the HP figure up. Retail mode holds it off.
     pub fn set_heal_numerals(&mut self, on: bool) {
         self.page_toggles.tweaks.heal_numerals = on;
@@ -1040,8 +1040,8 @@ mod tests {
             legaia_engine_session::session_switches::GameplayTweaks::default()
         );
         assert!(rt.shiny_seru() && rt.fortress_encounter_fix() && rt.hp_readout_guard());
-        assert!(rt.tetsu_spar_fix() && rt.heal_numerals());
-        assert!(!rt.flee_exp() && !rt.jewel_fix());
+        assert!(rt.tetsu_spar_fix());
+        assert!(!rt.flee_exp() && !rt.jewel_fix() && !rt.heal_numerals());
         assert_eq!(rt.exp_rate_permille(), 1000);
         rt.set_shiny_seru(false);
         rt.set_flee_exp(true);
@@ -1050,7 +1050,9 @@ mod tests {
         rt.set_tetsu_spar_fix(false);
         assert!(!rt.tetsu_spar_fix());
         rt.set_jewel_fix(true);
+        rt.set_heal_numerals(true);
         assert!(!rt.shiny_seru() && rt.flee_exp() && rt.jewel_fix());
+        assert!(rt.heal_numerals());
         assert!(!rt.fortress_encounter_fix());
         assert_eq!(rt.exp_rate_permille(), 2000);
         let page = include_str!("../../../site/_content/play.html");

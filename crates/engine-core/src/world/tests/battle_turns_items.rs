@@ -230,11 +230,13 @@ fn battle_item_use_heals_ally_consumes_item_and_cycles_turn() {
         world.actors[0].battle.hp, 50,
         "the heal waits for state 0x3F"
     );
-    // The band's applier call lands it.
+    // The band's applier call lands it. The heal-numeral enhancement is
+    // opt-in; turn it on to see its figure.
+    world.toggles.heal_numerals = true;
     world.fold_battle_item_action(0, 0, 0);
     assert_eq!(world.actors[0].battle.hp, 150, "healed 50 -> 150");
     // Retail's applier pushes nothing onto the ring; the heal numeral is the
-    // enhancement's (on by default), which throws the heal-coloured amount.
+    // enhancement's (turned on above), which throws the heal-coloured amount.
     let fx = world.drain_battle_hit_fx();
     assert_eq!(fx.len(), 1, "{fx:?}");
     assert_eq!(
