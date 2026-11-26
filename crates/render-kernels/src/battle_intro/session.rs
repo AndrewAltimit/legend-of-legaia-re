@@ -521,6 +521,25 @@ mod capture_landing_tests {
         )
     }
 
+    /// The spin-up steps on retail's cadence: one call per three clock
+    /// units at step `3`, as the scatter does. Its particle kernel
+    /// integrates per call, so a call per unit carries the field further
+    /// out and dims it.
+    #[test]
+    fn the_spinup_steps_every_three_units() {
+        let mut a = bare_intro(IntroStyle::SpinUpParticles);
+        let mut b = bare_intro(IntroStyle::SpinUpParticles);
+        let mut ticked = Vec::new();
+        let mut e = 0;
+        while e <= 36 {
+            ticked = b.tick(e, 3).prims;
+            e += 3;
+        }
+        let _ = a.advance_to(36);
+        assert_eq!(a.advance_to(37).prims, ticked, "37 holds 36's frame");
+        assert_eq!(a.advance_to(38).prims, ticked, "38 holds 36's frame");
+    }
+
     /// Two source rows, captured 1:1 into a 2-row rect: the top-down path
     /// lands them in order, the `with_flipped_capture` path (WebGL
     /// `readPixels` hands rows bottom-up) reverses them - and nothing else.

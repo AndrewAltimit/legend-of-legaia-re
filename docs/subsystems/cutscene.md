@@ -2927,6 +2927,17 @@ model: it keeps both buffers and each drawn frame lands in the one two frames ba
 takes every second frame's particles. One buffer stepped every frame doubles what the additive
 patches pile up.
 
+The spin-up also runs at step `3`: a PCSX-Redux run of the style (the scatter film's exit state,
+its selector inputs written on the first frame) reads entity clocks `0, 2, 6, 9, 12, ...`. Its
+particle kernel integrates once per call, so the call cadence shapes the field: one call per clock
+unit put the additive patches `53` px out on average at clock `36`, colour `88`, where retail's
+ordering table holds them at `31..39` px, colour `115..117`. The port draws it as the scatter
+does, one call every three units (`BattleIntro::advance_to`), which lands on those packets. Grade
+`capture`. The init's two spin-up parts (`0x801D20F0` / `0x801D2134`) already draw through the
+part runtime: their `+0x54` / `+0xB6` follow the same run's tick log value for value, and the disc
+they draw matches the radial profile of retail's `GT3` packets (each quad cut into sixteen on
+texture bank `3`).
+
 The scatter field (`FUN_801CFDA0`, the selector's arm for slot-0 monsters `0x4C`, `0x88` and
 `0xB3`) runs on the same display and differs by its wash: from the second frame on (entity clock
 `+0x1A` non-zero) it arms `func_0x8004695C(0x101010)` (`0x801CFE1C..0x801CFE24`), which the

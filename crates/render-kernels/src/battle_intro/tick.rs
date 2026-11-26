@@ -35,7 +35,16 @@ impl BattleIntro {
         {
             return frame.clone();
         }
-        if self.style == IntroStyle::ScatterParticles {
+        // The spin-up runs on the same cadence: a PCSX-Redux run of the style
+        // reads clocks `0, 2, 6, 9, 12, ...` (step `3` from the third frame),
+        // and its particle kernel integrates per call, so one call per unit
+        // spreads the field further out and dims it (mean patch distance
+        // `53` px at clock `36` against retail's `~39`, colour `88` against
+        // `~115`); one call per three units lands on retail's packets.
+        if matches!(
+            self.style,
+            IntroStyle::ScatterParticles | IntroStyle::SpinUpParticles
+        ) {
             let step = i16::from(SCATTER_FRAME_STEP);
             let target = elapsed.max(0) - elapsed.max(0) % step;
             let mut e = match self.last_frame.as_ref() {
