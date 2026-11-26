@@ -179,7 +179,7 @@ touch_far = 2
 touch_seat = 9
 
 [shortcuts.walked.seed_11]
-box_face = 1
+box_face = 2
 examine_face = 24
 examine_far = 28
 examine_seat = 4
@@ -198,10 +198,10 @@ touch_seat = 9
 
 [shortcuts.walked.seed_13]
 box_face = 2
-examine_face = 24
-examine_far = 28
+examine_face = 26
+examine_far = 30
 examine_seat = 4
-restore_xz = 45
+restore_xz = 47
 touch_far = 2
 touch_seat = 9
 
@@ -269,9 +269,9 @@ touch_seat = 81
 
 [shortcuts.placed.seed_7]
 box_face = 12
-examine_face = 125
-examine_seat = 174
-restore_xz = 152
+examine_face = 127
+examine_seat = 177
+restore_xz = 154
 touch_seat = 81
 
 [shortcuts.placed.seed_8]
