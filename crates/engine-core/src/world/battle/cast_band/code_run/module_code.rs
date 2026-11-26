@@ -970,6 +970,7 @@ impl World {
                 && self.casting.module_cam.countdown.0 < i32::from(self.module_frame_step());
         if pass_ribbons.is_none() || spent_behind_gate {
             self.battle.cast_ribbon_seeds = None;
+            self.battle.cast_ribbon_quads = None;
         }
         if let Some(ring) = pass_ribbons.as_ref()
             && !capture_arm.as_ref().is_some_and(|a| a.ribbons_on_scatter_y)

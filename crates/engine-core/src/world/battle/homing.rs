@@ -233,6 +233,7 @@ impl World {
         // The landed bolts are this pass's calls, or none.
         self.battle.flight_ribbons = None;
         self.battle.flight_ribbon_seeds = None;
+        self.battle.flight_ribbon_quads = None;
         let Some(idx) = self.casting.homing.record else {
             return;
         };

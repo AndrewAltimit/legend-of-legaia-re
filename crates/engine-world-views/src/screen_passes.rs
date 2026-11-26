@@ -586,28 +586,45 @@ fn cast_ribbon_prims_at(
     // same call on the slot's position, numbered on after the arm's points.
     // Each ring replays the words its pass dealt it
     // (`World::deal_cast_ribbon_rands`, `World::deal_flight_ribbon_rands`).
+    //
+    // The packets the dealing pass built are what retail's frame shows
+    // (`BattleState::cast_ribbon_quads`): built once, through the view and off
+    // the point the pass held, and drawn as built. Re-running the call here
+    // on the drawn camera and point moves the spans every jitter draw is
+    // taken modulo, so the same words draw another ribbon - PROT 0909's arm
+    // 12 ring drew sixteen other bolts a frame that way.
     let rings = [
         (
             false,
             world.battle.cast_ribbons,
             world.battle.cast_ribbon_seeds,
+            world.battle.cast_ribbon_quads.as_deref(),
         ),
         (
             true,
             world.battle.flight_ribbons,
             world.battle.flight_ribbon_seeds,
+            world.battle.flight_ribbon_quads.as_deref(),
         ),
     ];
-    let points = rings.iter().flat_map(|(flight, ring, seeds)| {
+    let points = rings.iter().flat_map(|(flight, ring, seeds, built)| {
         ring.iter().flat_map(move |ring| {
             ring.points
                 .iter()
                 .take(usize::from(ring.count))
                 .enumerate()
-                .map(move |(k, p)| ((*flight, k), *p, ring.trail_id, seeds.map(|s| s[k])))
+                .map(move |(k, p)| {
+                    (
+                        (*flight, k),
+                        *p,
+                        ring.trail_id,
+                        seeds.map(|s| s[k]),
+                        built.and_then(|b| b.get(k)),
+                    )
+                })
         })
     });
-    for (i, ((flight, k), mut p, trail_id, seed)) in points.enumerate() {
+    for (i, ((flight, k), mut p, trail_id, seed, built)) in points.enumerate() {
         // On the drawn frame each point stands where the drawn phase puts
         // it (`World::battle_ribbon_point_shift`), so a ribbon riding a body
         // or a projectile stays on it; the live point otherwise.
@@ -623,11 +640,12 @@ fn cast_ribbon_prims_at(
         let at = [f32::from(p[0]), -f32::from(p[1]), f32::from(p[2])];
         let clip = *mvp * glam::Vec4::new(at[0], at[1], at[2], 1.0);
         let depth = (clip.w > 1e-4).then(|| CornerDepth::new([clip.z / clip.w; 4]));
-        let quads = match seed {
-            Some(seed) => {
+        let quads = match (built, seed) {
+            (Some(built), _) => built.clone(),
+            (None, Some(seed)) => {
                 legaia_render_kernels::streak_pass::ribbon_quads_seeded(&view, p, trail_id, seed).0
             }
-            None => clip_ribbon_quads(
+            (None, None) => clip_ribbon_quads(
                 at,
                 trail_id,
                 mvp,
@@ -654,6 +672,38 @@ mod tests {
     #[test]
     fn the_fallback_focus_is_the_box_centre() {
         assert_eq!(scene_centre(AABB), [2000.0, 1000.0]);
+    }
+
+    /// A module ring's ribbons draw the packets the dealing pass built, not a
+    /// rebuild on the drawn camera: the jitter spans come off the projected
+    /// box, so a rebuild a unit off draws another bolt on the same words.
+    #[test]
+    fn a_dealt_ribbon_draws_the_packets_its_call_built() {
+        use legaia_render_kernels::afterimage::AfterimageQuad;
+        use legaia_render_kernels::screen_prim::ScreenPrim;
+        let built = AfterimageQuad {
+            xy: [(11, 22), (33, 22), (11, 99), (33, 99)],
+            uv: [(0, 0), (0x1F, 0), (0, 0x3F), (0x1F, 0x3F)],
+            clut: 0x7705,
+            tpage: 0x27,
+            color: 0x2E80_8080,
+            semi_transparent: true,
+        };
+        let mut world = World::default();
+        let mut ring = world.battle.cast_ribbons.unwrap_or_default();
+        ring.points[0] = [0, 0, 0x800];
+        ring.trail_id = 5;
+        ring.count = 1;
+        world.battle.cast_ribbons = Some(ring);
+        world.battle.cast_ribbon_seeds = Some([0x1234_5678; 16]);
+        world.battle.cast_ribbon_quads = Some(vec![vec![built]]);
+        let prims = cast_ribbon_prims(&world, &glam::Mat4::IDENTITY, 7);
+        assert_eq!(prims.len(), 1);
+        let ScreenPrim::Textured(q) = &prims[0] else {
+            panic!("a ribbon packet is a textured quad");
+        };
+        assert_eq!(q.xy, built.xy);
+        assert_eq!((q.clut, q.tpage), (built.clut, built.tpage));
     }
 
     #[test]

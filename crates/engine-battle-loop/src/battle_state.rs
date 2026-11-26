@@ -1389,6 +1389,14 @@ pub struct BattleState {
     /// (`World::deal_cast_ribbon_rands`): the draw replays each ribbon from
     /// its word. `None` while no pass has dealt the ring.
     pub cast_ribbon_seeds: Option<[u32; 16]>,
+    /// The packets [`Self::cast_ribbons`]' calls built on that pass, one
+    /// quad list per point: retail builds each ribbon's packets inside the
+    /// call, through the GTE view and off the point the pass holds then, and
+    /// the frame shows those packets. The draw shows these rather than
+    /// re-running the call on the drawn camera and points, whose
+    /// sub-pixel change moves every `rand() % (span + 1)` operand and so
+    /// draws another ribbon on the same words.
+    pub cast_ribbon_quads: Option<Vec<Vec<legaia_render_kernels::afterimage::AfterimageQuad>>>,
     /// This pass's streak ribbons from a landed move projectile: on every
     /// pass a phase-`3` homing slot's counter runs, `FUN_801E09F8` calls
     /// `FUN_801E1D98(&ctx[+0x1144 + slot * 8], record[+0x0B])` once per
@@ -1401,6 +1409,9 @@ pub struct BattleState {
     /// on the pass that made them (`World::deal_flight_ribbon_rands`), as
     /// [`Self::cast_ribbon_seeds`] is for a module arm's ring.
     pub flight_ribbon_seeds: Option<[u32; 16]>,
+    /// The packets [`Self::flight_ribbons`]' calls built, as
+    /// [`Self::cast_ribbon_quads`] is for a module arm's ring.
+    pub flight_ribbon_quads: Option<Vec<Vec<legaia_render_kernels::afterimage::AfterimageQuad>>>,
     /// The part-emit accumulator `ctx[+0x328]`: the frame driver keeps its
     /// low nibble and adds `DAT_1F800393 << 3` every battle frame
     /// (`FUN_80046A20`, `0x8004713C..0x80047160`), and every body the anim
@@ -1947,8 +1958,10 @@ impl BattleState {
             clip_ribbon: None,
             cast_ribbons: None,
             cast_ribbon_seeds: None,
+            cast_ribbon_quads: None,
             flight_ribbons: None,
             flight_ribbon_seeds: None,
+            flight_ribbon_quads: None,
             burn_emit_accum: 0,
             ambient_stored: legaia_engine_battle_vm::battle_ground_grid::GRID_FAR_BASE_NEUTRAL,
             backdrop_cue: 0,

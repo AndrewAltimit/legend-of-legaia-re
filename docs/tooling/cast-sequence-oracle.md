@@ -1004,8 +1004,11 @@ those three ported the seeds agree call for call, and `--retail-steps --rand-tra
 deals retail's damage on both recordings. On `--retail-steps` alone the stream enters
 the cast on the engine's own words, so the numbers there are a deal, not a defect.
 
-It does not help every film. The words are retail's frame ends, so an engine pass that
-draws in another order than retail's inside the frame still parts: Fatal Decision gains
+It does not help every film. A draw that replays the words on another input parts with
+the words right: the streak ribbons drew other bolts on retail's seeds while the hosts
+re-ran each call on the drawn camera, until they drew the packets the dealing call built
+([PROT 0909](../subsystems/cast-module.md#prot-0909-viguro)). The words are retail's frame
+ends, so an engine pass that draws in another order than retail's inside the frame still parts: Fatal Decision gains
 five extra cues. Read it as a harness seat that takes the stream out, not as a score.
 
 Nor does it seat a roll on a pass the engine does not run. Water Crystals' hit

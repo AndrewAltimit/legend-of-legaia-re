@@ -372,8 +372,9 @@ impl World {
         &mut self,
         ring: &legaia_engine_cast::cast_module_camera::CastRibbonRing,
     ) {
-        let seeds = self.deal_ribbon_rands(ring);
+        let (seeds, quads) = self.deal_ribbon_rands(ring);
         self.battle.cast_ribbon_seeds = Some(seeds);
+        self.battle.cast_ribbon_quads = Some(quads);
     }
 
     /// [`Self::deal_cast_ribbon_rands`] for a homing flight's bolts: the
@@ -384,32 +385,39 @@ impl World {
         &mut self,
         ring: &legaia_engine_cast::cast_module_camera::CastRibbonRing,
     ) {
-        let seeds = self.deal_ribbon_rands(ring);
+        let (seeds, quads) = self.deal_ribbon_rands(ring);
         self.battle.flight_ribbon_seeds = Some(seeds);
+        self.battle.flight_ribbon_quads = Some(quads);
     }
 
-    /// Each ribbon's start word, the stream stepped past its draws.
+    /// Each ribbon's start word and the packets the call built, the stream
+    /// stepped past its draws.
     fn deal_ribbon_rands(
         &mut self,
         ring: &legaia_engine_cast::cast_module_camera::CastRibbonRing,
-    ) -> [u32; 16] {
+    ) -> (
+        [u32; 16],
+        Vec<Vec<legaia_render_kernels::afterimage::AfterimageQuad>>,
+    ) {
         let view =
             legaia_render_kernels::gte::FieldGteView::from_battle_pose(&self.battle_cam_pose());
         let mut seeds = [0u32; 16];
+        let mut quads = Vec::with_capacity(usize::from(ring.count));
         for (seed, p) in seeds
             .iter_mut()
             .zip(ring.points.iter().take(usize::from(ring.count)))
         {
             *seed = self.rng_state;
-            let (_, state) = legaia_render_kernels::streak_pass::ribbon_quads_seeded(
+            let (built, state) = legaia_render_kernels::streak_pass::ribbon_quads_seeded(
                 &view,
                 *p,
                 ring.trail_id,
                 *seed,
             );
+            quads.push(built);
             self.rng_state = state;
         }
-        seeds
+        (seeds, quads)
     }
 
     /// This frame's draw-kind-4 geometry - every live node whose model is

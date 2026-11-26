@@ -2567,6 +2567,21 @@ and the streaks whose chain length sits on a segment's edge drew a segment fewer
 more; with it the anchors match the recording's unit for unit, the cast's `rand()`
 stream holds retail's words through arm 13, and arm 12 reads `.756` against `.672`.
 
+**A streak is drawn as its call built it.** With the stream seated, the frame's draws
+fall in retail's order: counted in LCG steps between the seed word's per-vsync samples,
+the frame driver's discard and the sixteen calls come first (`253`), then two words, then
+the burning bodies' twelve, on both sides; and a `--ribbon-trace` recording's seed for every
+call matches the engine's deal, the three anchors whose top edge spans more than `0x40`
+(`0x801E1E5C`) drawing nothing on both. The bolts still differed, because the hosts
+re-ran each call on the drawn frame's camera and the point as it stood at the draw, a
+few units off the pass's: every jitter draw is taken modulo a span read off the
+projected box (`rand() % (w / 2 + 1)`, `0x801E1EA0`), so the same words drew other
+bolts. The deal now keeps the packets each call built
+(`BattleState::cast_ribbon_quads`, `flight_ribbon_quads`) and the hosts draw those, as
+retail's frame shows the packets the call linked. Arm 12 reads `.881` against `.755`
+on `--rand-track` and the film `.964` against `.935`; the same draw serves every module
+ring and a landed bolt's ribbons. Grade `capture`.
+
 **Arm 12's ground ring is retail's part for part.** The ring `0x801F7FE0` and the column
 `0x801F8094` turn from red `0xCB0000FF` to green `0xCB00FF00` on their own programs, and a
 `--retail-parts` recording holds the same radius, height and level channels on both sides
