@@ -83,7 +83,7 @@ pub const fn theeder_sweep_phase(ctx_6d8: u16) -> u16 {
 pub const fn theeder_pass_tested(ctx_6d8: u16, step: u8) -> bool {
     let step = if step == 0 { 1 } else { step as u16 };
     let pass = step * THEEDER_RAMP_PER_STEP;
-    ctx_6d8 >= pass && ctx_6d8 % pass == 0
+    ctx_6d8 >= pass && ctx_6d8.is_multiple_of(pass)
 }
 
 /// The word one vsync of arm 12 ramps (`MODULE_DRAIN_PER_TICK << 3`): a
