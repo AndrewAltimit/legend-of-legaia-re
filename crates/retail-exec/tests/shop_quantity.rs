@@ -6,9 +6,10 @@
 //! Point Card.
 
 use crate::common::{Rng, disc, scus_cpu};
+use legaia_engine_menus::menu_list_rows::ListSelection;
 use legaia_engine_menus::shop::{
     BuyQtyEvent, BuyQuantitySession, SellQtyEvent, SellQuantitySession, apply_point_card,
-    apply_sale_gold,
+    apply_sale_gold, sell_list_fixup,
 };
 use legaia_engine_system::input::PadButton;
 use psx_retail_exec::{Cpu, Stop};
@@ -34,6 +35,15 @@ const WINDOW_LO: u32 = 0x8007_B5EA;
 const WINDOW_HI: u32 = 0x8007_B5EC;
 const ITEM_TABLE: u32 = 0x8007_4368;
 const POINT_CARD: u8 = 0xFE;
+/// The sell list's paged pair and row count, and the live-window lookup the
+/// post-sale fix-up reads window `0x26`'s visible rows through.
+const LIST_SCROLL: u32 = 0x8007_BB90;
+const LIST_SELECTED: u32 = 0x8007_BB98;
+const LIST_ROWS: u32 = 0x8007_BBA0;
+const FIND_WINDOW: u32 = 0x8003_5334;
+const WINDOW_REC: u32 = 0x8017_0000;
+const FRAME_STEP: u32 = 0x1F80_0393;
+const SHOP_ROOT: u32 = 0x1A;
 
 /// Retail pad bits and the port's for the same button.
 const BUTTONS: [(u32, PadButton); 6] = [
@@ -252,8 +262,12 @@ fn the_sell_stepper_sells_what_retail_sells() {
     let ids: Vec<u8> = (1..=0xFDu8)
         .filter(|&id| price(&mut cpu, id) != 0)
         .collect();
+    // Window `0x26` with a list node whose `+2` is the visible-row count.
+    cpu.hook(FIND_WINDOW, |r, _| r.r[2] = WINDOW_REC);
+    cpu.mem.wr32(WINDOW_REC + 0x18, WINDOW_REC + 0x40);
     let mut rng = Rng(0x5345_4C4C);
     let (mut sold, mut whole, mut cancelled) = (0, 0, 0);
+    let (mut fixed, mut emptied) = (0, 0);
     for round in 0..6000 {
         let id = ids[rng.below(ids.len() as u32) as usize];
         let p = price(&mut cpu, id);
@@ -273,6 +287,27 @@ fn the_sell_stepper_sells_what_retail_sells() {
         cpu.mem.wr32(CONFIRM_MASK, 0x40);
         cpu.mem.wr32(CANCEL_MASK, 0x20);
         cpu.mem.wr32(GOLD, gold);
+        // The paged list the sale returns to: a third of the rounds put the
+        // hand on the last row, alone at the top of its page.
+        let rows = 1 + rng.below(40) as i32;
+        let visible = 1 + rng.below(12) as i32;
+        let mut list = if rng.below(3) == 0 {
+            ListSelection {
+                scroll_top: rows - 1,
+                selected: rows - 1,
+            }
+        } else {
+            ListSelection {
+                scroll_top: rng.below(rows as u32) as i32,
+                selected: rng.below(rows as u32) as i32,
+            }
+        };
+        cpu.mem.wr32(LIST_ROWS, rows as u32);
+        cpu.mem.wr32(LIST_SCROLL, list.scroll_top as u32);
+        cpu.mem.wr32(LIST_SELECTED, list.selected as u32);
+        cpu.mem.wr16(WINDOW_REC + 0x42, visible as u16);
+        let step = 1 + rng.below(3);
+        cpu.mem.wr8(FRAME_STEP, step as u8);
 
         let mut s = SellQuantitySession::new(id, p, held);
         let (mut port_gold, mut port_count) = (gold as i32, held);
@@ -290,6 +325,12 @@ fn the_sell_stepper_sells_what_retail_sells() {
                         port_gold = apply_sale_gold(port_gold, credit);
                         port_count -= qty;
                         port_sold = true;
+                        sell_list_fixup(&mut list, rows, visible);
+                        // A whole-stack sale rescans the bag: a slot counts
+                        // when both its id and its count are non-zero.
+                        if port_count == 0 {
+                            s.finish_whole_stack(stacks.len() == 1);
+                        }
                     }
                     SellQtyEvent::Cancelled => port_cancel = true,
                     _ => {}
@@ -302,6 +343,40 @@ fn the_sell_stepper_sells_what_retail_sells() {
                 break;
             }
         }
+        // A sale that emptied the bag waits in phase 2, accumulating the
+        // frame step, before the shop root (`0x801DC17C..0x801DC1A8`).
+        if cpu.mem.rd32(PHASE) == 2 && cpu.mem.rd32(SUBMENU) == 0x1F {
+            emptied += 1;
+            let mut wait = 0;
+            loop {
+                wait += 1;
+                assert!(wait < 40, "round {round}: the exit delay never ends");
+                frame(&mut cpu, SELL, 0);
+                let left = cpu.mem.rd32(SUBMENU) != 0x1F;
+                let port_left = s.tick(0, step as i32) == SellQtyEvent::ExitToShopRoot;
+                assert_eq!(
+                    port_left, left,
+                    "round {round}: step {step} frame {wait} of the exit delay"
+                );
+                if left {
+                    assert_eq!(cpu.mem.rd32(SUBMENU), SHOP_ROOT, "round {round}");
+                    assert!(s.exits_to_shop_root(), "round {round}");
+                    break;
+                }
+            }
+        }
+        if port_sold {
+            let retail = (
+                cpu.mem.rd32(LIST_SCROLL) as i32,
+                cpu.mem.rd32(LIST_SELECTED) as i32,
+            );
+            assert_eq!(
+                retail,
+                (list.scroll_top, list.selected),
+                "round {round}: the post-sale list fix-up, {rows} rows of {visible}"
+            );
+            fixed += i32::from(list.selected == rows - 2 && rows > 1);
+        }
         let retail = (cpu.mem.rd32(GOLD) as i32, count_of(&mut cpu, id));
         assert_eq!(
             retail,
@@ -309,7 +384,7 @@ fn the_sell_stepper_sells_what_retail_sells() {
             "round {round}: id {id:#x} price {p} gold {gold} held {held}"
         );
         assert_eq!(
-            cpu.mem.rd32(SUBMENU) == 0x1E || cpu.mem.rd32(PHASE) == 2,
+            matches!(cpu.mem.rd32(SUBMENU), 0x1E | SHOP_ROOT),
             port_sold || port_cancel
         );
         if port_sold {
@@ -320,7 +395,7 @@ fn the_sell_stepper_sells_what_retail_sells() {
         }
     }
     assert!(
-        sold > 1000 && whole > 200 && cancelled > 500,
-        "{sold} {whole} {cancelled}"
+        sold > 1000 && whole > 200 && cancelled > 500 && fixed > 100 && emptied > 100,
+        "{sold} {whole} {cancelled} {fixed} {emptied}"
     );
 }
