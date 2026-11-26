@@ -167,6 +167,12 @@ pub struct Scenario {
     /// harness reproduces by spawning the scene with them raised.
     #[serde(default)]
     pub spawned_under_flags: Vec<u16>,
+    /// The track a door's op-`0x35` sub-op `6` kept sounding into this scene
+    /// from the one before, under the scene's own track word: history a card
+    /// load does not replay, which a seeding harness starts before the entry
+    /// with the keep raised, so the entry latches its own word as retail did.
+    #[serde(default)]
+    pub kept_bgm: Option<u16>,
     /// The door a walked capture last came through: the scene it was taken
     /// from and, when that scene has several into this one, the
     /// partition-2 record. A state reached through a door carries history a

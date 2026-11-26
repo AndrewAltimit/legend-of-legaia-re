@@ -8378,6 +8378,7 @@ expected_game_mode = 0x03
 expected_active_scene = "map01"
 ram_poked = ["monster HP written to 1 at round 2's prompt of the tree fight (formation 74 + 74), before this state"]
 topics = ["field", "story beat", "map01", "Genesis Tree", "cutscene", "sub-op 6", "BGM keep"]
+kept_bgm = 2035
 
 [[scenarios]]
 label = "vozz_tree_revival_return"

@@ -291,6 +291,43 @@ fn seed_through_door(
 /// Hand the tick's op-`0x35` events to the session's own director when it
 /// has one (it routed the tick's own events already), else to the
 /// recording director.
+/// A track a door kept sounding into the scene (op-`0x35` sub-op `6`), which
+/// a card load does not replay ([`RetailObs::kept_bgm`]): started over the
+/// entry's, and once it sounds the entry's word latches onto it
+/// ([`latch_bgm_word`]), so the slot sounds the kept track under the scene's
+/// own word as behind retail's keep (`BGM_SUB_OP_ENGINE_LATCH`,
+/// `World::release_field_init_voices`). `map01_tree_revival_cutscene` sounds
+/// `2035`, the track `vozz` `P1[7]` kept into `map01`, under the word `2000`.
+/// Returns `(track, word)` while the word is still to latch.
+fn start_kept_bgm(
+    session: &mut NativeSession,
+    director: &mut RecordingDirector,
+    retail: &RetailObs,
+) -> Result<Option<(u16, u16)>> {
+    let Some(track) = retail.kept_bgm else {
+        return Ok(None);
+    };
+    let word = session.host.bgm_track_word;
+    session.host.world.replay_field_bgm_words(&[(track, 1)]);
+    route_bgm(session, director)?;
+    Ok(word.filter(|&w| w != track).map(|w| (track, w)))
+}
+
+/// Latch `word` onto the sounding track ([`start_kept_bgm`]).
+fn latch_bgm_word(
+    session: &mut NativeSession,
+    director: &mut RecordingDirector,
+    word: u16,
+) -> Result<()> {
+    session.host.world.pending_field_events.push(
+        legaia_engine_field::field_events::FieldEvent::Bgm {
+            text_id: word,
+            sub_op: legaia_engine_core::world::BGM_SUB_OP_ENGINE_LATCH,
+        },
+    );
+    route_bgm(session, director)
+}
+
 fn route_bgm(session: &mut NativeSession, director: &mut RecordingDirector) -> Result<()> {
     match session.bgm.as_mut() {
         Some(bgm) => session.host.route_bgm_events(bgm)?,
@@ -479,6 +516,7 @@ fn seed_and_settle_cut(
     // ([`hold_rand_seed`]); the wanderers run on their own stream meanwhile,
     // so their picks are not one value repeated for the whole window.
     session.host.world.npcs.ambient_rng_detour = retail.rand_seed.map(|s| s ^ 0x5A5A_5A5A);
+    let mut kept_word: Option<(u16, u16)> = None;
     for t in 1..=deadline {
         if let Some(g) = &gate {
             let pad = g.advance_pad(&session.host.world, t);
@@ -492,6 +530,22 @@ fn seed_and_settle_cut(
         // unstepped keeps its context halted for the whole run.
         session.field_vram_tick();
         route_bgm(&mut session, &mut director)?;
+        // The entry's first slice has started the scene's own track by now.
+        if t == 1 {
+            kept_word = start_kept_bgm(&mut session, &mut director, retail)?;
+        }
+        // Once the swap has loaded the kept track, the scene's word latches
+        // onto it.
+        if let Some((track, word)) = kept_word {
+            let started = session
+                .bgm
+                .as_ref()
+                .map_or(director.last, |b| b.last_started);
+            if started == Some(track) {
+                latch_bgm_word(&mut session, &mut director, word)?;
+                kept_word = None;
+            }
+        }
         if let Some(audio) = listen.as_deref_mut() {
             crate::audio_sweep::listen_frame(&mut session, audio);
         }
