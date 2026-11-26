@@ -98,7 +98,7 @@ credits = 4
 # reload replays its stretch's shortcuts, so a row counts its stream's reloads.
 
 [shortcuts.walked.default]
-box_face = 1
+box_face = 2
 examine_face = 26
 examine_far = 31
 examine_seat = 4
