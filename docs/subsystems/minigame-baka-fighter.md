@@ -319,6 +319,17 @@ The pause menu opens from the duel only while the gate `DAT_801DBEC4` is up: the
 
 Port: `baka_cabinet::{secret_opponent_gate, rung_fold, advance_stage}`. **Confirmed.**
 
+<a id="the-secret-rungs-fight-under-a-screen-wash"></a>
+### The secret rungs fight under a screen wash
+
+The cabinet's epilogue ends on the screen wash `FUN_8004695C(DAT_801DBEA8)` on every frame its gate `DAT_801DBEAC` is set (`0x801D21AC..0x801D21C8`): one subtractive full-screen quad at the farthest ordering-table bucket, behind everything the frame draws. Three arms write the pair.
+
+- The opponent install (`0x1E`) raises the gate for a secret rung, with colour `0x081010` for override `1` and `0x101008` for override `2`, and clears it for any other rung (`0x801CFD0C..0x801CFD88`).
+- The spin arm (`0x35`) drops the gate and the challenger latch `DAT_801DC120` (`0x801D0334`, `0x801D0348`).
+- The secret tally (`0x6D`) raises the gate once, at colour `0x080808`, when its timer reaches `0x29` with the latch clear (`0x801D1008..0x801D105C`), and drops it from `0x79` on (`0x801D1110..0x801D1148`).
+
+So a secret rung's whole fight runs under the wash, and so does the challenger's announcement between `0x29` and `0x79`. Port: `BakaCabinet` keeps the three words and `CabinetFrame::wash` carries the armed colour; no host draws it yet, and how much of it shows past the arena is unmeasured.
+
 <a id="a-mid-run-defeat-really-does-forfeit-the-pot"></a>
 ### Frame pacing
 
