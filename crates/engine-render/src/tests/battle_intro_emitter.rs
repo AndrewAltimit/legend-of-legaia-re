@@ -1552,6 +1552,38 @@ mod scatter_display {
         }
     }
 
+    /// A host redraws more often than the scatter steps (once every three
+    /// clock units): a refresh with no step since the last leaves the page
+    /// as the last refresh uploaded it. The model already holds the last
+    /// step's particles, which the host draws live over the page, so
+    /// re-uploading it would add them twice on the redraws between steps.
+    #[test]
+    fn a_refresh_between_steps_keeps_the_page() {
+        use legaia_render_kernels::battle_intro::CURTAIN_TRAIL_RECT;
+        let mut it = intro(IntroStyle::ScatterParticles, 400);
+        it.seed_capture_for_test(vram_with_capture());
+        let rect = |it: &mut BattleIntro| -> Vec<u16> {
+            let page = it
+                .refresh_captured_page()
+                .expect("the page")
+                .as_u16()
+                .to_vec();
+            let r = CURTAIN_TRAIL_RECT;
+            (r.y..r.y + r.h)
+                .flat_map(|y| (r.x..r.x + r.w).map(move |x| (x, y)))
+                .map(|(x, y)| page[usize::from(y) * 1024 + usize::from(x)])
+                .collect()
+        };
+        let _ = it.advance_to(0);
+        let _ = rect(&mut it);
+        let _ = it.advance_to(30);
+        let stepped = rect(&mut it);
+        let _ = it.advance_to(31);
+        assert_eq!(rect(&mut it), stepped, "no step, no change");
+        let _ = it.advance_to(32);
+        assert_eq!(rect(&mut it), stepped, "still between steps");
+    }
+
     #[test]
     fn the_spinup_display_keeps_what_nothing_redraws() {
         let px = run(IntroStyle::SpinUpParticles, 4);

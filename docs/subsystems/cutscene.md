@@ -2957,6 +2957,17 @@ The engine side of the film is the retail-compare child for `retona_field_card_b
 `--battle 11` (the row the harvester's `LEGAIA_WANT=136` rolled), `--screenshot-every 1` and
 `LEGAIA_BATTLE_ARM_TICK=120`, so the fight is armed out of a field the window has drawn.
 
+A host redraws more often than the scatter steps, and the display model must not move on the
+redraws between steps: the model already holds the last step's patches, which the host draws live
+over the uploaded page, so re-uploading it on a redraw added every patch and the starburst twice on
+two frames in three (`BattleIntro::update_spinup_display` leaves the page alone until the next
+step). The model's rasteriser follows the GPU's top-left fill rule, so a quad's diagonal and the
+edge two fan quads share take one additive layer, not two. With both, the scatter film reads `.629`
+at zero lag and `.687` at its best pairing (`.535` / `.589` before). Grade `capture`: the CPU
+model, run over a retail frame's own packets and the buffer that frame drew over (a PCSX-Redux
+state every vsync and its ordering table), lands within about one 5-bit level of the buffer the
+frame left, radius by radius from the starburst's centre.
+
 #### The mode-8 window
 
 The transition does not start on the frame the encounter stores game mode `8`. The mode table's

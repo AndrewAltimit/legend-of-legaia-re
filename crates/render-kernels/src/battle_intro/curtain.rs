@@ -237,7 +237,8 @@ impl BattleIntro {
         if self.capture_src.len() < (usize::from(FIELD_CAPTURE_V_OFFSET) + h) * w {
             return;
         }
-        if self.display_accum.len() != w * h {
+        let seeded = self.display_accum.len() != w * h;
+        if seeded {
             let skip = usize::from(FIELD_CAPTURE_V_OFFSET) * w;
             self.display_accum = self.capture_src[skip..skip + w * h].to_vec();
             self.display_accum_back = self.display_accum.clone();
@@ -247,6 +248,18 @@ impl BattleIntro {
         };
         // Each frame drawn since the last refresh flips the buffer pair; the
         // one on show is the one this frame draws into.
+        // A host redraws more often than the style steps (the scatter steps
+        // once every three clock units): a refresh with no frame drawn since
+        // the last keeps the page as it is. The model already holds the last
+        // frame's packets, which the host draws live over the page, so
+        // uploading it again would add them twice.
+        if !seeded
+            && self.pending_display_frames == 0
+            && self.pending_wash_5 == 0
+            && self.pending_particles.is_empty()
+        {
+            return;
+        }
         let frames = std::mem::take(&mut self.pending_display_frames);
         if frames % 2 == 1 {
             std::mem::swap(&mut self.display_accum, &mut self.display_accum_back);
