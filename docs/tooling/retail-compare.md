@@ -568,6 +568,12 @@ engine verdict:
   (flat `10`) onto index `3`, `0x600`, with `B8 0A 83 12`, on the tile his
   record `P1[4]` seats him on facing index `7` (`4C 51 92 BD 07 ..`), so a
   state past the beat otherwise scores his record's `0xE00`.
+  A placement standing exactly on a tile a beat walks it onto
+  (`C7 <flat> xb zb mode`) takes retail's heading the same way: the walk
+  turned it along the leg. `kor5` `P2[4]` walks flat `9` onto `(0x99, 0xA8)`
+  and `P2[5]` re-seats it there with `A3 09 99 A8`, which does not turn it,
+  so `kor5_p2_5_pre_raise` holds the walk's `0x400` where a resume of
+  `P2[5]` kept the record's `0xC00` (`facing` `.947` to `1`).
   A spawn under flags a probe has since lowered is the last of these. A
   capture made by loading a state inside a scene and clearing story flags
   there keeps every placement where its spawn section stood it under the
@@ -1069,6 +1075,14 @@ engine verdict:
   `0x3A0` stands two passes ahead in the RAM, and seated it cost
   `credits_eddoman_fullscreen_pcsx` `.003`. The six `juui1_vortex_*` rows read
   `.942` to `.979` (`.737` to `.821` before). A harness seat.
+  A part seated inside the display lag is left out: the displayed frame
+  had not drawn it. A record whose program runs straight into one `WAIT`
+  and its `HALT` gives each part its age off the wait `+0x54` (`8` a vsync),
+  and one that has run no longer than the lag stays out
+  (`spawned_inside_lag`). `rugi` `P2[72]`'s fly-in seats a wind streak a
+  frame (`WAIT 26`); the two newest in `rugi_p2_72_flyin_crossing` had run
+  `4` and `8` vsyncs against a lag of `8`, and seated they drew two streaks
+  across the floor that retail's frame does not show (`.866` to `.870`).
 
   So is the frame's clear colour, the draw environment's `r0 / g0 / b0`
   (`0x8007BF5D..5F`) that op `4C 13` writes and the MAN loader zeroes: the
