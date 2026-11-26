@@ -335,3 +335,49 @@ fn koin3_p2_8_is_not_scored_across_the_box_test_join() {
     // The lone `0x59C` / `0x59D` arms still score their own spawns.
     assert!(scores.iter().any(|s| s.global_index == 0x57));
 }
+
+/// `garmel`'s entry returns from the Zeto fight on its marker arm: a stop
+/// (`35 00 00 02`) and the spawn of record 14, Zeto's defeat. The stop
+/// scores the spawn, so a resume of the record replays the silence.
+#[test]
+fn garmel_zeto_defeat_is_scored_by_its_arms_stop() {
+    use legaia_engine_field::man_field_scripts::walk_spawn_scores;
+    let Some(index) = open_index() else { return };
+    let scene = Scene::load(&index, "garmel").expect("load garmel");
+    let man = scene
+        .field_man_payload(&index)
+        .expect("payload")
+        .expect("garmel MAN resolves");
+    let mf = legaia_scene_formats::man_section::parse(&man).expect("parse");
+    let n = (mf.header.partition_counts[0] + mf.header.partition_counts[1]) as usize;
+    assert_eq!(n + 14, 0x41, "44 41 names P2[14]");
+    let scores = walk_spawn_scores(&mf, &man);
+    let s = scores
+        .iter()
+        .find(|s| s.global_index == 0x41)
+        .expect("a scored spawn of P2[14]");
+    assert_eq!((s.partition, s.record), (1, 0), "spawned by the entry");
+    assert_eq!(s.words, vec![(0, 2)], "the arm stops the score");
+}
+
+/// `kor5`'s entry returns from Gaza's fight with a stop, the park word and
+/// `44 2A` = `P2[5]`: the park loads nothing, so the replay keeps the stop.
+#[test]
+fn kor5_p2_5_keeps_the_stop_ahead_of_the_park() {
+    use legaia_engine_field::man_field_scripts::walk_spawn_scores;
+    let Some(index) = open_index() else { return };
+    let scene = Scene::load(&index, "kor5").expect("load kor5");
+    let man = scene
+        .field_man_payload(&index)
+        .expect("payload")
+        .expect("kor5 MAN resolves");
+    let mf = legaia_scene_formats::man_section::parse(&man).expect("parse");
+    let scores = walk_spawn_scores(&mf, &man);
+    let s = scores
+        .iter()
+        .find(|s| s.global_index == 0x2A)
+        .expect("a scored spawn of P2[5]");
+    assert_eq!(s.words, vec![(0, 2), (0x1000, 1)]);
+    // The next flag test is a join: its spawn is the other arms' too.
+    assert!(!scores.iter().any(|s| s.global_index == 0x2C), "{scores:?}");
+}

@@ -1235,6 +1235,17 @@ fn branch_targets(info: &InsnInfo) -> impl Iterator<Item = usize> {
 /// track within [`SPAWN_ARM_WINDOW`] instructions before it, with no branch
 /// from elsewhere in the record joining between the start and the spawn.
 ///
+/// A stop or pause (sub-op `2` / `3`) with no start ahead of it scores the
+/// spawn the same way. `garmel`'s entry returns from the Zeto fight on its
+/// marker arm with `35 00 00 07`, `35 00 00 02`, a clear of the marker and
+/// `44 41` = record 14, Zeto's defeat: the score is stopped under the whole
+/// record. A card load over the cleared marker takes the arm that leaves
+/// `2043` sounding, so a resume of record 14 without the stop played it.
+/// A start after the stop is kept beside it: `kor5`'s entry returns from
+/// Gaza's fight with `35 00 00 02`, `35 00 10 01` (the park word, which loads
+/// nothing) and `44 2A` = `P2[5]`, and the park alone left the entry's
+/// `2019` sounding.
+///
 /// `koin3`'s entry `P1[0]` picks its track on a box test - `2055` on one arm
 /// (`+0xC9`), `2018` on the other (`+0x165`) - and both arms meet at `+0x16C`
 /// (the first arm's `26 99 00` at `+0xD2`), the head of the flag tests that
@@ -1268,6 +1279,8 @@ pub fn walk_spawn_scores(man_file: &ManFile, man: &[u8]) -> Vec<SpawnScore> {
             let mut start_run: Vec<(u16, u8)> = Vec::new();
             let mut start_pc = 0usize;
             let mut since_start = usize::MAX;
+            // The stop or pause the previous instruction made, if any.
+            let mut last_stop: Option<(usize, (u16, u8))> = None;
             for insn in insns {
                 since_start = since_start.saturating_add(1);
                 // A branch from outside the run landing inside it is a join:
@@ -1279,9 +1292,32 @@ pub fn walk_spawn_scores(man_file: &ManFile, man: &[u8]) -> Vec<SpawnScore> {
                 {
                     start_run.clear();
                 }
+                let stop_ahead = last_stop.take();
+                if let InsnInfo::Bgm {
+                    text_id,
+                    sub_op: sub_op @ (2 | 3),
+                } = insn.info
+                {
+                    last_stop = Some((insn.pc, (text_id, sub_op)));
+                }
                 match insn.info {
                     InsnInfo::Bgm { text_id, sub_op } => match sub_op {
+                        // A start straight after a stop keeps the stop: a
+                        // park start (`0x1000`) loads nothing and leaves the
+                        // stopped slot silent.
+                        1 | 9 if let Some((pc, word)) = stop_ahead => {
+                            start_run = vec![word, (text_id, sub_op)];
+                            start_pc = pc;
+                            since_start = 0;
+                        }
                         1 | 9 => {
+                            start_run = vec![(text_id, sub_op)];
+                            start_pc = insn.pc;
+                            since_start = 0;
+                        }
+                        // A stop or pause with no start before it opens the
+                        // run too: the arm leaves the score silent.
+                        2 | 3 if start_run.is_empty() => {
                             start_run = vec![(text_id, sub_op)];
                             start_pc = insn.pc;
                             since_start = 0;
