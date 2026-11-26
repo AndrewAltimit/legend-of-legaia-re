@@ -491,10 +491,16 @@ impl World {
     /// deferral gate reads the bit on its own tick (`0x8003819C..0x800381B4`):
     /// a node ahead of the owner has already been skipped this pass and starts
     /// again on the next, one behind it starts on this one. The owner's own
-    /// stream runs before its runner, so it counts as ahead.
+    /// stream runs after its runner in the same node (`FUN_8003BC08`: runner
+    /// `0x8003BD34`, stream `0x8003BD98`), and the `21` that clears the bit
+    /// also drops the owner's `+0x10 & 0x100` (`0x80039E68..0x80039E7C`), so
+    /// the owner starts on the clearing pass too: `town01`'s placement `52`
+    /// turns off its restored heading on the pass its talk's record ends.
     ///
-    /// The bit is one word raised and read per pass, so the port reads it once
-    /// and holds the channels ahead of the owner here for the one pass. An
+    /// The ambient tick runs after the frame's talk teardown, so it reads the
+    /// clearing on the pass it happens. The bit is one word raised and read
+    /// per pass, so the port reads it once and holds the channels ahead of
+    /// the owner here for the one pass. An
     /// engagement with no node on the list (a helper record linked at the
     /// tail, the scene hold) clears between passes: nothing is held. A seat
     /// reading a state's list, or the spawn loop, gives the same ascending
@@ -524,9 +530,7 @@ impl World {
         }
         let order = &self.npcs.ambient_order;
         let ahead = match owner {
-            Some(Owner::Placement(slot)) => {
-                order.iter().position(|&s| s == slot).map_or(0, |at| at + 1)
-            }
+            Some(Owner::Placement(slot)) => order.iter().position(|&s| s == slot).unwrap_or(0),
             Some(Owner::Object) => order
                 .windows(2)
                 .position(|w| w[1] < w[0])
@@ -1150,11 +1154,11 @@ mod release_hold_tests {
     }
 
     #[test]
-    fn a_talkers_release_holds_the_list_up_to_and_including_it() {
+    fn a_talkers_release_holds_the_list_ahead_of_it() {
         let mut w = world_with_order(&[1, 3, 9, 2, 5]);
         w.npcs.ambient_engage_owner = Some(AmbientEngageOwner::Placement(9));
         let held = w.ambient_engage_release_held(false);
-        assert_eq!(held.into_iter().collect::<Vec<_>>(), vec![1, 3, 9]);
+        assert_eq!(held.into_iter().collect::<Vec<_>>(), vec![1, 3]);
         assert_eq!(w.npcs.ambient_engage_owner, None, "the release is one pass");
     }
 

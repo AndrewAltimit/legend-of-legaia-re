@@ -887,22 +887,6 @@ impl World {
                 if self.clock.display_frame_step == 1 {
                     self.tick_field_npc_motions();
                 }
-                // Ambient facing channels (`FUN_80038158` ops 0x04 / 0x0D):
-                // the idle turn-in-place a standing town NPC runs between
-                // walk legs. Part of the actor pool, so it advances on the
-                // actor game tick, not per rendered frame - which is what
-                // keeps op 0x0D in lockstep with its ramp scheduler.
-                // REF: FUN_80038158, FUN_80036D80
-                // The battle intro rebuilt the actor lists, so no placement's
-                // driver runs under it (`Self::battle_intro_owns_frame`).
-                if actor_tick_fired && !self.battle_intro_owns_frame() {
-                    // The part list walks ahead of the placements'.
-                    self.run_banked_ambient_part_ticks();
-                    self.tick_field_npc_ambient();
-                    // The same driver's height arm (`FUN_8003BC08`), after
-                    // the tick moved anyone: the glide-class NPCs' Y.
-                    self.tick_field_npc_heights();
-                }
                 self.tick_tile_board();
                 // Rebuild the tile-actor draw list from the current board +
                 // player cell (retail's per-frame board render pass).
@@ -945,6 +929,33 @@ impl World {
                     && !self.interaction_timeline_holds_talk_facing()
                 {
                     self.release_talk_facing();
+                }
+                // Ambient streams (`FUN_80038158`): the walk and turn programs
+                // a town's placements run between talks. Part of the actor
+                // pool, so they advance on the actor game tick, not per
+                // rendered frame - which is what keeps op 0x0D in lockstep
+                // with its ramp scheduler. They tick after the talk's probe,
+                // its record and its teardown above: retail's placements are
+                // the last list `FUN_8002519C` walks (list 2, after the
+                // player's node with its touch dispatch, the pager and the
+                // record contexts), and a placement's node runs its record
+                // (`0x8003BD34`) before its stream (`0x8003BD98`). So a talk
+                // that opens this frame stands every stream this frame, and
+                // one whose record ends on its `21` this frame starts the
+                // talker and the streams behind it on this frame
+                // (`World::ambient_engage_release_held`). Ticked ahead of
+                // the talk, every villager's resume trailed retail's by a
+                // game frame (`town01_npc16_dialogue_first_page`'s walk film).
+                // REF: FUN_8002519C, FUN_8003BC08, FUN_80038158, FUN_80036D80
+                // The battle intro rebuilt the actor lists, so no placement's
+                // driver runs under it (`Self::battle_intro_owns_frame`).
+                if actor_tick_fired && !self.battle_intro_owns_frame() {
+                    // The part list walks ahead of the placements'.
+                    self.run_banked_ambient_part_ticks();
+                    self.tick_field_npc_ambient();
+                    // The same driver's height arm (`FUN_8003BC08`), after
+                    // the tick moved anyone: the glide-class NPCs' Y.
+                    self.tick_field_npc_heights();
                 }
                 // Screen-effect widgets (mask / sprite / panel / letterbox,
                 // the ending-scene op-0x43 family) tick after the script step
