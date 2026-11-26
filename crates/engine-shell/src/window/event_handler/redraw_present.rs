@@ -432,7 +432,7 @@ struct AudioWavRecorder {
     drive: Vec<u8>,
     /// The band each recorded tick stood in, written beside the WAV as
     /// `<path>.band`: `action_state phase stage read_left xa_busy`, the action SM's
-    /// state, the module phase `ctx[+0x279]`, the side-band stage `ctx[+0x276]`, the stand-in's read time left
+    /// state, the module phase, the side-band stage `ctx[+0x276]`, the stand-in's read time left
     /// and the CD-XA one-shot word, for lining the engine's cast up against a
     /// frame-stepped retail timeline (`scripts/mednafen/drive-timeline.py`).
     band: Vec<String>,
@@ -447,6 +447,15 @@ struct AudioWavRecorder {
     done_tail: Option<u64>,
     /// The tick the Done band was first seen.
     done: Option<u64>,
+    /// `LEGAIA_DIAG_AUDIO_WAV_ARM=state,phase,word`: the state's instant inside
+    /// a summon band, as the step track names it. The recording opens on the
+    /// first gated pass at or past it: under `(state, phase)` with the band word
+    /// `ctx[+0x6D8]` at or below `word`, or any later state or phase.
+    arm: Option<(u8, u8, i16)>,
+    /// Whether the recording opened inside the Done band: a state taken
+    /// there (`zora_glare_petrify_post`, `0x51`) stops on the band's exit,
+    /// not on the gate's own tick.
+    opened_in_done: bool,
 }
 
 /// Action state `0x28`, cast begin: the state every Magic action - a party
@@ -473,7 +482,8 @@ impl PlayWindowApp {
     /// is the unscaled mix. With `LEGAIA_DIAG_AUDIO_WAV_DONE_TAIL=<ticks>` the
     /// recording stops that many ticks past the action SM's Done band
     /// (`0x50` / `0x51` / `0x5A` / `0x65`), where a cast's own sound ends and the
-    /// fight's next turn begins. The child must not take its frame on the gate
+    /// fight's next turn begins; a recording that opens inside that band stops
+    /// that far past its exit. The child must not take its frame on the gate
     /// (`LEGAIA_DIAG_CAPTURE_TICK` past the window).
     #[cfg(feature = "oracles")]
     fn record_audio_wav(&self) {
@@ -508,6 +518,17 @@ impl PlayWindowApp {
                     .ok()
                     .and_then(|v| v.parse().ok()),
                 done: None,
+                arm: std::env::var("LEGAIA_DIAG_AUDIO_WAV_ARM")
+                    .ok()
+                    .and_then(|v| {
+                        let f: Vec<i32> =
+                            v.split(',').filter_map(|s| s.trim().parse().ok()).collect();
+                        match f[..] {
+                            [s, p, w] => Some((s as u8, p as u8, w as i16)),
+                            _ => None,
+                        }
+                    }),
+                opened_in_done: false,
             }))
         }) else {
             return;
@@ -521,7 +542,13 @@ impl PlayWindowApp {
         }
         let ticks = rec.last_tick.map_or(1, |t| tick.saturating_sub(t).max(1));
         rec.last_tick = Some(tick);
-        if rec.start.is_none() && self.capture_gate_met() {
+        let at_arm = rec.arm.is_none_or(|(state, phase, word)| {
+            let w = &self.session.host.world;
+            let (s, p) = (w.battle_ctx.action_state, w.casting.module_phase);
+            s > state
+                || (s == state && (p > phase || (p == phase && w.battle_ctx.frame_timer <= word)))
+        });
+        if rec.start.is_none() && at_arm && self.capture_gate_met() {
             let w = &self.session.host.world;
             eprintln!(
                 "audio wav: the capture's gate at tick {tick} (action {:#04x}, side-band stage {}, read left {:?}, drive waiting {})",
@@ -544,7 +571,7 @@ impl PlayWindowApp {
             rec.band.push(format!(
                 "{} {} {} {} {}",
                 w.battle_ctx.action_state,
-                w.battle_ctx.summon_staging_b,
+                w.casting.module_phase,
                 w.battle_ctx.menu_open,
                 w.casting.sideband_read_left.map_or(-1, i32::from),
                 w.audio.battle_xa_busy_frames
@@ -562,11 +589,12 @@ impl PlayWindowApp {
         });
         let rec = &mut *rec;
         let world = &self.session.host.world;
-        if rec.start.is_some()
-            && rec.done.is_none()
-            && world.mode == SceneMode::Battle
-            && matches!(world.battle_ctx.action_state, 0x50 | 0x51 | 0x5A | 0x65)
-        {
+        let in_done = world.mode == SceneMode::Battle
+            && matches!(world.battle_ctx.action_state, 0x50 | 0x51 | 0x5A | 0x65);
+        if rec.start == Some(tick) {
+            rec.opened_in_done = in_done;
+        }
+        if rec.start.is_some() && rec.done.is_none() && (in_done != rec.opened_in_done) {
             rec.done = Some(tick);
         }
         let done = rec

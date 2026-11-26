@@ -345,6 +345,14 @@ impl PhaseGate {
     /// that arm busy instead, for as long as the engine stands on it in the
     /// capture's state: retail's arm waited out the turn's read while the
     /// band's other clocks ran on, and the engine's read is resident.
+    /// Past the gate: let go of the side-band hold [`Self::steer`] raised, so
+    /// the arm waits on the engine's own applier stage from the gated frame on.
+    pub fn release(&self, world: &mut legaia_engine_core::world::World) {
+        if self.sideband_wait {
+            world.casting.module_cam.sideband_busy = false;
+        }
+    }
+
     pub fn steer(&self, world: &mut legaia_engine_core::world::World) {
         if self.sideband_wait {
             world.casting.module_cam.sideband_busy = world.mode == SceneMode::Battle

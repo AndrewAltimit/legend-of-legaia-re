@@ -861,8 +861,26 @@ impl PlayWindowApp {
         }
         // A replayed cast's gate holds the summon head's CD poll for a pass
         // (`PhaseGate::steer`), as the headless seed does.
+        // The hold places the gate's frame and ends with it: a child that plays
+        // on past its gate (the PCM cast channel's recording) runs the band on
+        // the engine's own stage from there. Held on, `jedo_summon_mid_cast`'s
+        // arm 2 stood until `0x35` ended, `76` vsyncs past retail's exit.
+        if let Some(sc) = self.screenshot.as_ref()
+            && sc.gate_met_tick.get().is_none()
+            && self.capture_gate_met()
+        {
+            sc.gate_met_tick.set(Some(self.tick_no));
+        }
         if let Some(gate) = self.screenshot.as_ref().and_then(|sc| sc.phase_gate) {
-            gate.steer(&mut self.session.host.world);
+            let gated = self
+                .screenshot
+                .as_ref()
+                .is_some_and(|sc| sc.gate_met_tick.get().is_some());
+            if gated {
+                gate.release(&mut self.session.host.world);
+            } else {
+                gate.steer(&mut self.session.host.world);
+            }
         }
         self.release_battle_drive_at_gate();
         // A drive's presses are one-tick edges on its own even ticks, as the

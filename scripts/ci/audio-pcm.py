@@ -150,6 +150,7 @@ CAST_STATES = [
     "battle_gimard_tail_fire_a",
     "battle_gimard_tail_fire_b",
     "zora_glare_petrify_pre",
+    "zora_glare_petrify_post",
     "cort_evil_seru_magic_mid_cast",
     "cort_mystic_circle_mid_cast",
     "evil_medallion_rage_battle",
@@ -475,6 +476,11 @@ def engine_cast_wav(exe: Path, label: str, eng: Path, library: Path, disc: Path,
         if (st := state_file(label, library, manifest)) and (at := band_instant(st)):
             env["LEGAIA_DIAG_CAST_STEP_ARM"] = at
     manifest = tomllib.loads((REPO / "scripts" / "scenarios.toml").read_text())
+    # The gate places a summon band's state at its arm's entry; the band word
+    # places it inside the arm (`slippery_summon_mid_cast` stands `8` vsyncs into
+    # arm 2), so the recording opens there.
+    if (st := state_file(label, library, manifest)) and (at := band_instant(st)):
+        env["LEGAIA_DIAG_AUDIO_WAV_ARM"] = at
     if (st := state_file(label, library, manifest)) and (left := capture_read_left(st)):
         env["LEGAIA_SEAT_CAPTURE_SEEK_LEFT"] = str(int(left))
     env.update({
