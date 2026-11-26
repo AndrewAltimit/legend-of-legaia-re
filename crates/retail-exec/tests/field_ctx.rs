@@ -21,6 +21,12 @@ const CTX: u32 = 0x8012_0000;
 const RESOLVE_ACTOR: u32 = 0x8003_C83C;
 const READ_U16: u32 = 0x8003_CE9C;
 const PACKET_LENGTH: u32 = 0x8003_CA38;
+/// The property-ramp pool: installer, ticker and slot array.
+const TINT_RAMP_INSTALL: u32 = 0x8003_C5F0;
+const TINT_RAMP_TICK: u32 = 0x8003_6D80;
+const TINT_RAMP_POOL: u32 = 0x801C_66A0;
+/// `Cpu::call`'s stack top, where a call's stack arguments sit.
+const TINT_STACK_TOP: u32 = 0x801F_FF00;
 
 /// `(name, offset, width)` of every context field the port models.
 const FIELDS: [(&str, u32, u8); 28] = [
@@ -410,12 +416,15 @@ fn a_seat_lands_the_placement_where_retail_seats_the_actor() {
 /// three forms (the running placement's own `4C 81`, `CC <id> 81` on another
 /// placement, `CC F8 81` on the player), with the actor's tint seeded as the
 /// context's `+0x74` / `+0x78`: does the tint land where retail leaves the
-/// two words? A tween's ramp is `FUN_8003C5F0`, an executable call stubbed
-/// here, so what is compared is the immediate write and the colour a tween
-/// writes first (`0x801E1FC4..0x801E2068`).
+/// two words? A tween's ramps are the executable's pool: the installs
+/// `FUN_8003C5F0` is handed (`0x801E1FC4..0x801E2068`) are replayed into the
+/// real pool and the real ticker `FUN_80036D80` runs them at frame steps 1 to
+/// 3, the port's tint ticking once a vsync beside it, so the words have to
+/// match through the whole tween. Half the rounds take generated ticks words,
+/// `0x8000..` among them (read signed, they land at the first visit).
 #[test]
 fn a_tint_lands_where_retail_tints_the_actor() {
-    differential!(prot(897, VM));
+    differential!(prot(897, VM), scus(TINT_RAMP_INSTALL), scus(TINT_RAMP_TICK));
     use legaia_engine_field::object_tint::{ActorTint, ActorTintKey};
     let Some(mut cpu) = retail_vm() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
@@ -426,16 +435,43 @@ fn a_tint_lands_where_retail_tints_the_actor() {
         let a = r.r[4];
         r.r[2] = u32::from(m.rd8(a)) | u32::from(m.rd8(a + 1)) << 8 | u32::from(m.rd8(a + 2)) << 16;
     });
+    // `FUN_8003C5F0(owner, dest, kind, start, end, ticks)`: logged here,
+    // replayed into the pool after the op.
+    let installs: std::rc::Rc<std::cell::RefCell<Vec<[u32; 6]>>> = Default::default();
+    let logger = |log: std::rc::Rc<std::cell::RefCell<Vec<[u32; 6]>>>| {
+        move |r: &mut psx_retail_exec::Regs, m: &mut psx_retail_exec::Memory| {
+            let sp = r.r[29];
+            log.borrow_mut().push([
+                r.r[4],
+                r.r[5],
+                r.r[6],
+                r.r[7],
+                m.rd32(sp + 0x10),
+                m.rd32(sp + 0x14),
+            ]);
+        }
+    };
+    cpu.hook(TINT_RAMP_INSTALL, logger(installs.clone()));
     let gp = cpu.regs.r[GP];
     let clean = cpu.mem.clone();
     let mut rng = Rng(0x5449_4E54);
-    let (mut ran, mut immediate) = (0u32, 0u32);
+    let (mut ran, mut immediate, mut ticked, mut negative) = (0u32, 0u32, 0u32, 0u32);
     let mut differ: BTreeMap<String, (u32, String)> = BTreeMap::new();
-    for (script, pc, label) in corpus() {
+    for (shipped, pc, label) in corpus() {
         if label != "4C 81" {
             continue;
         }
-        for _ in 0..4 {
+        for round in 0..4 {
+            // The ticks word: `FUN_8003CE9C` at the sub-op byte + 6.
+            let mut script = shipped.clone();
+            let at = pc + 1 + usize::from(script[pc] & 0x80 != 0) + 6;
+            let ticks = match round {
+                2 => 1 + rng.below(40) as u16,
+                3 => 0x8000 | rng.below(0x8000) as u16,
+                _ => u16::from_le_bytes([script[at], script[at + 1]]),
+            };
+            script[at..at + 2].copy_from_slice(&ticks.to_le_bytes());
+            installs.borrow_mut().clear();
             cpu.mem = clean.clone();
             cpu.regs.r[GP] = gp;
             cpu.mem.load(SCRIPT, &script);
@@ -503,20 +539,77 @@ fn a_tint_lands_where_retail_tints_the_actor() {
                 .get(&key)
                 .copied()
                 .unwrap_or_default();
+            let what = format!("{:02x?}", &script[pc..(pc + 10).min(script.len())]);
+            let note = |e: &mut BTreeMap<String, (u32, String)>, msg: String| {
+                let e = e.entry(what.clone()).or_default();
+                e.0 += 1;
+                if e.0 == 1 {
+                    e.1 = msg;
+                }
+            };
             let retail = (rd(&mut cpu, 0x74, 4), rd(&mut cpu, 0x78, 2));
             let port = (t.colour, u32::from(t.blend));
             if t.blend_ramp.is_none() {
                 immediate += 1;
             }
             if retail != port {
-                let e = differ
-                    .entry(format!("{:02x?}", &script[pc..(pc + 10).min(script.len())]))
-                    .or_default();
-                e.0 += 1;
-                if e.0 == 1 {
-                    e.1 = format!("{key:?}: retail {retail:x?} port {port:x?}");
+                note(
+                    &mut differ,
+                    format!("{key:?}: retail {retail:x?} port {port:x?}"),
+                );
+            }
+            if installs.borrow().is_empty() {
+                continue;
+            }
+            // The pool as the scene-entry reset leaves it (header busy, list
+            // empty), then the op's installs through the real installer, and
+            // the owner alive (`+0x10 & 8` clear: the ticker frees a dying
+            // actor's slots unticked).
+            negative += u32::from(ticks >= 0x8000);
+            for slot in 0..64 {
+                cpu.mem.wr32(TINT_RAMP_POOL + slot * 0x20 + 0x1C, 0);
+            }
+            cpu.mem.wr16(TINT_RAMP_POOL + 0x1A, 0);
+            cpu.mem.wr16(TINT_RAMP_POOL + 0x1E, 1);
+            let flags = rd(&mut cpu, 0x10, 4);
+            wr(&mut cpu, 0x10, 4, flags & !8);
+            let stubbed = cpu.stub_outside.take();
+            cpu.unhook(TINT_RAMP_INSTALL);
+            for a in installs.borrow().iter() {
+                cpu.mem.wr32(TINT_STACK_TOP + 0x10, a[4]);
+                cpu.mem.wr32(TINT_STACK_TOP + 0x14, a[5]);
+                assert_eq!(
+                    cpu.call(TINT_RAMP_INSTALL, &[a[0], a[1], a[2], a[3]]),
+                    Stop::Returned
+                );
+            }
+            cpu.hook(TINT_RAMP_INSTALL, logger(installs.clone()));
+            let mut t = t;
+            for visit in 0..40 {
+                let step = 1 + (ran + visit) % 3;
+                cpu.mem.wr8(0x1F80_0393, step as u8);
+                assert_eq!(cpu.call(TINT_RAMP_TICK, &[]), Stop::Returned);
+                for _ in 0..step {
+                    t.tick();
+                }
+                ticked += 1;
+                let retail = (rd(&mut cpu, 0x74, 4), rd(&mut cpu, 0x78, 2));
+                let port = (t.colour, u32::from(t.blend));
+                if retail != port {
+                    note(
+                        &mut differ,
+                        format!(
+                            "{key:?} ticks {ticks:#x} visit {visit}: retail {retail:x?} port {port:x?}"
+                        ),
+                    );
+                    break;
+                }
+                if t.colour_ramp.is_none() && t.blend_ramp.is_none() {
+                    break;
                 }
             }
+            cpu.stub_outside = stubbed;
+            cpu.mem.wr8(0x1F80_0393, 1);
         }
     }
     let report: Vec<String> = differ
@@ -524,7 +617,10 @@ fn a_tint_lands_where_retail_tints_the_actor() {
         .map(|(k, (n, ex))| format!("{k}: {n} e.g. {ex}"))
         .collect();
     assert!(report.is_empty(), "{}", report.join("\n"));
-    assert!(ran > 500 && immediate > 100, "{ran} {immediate}");
+    assert!(
+        ran > 500 && immediate > 100 && ticked > 2000 && negative > 50,
+        "{ran} {immediate} {ticked} {negative}"
+    );
 }
 
 /// `0x23`, the tile warp, stepped by the real `World` on the running

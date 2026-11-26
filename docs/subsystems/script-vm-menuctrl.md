@@ -249,7 +249,15 @@ roller at the op and parks the talk on that test while it scrolls
 `+0x74 = colour` (`FUN_8003CEB8`, 24-bit `0xBBGGRR`) and `+0x78 = blend`
 outright when `ticks` is `0`; otherwise tweened through `FUN_8003C5F0` - only
 the blend when `+0x78` was `0` (the colour is written first), the colour and
-blend otherwise (`0x801E1FC4..0x801E2068`). The actor draw stages the pair as
+blend otherwise (`0x801E1FC4..0x801E2068`); a zero new blend skips the colour
+tween. The two installs are ordinary slots of the property-ramp pool: the
+ticker `FUN_80036D80` lands each on `end + (start - end) * remaining / total`
+(truncated, the colour as kind 3's packed lanes, stored as a whole word with a
+zero top byte), and `ticks` is the signed halfword `FUN_8003CE9C` reads, so a
+`0x8000..` count lands at the first tick rather than tweening for minutes.
+Both rules are `legaia_engine_field::object_tint::ramp_visit`, checked through
+the real pool by `field_ctx::a_tint_lands_where_retail_tints_the_actor`. The
+actor draw stages the pair as
 the GTE far colour and `IR0` (`FUN_8001ADA4` -> `FUN_80043390`,
 `0x8001B46C..0x8001B474`), so `00 00 00 / 0x1000` pushes the actor fully to
 black - on an additive prim, invisible.

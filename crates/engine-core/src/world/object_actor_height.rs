@@ -48,16 +48,9 @@ impl World {
     ) {
         let ramps = &mut self.field_vm.object_slot_ramps;
         ramps.retain(|r| !(r.record == record && r.slot == slot));
-        ramps.push(ObjectSlotRamp {
-            record,
-            slot,
-            start,
-            end,
-            // A negative count (`legaia_engine_motion_vm::ambient_motion::script_ramp_ticks`)
-            // lands on the endpoint on the first tick, as a zero length does.
-            total: if (ticks as i16) < 0 { 0 } else { ticks },
-            elapsed: 0,
-        });
+        // A negative count (`legaia_engine_motion_vm::ambient_motion::script_ramp_ticks`)
+        // lands on the endpoint on the first tick.
+        ramps.push(ObjectSlotRamp::new(record, slot, start, end, ticks));
     }
 
     /// One actor tick of the object words a script tweens: step every live
@@ -66,9 +59,12 @@ impl World {
     pub(crate) fn tick_object_actor_heights(&mut self) {
         self.tick_object_glide_legs();
         let mut ramps = std::mem::take(&mut self.field_vm.object_slot_ramps);
-        for r in &mut ramps {
-            r.elapsed = r.elapsed.saturating_add(1);
-            let v = r.value();
+        let mut landed = Vec::new();
+        for (i, r) in ramps.iter_mut().enumerate() {
+            let (v, done) = r.visit(1);
+            if done {
+                landed.push(i);
+            }
             if let Some(c) = self
                 .field_vm
                 .channels
@@ -81,14 +77,20 @@ impl World {
                     ObjectRampSlot::Roll28 => c.ctx.field_28 = v as i16,
                     ObjectRampSlot::Scale72 => c.ctx.field_72 = v as u16,
                     ObjectRampSlot::Rate6A => c.ctx.field_6a = v as i16,
-                    ObjectRampSlot::TintColour => {
-                        c.ctx.field_74 = (c.ctx.field_74 & 0xFF00_0000) | (v as u32 & 0x00FF_FFFF)
-                    }
+                    // Kind 3 stores the whole word (`sw` at `0x80036FC8`),
+                    // the lanes with a zero top byte: a colour tween clears
+                    // the semi-transparency bit 31, as the immediate write's
+                    // 24-bit read does.
+                    ObjectRampSlot::TintColour => c.ctx.field_74 = v as u32 & 0x00FF_FFFF,
                     ObjectRampSlot::TintBlend => c.ctx.field_78 = v as u16,
                 }
             }
         }
-        ramps.retain(|r| r.elapsed < r.total);
+        let mut i = 0;
+        ramps.retain(|_| {
+            i += 1;
+            !landed.contains(&(i - 1))
+        });
         self.field_vm.object_slot_ramps = ramps;
         for c in self.field_vm.channels.iter_mut().filter(|c| c.object_bind) {
             if c.ctx.flags & ACTOR_Y_FROM_8E != 0 {
