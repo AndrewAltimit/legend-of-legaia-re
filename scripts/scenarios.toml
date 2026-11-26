@@ -8717,6 +8717,7 @@ expected_game_mode = 0x03
 expected_active_scene = "map01"
 ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
 topics = ["ending", "credits", "cutscene", "map01"]
+arrival = { from = "town0e", door = 6 }
 
 [[scenarios]]
 label = "credits_edteien_panel_pcsx"
@@ -8737,6 +8738,7 @@ expected_game_mode = 0x03
 expected_active_scene = "edbylon"
 ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
 topics = ["ending", "credits", "cutscene", "edbylon"]
+arrival = { from = "edteien" }
 
 [[scenarios]]
 label = "credits_edbylon_panel_pcsx"
@@ -8747,6 +8749,7 @@ expected_game_mode = 0x03
 expected_active_scene = "edbylon"
 ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
 topics = ["ending", "credits", "cutscene", "edbylon"]
+arrival = { from = "edteien" }
 
 [[scenarios]]
 label = "credits_edbubu_fullscreen_pcsx"
@@ -8757,6 +8760,7 @@ expected_game_mode = 0x03
 expected_active_scene = "edbubu"
 ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
 topics = ["ending", "credits", "cutscene", "edbubu"]
+kept_bgm = 2068
 
 [[scenarios]]
 label = "credits_edretoin_fullscreen_pcsx"
@@ -8767,6 +8771,7 @@ expected_game_mode = 0x03
 expected_active_scene = "edretoin"
 ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
 topics = ["ending", "credits", "cutscene", "edretoin"]
+kept_bgm = 2068
 
 [[scenarios]]
 label = "credits_edretoin_panel_pcsx"
@@ -8777,6 +8782,7 @@ expected_game_mode = 0x03
 expected_active_scene = "edretoin"
 ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
 topics = ["ending", "credits", "cutscene", "edretoin"]
+kept_bgm = 2068
 
 [[scenarios]]
 label = "credits_edkorout_window_pcsx"
@@ -8787,6 +8793,7 @@ expected_game_mode = 0x03
 expected_active_scene = "edkorout"
 ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
 topics = ["ending", "credits", "cutscene", "edkorout"]
+kept_bgm = 2068
 
 [[scenarios]]
 label = "credits_edkorout_panel_pcsx"
@@ -8797,6 +8804,7 @@ expected_game_mode = 0x03
 expected_active_scene = "edkorout"
 ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
 topics = ["ending", "credits", "cutscene", "edkorout"]
+kept_bgm = 2068
 
 [[scenarios]]
 label = "credits_eddoman_fullscreen_pcsx"
@@ -8807,6 +8815,7 @@ expected_game_mode = 0x03
 expected_active_scene = "eddoman"
 ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
 topics = ["ending", "credits", "cutscene", "eddoman"]
+kept_bgm = 2068
 
 [[scenarios]]
 label = "credits_edstati3_fullscreen_pcsx"
@@ -8817,6 +8826,7 @@ expected_game_mode = 0x03
 expected_active_scene = "edstati3"
 ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
 topics = ["ending", "credits", "cutscene", "edstati3"]
+kept_bgm = 2068
 
 [[scenarios]]
 label = "credits_edstati3_panel_pcsx"
@@ -8827,6 +8837,7 @@ expected_game_mode = 0x03
 expected_active_scene = "edstati3"
 ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
 topics = ["ending", "credits", "cutscene", "edstati3"]
+kept_bgm = 2068
 
 [[scenarios]]
 label = "credits_edson_fullscreen_pcsx"
@@ -8837,6 +8848,7 @@ expected_game_mode = 0x03
 expected_active_scene = "edson"
 ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
 topics = ["ending", "credits", "cutscene", "edson"]
+kept_bgm = 2068
 
 [[scenarios]]
 label = "credits_edson_panel_pcsx"
@@ -8847,6 +8859,7 @@ expected_game_mode = 0x03
 expected_active_scene = "edson"
 ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
 topics = ["ending", "credits", "cutscene", "edson"]
+kept_bgm = 2068
 
 [[scenarios]]
 label = "credits_edlast_casting_pcsx"
@@ -8857,6 +8870,7 @@ expected_game_mode = 0x03
 expected_active_scene = "edlast"
 ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
 topics = ["ending", "credits", "cutscene", "edlast"]
+kept_bgm = 2068
 
 [[scenarios]]
 label = "town0d_arrival_narration"

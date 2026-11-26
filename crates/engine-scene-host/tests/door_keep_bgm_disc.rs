@@ -140,6 +140,33 @@ fn a_field_init_leaves_the_ending_theme_alone() {
     );
 }
 
+/// The whole credits chain plays under the one start `edteien` makes: each
+/// later vignette's entry parks on `0x1000` and its init leaves source 10
+/// alone, so the ending theme sounds on through the last scene, as every
+/// `credits_*_pcsx` library state reads it (`2068` playing, word `0x1000`).
+#[test]
+fn the_ending_theme_plays_through_every_credits_vignette() {
+    let Some(mut host) = host() else { return };
+    let _ = enter(&mut host, "edteien", 5);
+    host.world
+        .load_field_script_at(vec![0x35, 0x14, 0x08, 0x01, 0x21], 0);
+    host.world.step_field();
+    let mut calls = Calls::default();
+    host.route_bgm_events(&mut calls).expect("route");
+    assert_eq!(calls.0, vec![Call::Start(0x814)], "the ending theme starts");
+    for scene in [
+        "edbylon", "edbubu", "edretoin", "edkorout", "eddoman", "edstati3", "edson", "edlast",
+    ] {
+        let calls = enter(&mut host, scene, 30);
+        assert!(
+            calls.0.is_empty(),
+            "{scene}: the ending theme plays on untouched: {:?}",
+            calls.0
+        );
+        assert_eq!(host.bgm_track_word, Some(0x1000), "{scene} parks");
+    }
+}
+
 /// The real door, not a synthesized op: `kor4`'s `P2[13]` walk-on door into
 /// `koin6` raises sub-op 6 itself, and the room plays on under `2045`.
 #[test]

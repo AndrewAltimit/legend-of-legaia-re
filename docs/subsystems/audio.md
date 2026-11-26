@@ -3811,7 +3811,12 @@ word `0x1000`. `edteien`'s entry starts `2068` on the ending source, and its
 `P2[0]` raises sub-op 6 and changes scene to `edbylon`, which parks:
 `ending_vignette_biron` plays `2068` under the same word. Both are seeded
 from the scene before (`arrival = { from = "town0e", door = 6 }`,
-`arrival = { from = "edteien" }`) and match retail on every channel.
+`arrival = { from = "edteien" }`) and match retail on every channel. The PCSX-Redux
+credits states take the same arrivals where one hop reaches them (`credits_rimelm_walkaway_pcsx`,
+both `credits_edbylon_*_pcsx`). The vignettes after `edbylon` are several parked scenes past
+`edteien`'s start, which no one-door arrival replays, so they name the history instead
+(`kept_bgm = 2068`); that the engine's own chain sounds `2068` through every one of them is
+`engine-scene-host/tests/door_keep_bgm_disc.rs`'s credits-chain test.
 `P2[6]` opens on a line of text at `+0x61`, which the replay pages because
 `World::dialogue_owns_input` counts a modal cutscene record's box as it
 counts the other channels'.
