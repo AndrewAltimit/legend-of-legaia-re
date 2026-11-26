@@ -152,17 +152,23 @@ impl World {
             // ([`Self::mushura_spin_ahead`]).
             (7 | 8, _) => {}
             // Arm `0xD` levels the bank the chase left, `step * scalar` a
-            // pass (`0x801F7DBC..0x801F7E64`).
+            // pass (`0x801F7DBC..0x801F7E64`). The tick that hands over
+            // eases its pass's owed ticks too: retail's one pass levels by
+            // the whole `step * scalar` before its fade test
+            // (`0x801F7EB0`) lets the arm go, where a tick's share left
+            // the creature a tick's `8` short of level at a frame step
+            // above 1.
             (0xD, _) => {
+                let ease = step * ticks;
                 let bank = i32::from(a.battle.render_roll & 0xFFF);
                 a.battle.render_roll = if bank == 0 {
                     0
                 } else if bank < 0x800 {
-                    (bank - step).max(0) as u16
-                } else if 0x1000 - bank < step {
+                    (bank - ease).max(0) as u16
+                } else if 0x1000 - bank < ease {
                     0
                 } else {
-                    ((bank + step) & 0xFFF) as u16
+                    ((bank + ease) & 0xFFF) as u16
                 };
                 // Arm 0xD frames the anchor arm 0xC left, not the live stand.
                 return;
@@ -344,8 +350,9 @@ impl World {
     /// reach is traded for a random other seat, and its facing closes on the
     /// target's bearing at eight units a tick.
     ///
-    /// The engine clamps these hits to `HP - 1`: the band's fold on the arm's
-    /// pass lands the last of the roll, where retail's own write can kill.
+    /// Each hit is clamped to the seat's live HP, so the chase's own write
+    /// can kill (`0x801F795C..0x801F7990`), and a seat it kills stages its
+    /// knockdown `+0x1F1`.
     fn mushura_chase(&mut self, monster_count: u8, seat: u8, caster: u8, spell_id: u8) {
         use legaia_engine_cast::cast_module_ticks::FLAG_NON_TARGETABLE;
         // The arm runs once a pass: the hit loop, the trade and the turn sit

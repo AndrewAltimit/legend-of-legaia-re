@@ -229,6 +229,14 @@ a store or a drift, one that grows names a rate.
 and CLUT rows is how a palette or texture reading is settled before a frame's colours are
 argued over: Iota's cycler rows match the kernel entry for entry.
 
+The same pair settles how a recorded pixel was built.
+[`ot_layers.py`](../../scripts/pcsx-redux/ot_layers.py) walks the ordering table the
+recording's frame handed the GPU, out of `ram_<vsync>.bin`, and prints every polygon
+covering a pixel in draw order (its colour there, its blend mode, the texel it samples
+from the state's VRAM) beside the pixel the VRAM holds. `LEGAIA_RAM_AT` counts vsyncs
+past the cast's begin. Viguro's arm-12 green floor was read this way
+([cast module](../subsystems/cast-module.md#prot-0909-viguro)).
+
 ### A capture-class roll against retail's
 
 A `--wrapper-trace` recording reads a cast's damage off its inputs rather than off the HP columns. V-Windhash from `battle_kor_ghost_knight_v_windhash_mid_cast` enters `FUN_801DD4B0` with power `0x7B`, the Ghost Knight's INT `+0x168 = 302` and Vahn guarding (`+0x1DE = 4`), leaves the roll at `750` against `500` and the finisher at `625`, so `125` lands. The engine on the same draws reads the same three pairs. A film whose child command was seeded before the seat pin (`LEGAIA_BATTLE_SEATS`) seats the fight in the formation's order, so the cast came from the other monster (INT `140`) and landed `63`: re-seed (`--reseed`) a recording copied from an older run before reading its numbers.
@@ -1004,8 +1012,11 @@ those three ported the seeds agree call for call, and `--retail-steps --rand-tra
 deals retail's damage on both recordings. On `--retail-steps` alone the stream enters
 the cast on the engine's own words, so the numbers there are a deal, not a defect.
 
-It does not help every film. The words are retail's frame ends, so an engine pass that
-draws in another order than retail's inside the frame still parts: Fatal Decision gains
+It does not help every film. A draw that replays the words on another input parts with
+the words right: the streak ribbons drew other bolts on retail's seeds while the hosts
+re-ran each call on the drawn camera, until they drew the packets the dealing call built
+([PROT 0909](../subsystems/cast-module.md#prot-0909-viguro)). The words are retail's frame
+ends, so an engine pass that draws in another order than retail's inside the frame still parts: Fatal Decision gains
 five extra cues. Read it as a harness seat that takes the stream out, not as a score.
 
 Nor does it seat a roll on a pass the engine does not run. Water Crystals' hit
@@ -1614,6 +1625,30 @@ The driver reads the counter off the state's RAM and the engine stands it on the
 when the gate opens (`LEGAIA_FILM_YAW`), beside the state's `rand()` word. Scythe Wind
 reads `.953` to `.982` and V-Windhash `.933` to `.961`; of the set's other `--physical`
 films none falls by more than `.001` and none rises by more than `.004`. A harness seat.
+
+### The body pairs and the voice line at a physical film's gate
+
+A strike's attacker re-faces every pass onto its target's body pair `+0x3C` / `+0x40`
+([battle action](../subsystems/battle-action.md#the-strike-band-re-faces-the-attacker-every-pass)),
+and the gate seats every other body's clip and cursor off the state's RAM. The pairs were
+left on the poses the replay had struck, so the first pass re-faced the attacker onto a
+keyframe retail's bodies never held. `battle_ropeway_party_gala_flying_knee_mid`'s Killer
+Bee stood its pair at `(-3, -32)` in the replay where retail's reads `(5, -25)`, and Gala's
+heading, the Bee's after the hit and so case 7's yaw parted by `7` to `19` units for the rest
+of the action. On a gate in the strike band (`0x14..=0x20`) the engine now decodes the pairs
+again off the seated poses (`World::refresh_battle_body_pairs_now`): the film reads `.889` to
+`.982`. A cast module's gate keeps them, its bodies standing on the module's own seats (Death
+Game's film falls `.952` to `.903` re-decoded).
+
+A state saved inside a voice line's read holds the clip player's stop watch polling the
+drive (`FUN_8003D764`), which no field the seeds carry stands in for, and the replay's line
+ends wherever its own lead-in cued it. `battle_jou_party_vahn_chain_late`'s retail frames
+run nine vsyncs for `66` vsyncs past the gate, the replay's for `28`. The driver reads the
+span off the recording (`recording_xa_left`: a first frame past its step, then frames of six
+vsyncs or more, to the first that is not) and the engine stands the line there at the gate
+(`LEGAIA_SEAT_XA_LEFT`, `World::seat_battle_xa_left`). Of the arts and strike sets it seats
+Vahn's Chain late and Gala's Flying Knee late; a recording whose line is cued after the state
+(Tornado Flame's second frame is its cue pass) is left alone. Both are harness seats.
 
 ### The backdrop angle at the cast begin
 

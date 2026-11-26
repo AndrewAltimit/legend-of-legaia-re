@@ -430,6 +430,12 @@ struct AudioWavRecorder {
     /// `<path>.drive`: where the cast's seek wait sits, which the PCM cast
     /// channel aligns the voice after within the seek window.
     drive: Vec<u8>,
+    /// The band each recorded tick stood in, written beside the WAV as
+    /// `<path>.band`: `action_state phase stage read_left xa_busy seat current queued cursor params`, the action SM's
+    /// state, the module phase, the side-band stage `ctx[+0x276]`, the stand-in's read time left
+    /// and the CD-XA one-shot word, for lining the engine's cast up against a
+    /// frame-stepped retail timeline (`scripts/mednafen/drive-timeline.py`).
+    band: Vec<String>,
     /// The last tick pulled, so a redraw that ran no tick pulls nothing.
     last_tick: Option<u64>,
     /// Fractional output frames carried between ticks.
@@ -441,6 +447,16 @@ struct AudioWavRecorder {
     done_tail: Option<u64>,
     /// The tick the Done band was first seen.
     done: Option<u64>,
+    /// `LEGAIA_DIAG_AUDIO_WAV_ARM=state,phase,word`: the state's instant inside
+    /// a summon band, as the step track names it. The recording opens on the
+    /// first gated pass at or past it: under `(state, phase)` with the band word
+    /// `ctx[+0x6D8]` at or below `word`, or any later state or phase. While the
+    /// module's own seek is ahead, the gate opens it.
+    arm: Option<(u8, u8, i16)>,
+    /// Whether the recording opened inside the Done band: a state taken
+    /// there (`zora_glare_petrify_post`, `0x51`) stops on the band's exit,
+    /// not on the gate's own tick.
+    opened_in_done: bool,
 }
 
 /// Action state `0x28`, cast begin: the state every Magic action - a party
@@ -467,7 +483,8 @@ impl PlayWindowApp {
     /// is the unscaled mix. With `LEGAIA_DIAG_AUDIO_WAV_DONE_TAIL=<ticks>` the
     /// recording stops that many ticks past the action SM's Done band
     /// (`0x50` / `0x51` / `0x5A` / `0x65`), where a cast's own sound ends and the
-    /// fight's next turn begins. The child must not take its frame on the gate
+    /// fight's next turn begins; a recording that opens inside that band stops
+    /// that far past its exit. The child must not take its frame on the gate
     /// (`LEGAIA_DIAG_CAPTURE_TICK` past the window).
     #[cfg(feature = "oracles")]
     fn record_audio_wav(&self) {
@@ -494,6 +511,7 @@ impl PlayWindowApp {
                 pcm: Vec::new(),
                 duck: Vec::new(),
                 drive: Vec::new(),
+                band: Vec::new(),
                 last_tick: None,
                 carry: 0.0,
                 start: None,
@@ -501,6 +519,17 @@ impl PlayWindowApp {
                     .ok()
                     .and_then(|v| v.parse().ok()),
                 done: None,
+                arm: std::env::var("LEGAIA_DIAG_AUDIO_WAV_ARM")
+                    .ok()
+                    .and_then(|v| {
+                        let f: Vec<i32> =
+                            v.split(',').filter_map(|s| s.trim().parse().ok()).collect();
+                        match f[..] {
+                            [s, p, w] => Some((s as u8, p as u8, w as i16)),
+                            _ => None,
+                        }
+                    }),
+                opened_in_done: false,
             }))
         }) else {
             return;
@@ -514,8 +543,31 @@ impl PlayWindowApp {
         }
         let ticks = rec.last_tick.map_or(1, |t| tick.saturating_sub(t).max(1));
         rec.last_tick = Some(tick);
-        if rec.start.is_none() && self.capture_gate_met() {
-            eprintln!("audio wav: the capture's gate at tick {tick}");
+        // While the module's own seek is still ahead or in flight, the seek
+        // places the voice, not the word (the cast channel's seek window fits
+        // the voice after it): `vera_summon_mid_cast` stands on arm 3 behind the
+        // `XA7` seek, and Gilium, Gola Gola, Barra and Mushura ahead of theirs.
+        let casting = &self.session.host.world.casting;
+        let seek_ahead = casting
+            .drive_arms
+            .is_some_and(|(_, issued)| !issued || casting.drive.poll_busy());
+        let at_arm = seek_ahead
+            || rec.arm.is_none_or(|(state, phase, word)| {
+                let w = &self.session.host.world;
+                let (s, p) = (w.battle_ctx.action_state, w.casting.module_phase);
+                s > state
+                    || (s == state
+                        && (p > phase || (p == phase && w.battle_ctx.frame_timer <= word)))
+            });
+        if rec.start.is_none() && at_arm && self.capture_gate_met() {
+            let w = &self.session.host.world;
+            eprintln!(
+                "audio wav: the capture's gate at tick {tick} (action {:#04x}, side-band stage {}, read left {:?}, drive waiting {})",
+                w.battle_ctx.action_state,
+                w.battle_ctx.menu_open,
+                w.casting.sideband_read_left,
+                w.cast_drive_waiting()
+            );
             rec.start = Some(tick);
         }
         let want = ticks as f64 * legaia_parity::pcm_retail::RETAIL_VSYNC_SAMPLES + rec.carry;
@@ -526,6 +578,24 @@ impl PlayWindowApp {
             rec.duck.push(director.duck_applied());
             rec.drive
                 .push(u8::from(self.session.host.world.cast_drive_waiting()));
+            let w = &self.session.host.world;
+            let actor = w
+                .actors
+                .get(usize::from(w.battle_ctx.active_actor))
+                .map(|a| &a.battle);
+            rec.band.push(format!(
+                "{} {} {} {} {} {} {:02x} {:02x} {} {:02x?}",
+                w.battle_ctx.action_state,
+                w.casting.module_phase,
+                w.battle_ctx.menu_open,
+                w.casting.sideband_read_left.map_or(-1, i32::from),
+                w.audio.battle_xa_busy_frames,
+                w.battle_ctx.active_actor,
+                actor.map_or(0, |a| a.current_anim),
+                actor.map_or(0, |a| a.queued_anim),
+                actor.map_or(0, |a| a.strike_index),
+                actor.map(|a| a.params.iter().take(6).copied().collect::<Vec<u8>>()),
+            ));
         }
         let pcm = &mut rec.pcm;
         director.audio().with_core(|core| {
@@ -539,11 +609,12 @@ impl PlayWindowApp {
         });
         let rec = &mut *rec;
         let world = &self.session.host.world;
-        if rec.start.is_some()
-            && rec.done.is_none()
-            && world.mode == SceneMode::Battle
-            && matches!(world.battle_ctx.action_state, 0x50 | 0x51 | 0x5A | 0x65)
-        {
+        let in_done = world.mode == SceneMode::Battle
+            && matches!(world.battle_ctx.action_state, 0x50 | 0x51 | 0x5A | 0x65);
+        if rec.start == Some(tick) {
+            rec.opened_in_done = in_done;
+        }
+        if rec.start.is_some() && rec.done.is_none() && (in_done != rec.opened_in_done) {
             rec.done = Some(tick);
         }
         let done = rec
@@ -556,6 +627,8 @@ impl PlayWindowApp {
             let _ = std::fs::write(rec.path.with_extension("duck"), duck);
             let drive: String = rec.drive.iter().map(|d| format!("{d}\n")).collect();
             let _ = std::fs::write(rec.path.with_extension("drive"), drive);
+            let band: String = rec.band.iter().map(|b| format!("{b}\n")).collect();
+            let _ = std::fs::write(rec.path.with_extension("band"), band);
             match legaia_parity::pcm_oracle::write_wav(&rec.path, &rec.pcm) {
                 Ok(()) => {
                     println!(

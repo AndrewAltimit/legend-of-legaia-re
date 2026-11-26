@@ -217,7 +217,7 @@ impl World {
                     (Some(_), CdTiming::PcsxRedux, Some(wait)) => {
                         use legaia_engine_battle_loop::frame_clock as fc;
                         if !self.toggles.battle_arts_shout_cd {
-                            fc::xa_partly_polled_cost(wait, work, xa_polled_work_cost)
+                            fc::xa_partly_polled_cost(wait, work, fc::arts_shout_census_cost)
                         } else {
                             let c = fc::xa_partly_polled_cost(
                                 wait,
@@ -422,6 +422,30 @@ impl World {
         if tail != 0 {
             self.audio.battle_xa_busy_frames = self.audio.battle_xa_load_frames;
         }
+    }
+
+    /// Stand a battle CD-XA clip's polls `left` vsyncs from their end, as a
+    /// capture that opens inside a line holds them: the clip player's stop
+    /// watch (`FUN_8003D764`) is polling the drive at the state's instant,
+    /// which no field of the replay's own carries, and a replay whose lead-in
+    /// cued the line on another pass than retail's left the line's last
+    /// loaded frames on the wrong side of the gate
+    /// (`battle_jou_party_vahn_chain_late`: retail's frames run nine vsyncs
+    /// for `66` vsyncs past it, the replay's for `28`). The line is past its
+    /// cue's pass and its seek, so every pass the window still covers runs
+    /// its work under the polls. A harness seat.
+    pub fn seat_battle_xa_left(&mut self, left: u16) {
+        self.audio.battle_xa_load_frames = left;
+        self.audio.battle_xa_retail_left = left;
+        self.audio.battle_xa_busy_frames = self.audio.battle_xa_busy_frames.max(left);
+        self.audio.battle_xa_frame_load = left > 0;
+        self.audio.battle_xa_poll_load = left > 0;
+        // An arts shout's polls, open from the pass's start: the line's
+        // seek is behind the state.
+        self.audio.battle_xa_poll_wait = Some(0);
+        // Two passes back: the cue's pass and the one after it are behind
+        // the state (`xa_stream_pass_cost`).
+        self.audio.battle_xa_cue_frame = Some(self.battle_frame_id().saturating_sub(2));
     }
 
     /// The passes since a loading battle CD-XA clip's cue, `None` while none

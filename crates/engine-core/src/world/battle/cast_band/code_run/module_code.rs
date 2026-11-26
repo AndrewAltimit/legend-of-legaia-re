@@ -970,6 +970,7 @@ impl World {
                 && self.casting.module_cam.countdown.0 < i32::from(self.module_frame_step());
         if pass_ribbons.is_none() || spent_behind_gate {
             self.battle.cast_ribbon_seeds = None;
+            self.battle.cast_ribbon_quads = None;
         }
         if let Some(ring) = pass_ribbons.as_ref()
             && !capture_arm.as_ref().is_some_and(|a| a.ribbons_on_scatter_y)
@@ -1655,20 +1656,21 @@ impl World {
                     // PROT 0904's ring sweep: advance the ray, then resolve
                     // the cone once for this tick (both borrow `self`, which
                     // the seat row below does not allow).
-                    // Retail tests once a pass, on its frame step's ramp; the
-                    // engine's step-4 ticks test on `0x40 + 0x100 * k`
-                    // (`theeder_pass_tested`), so a victim dead ahead is struck
-                    // on the arm's first test and the others as the swing
-                    // reaches them, on retail's gaps. The pass ramps the word first
+                    // Retail tests once a pass, on its frame step's ramp
+                    // (`theeder_pass_tested`, on the step the engine's clock
+                    // runs the arm at). The pass ramps the word first
                     // (`0x801F7ADC..0x801F7AF0`) and builds its ray from the
                     // ramped word, so the test is on the word this tick's ramp
                     // reaches: read before it, the `0x800` crossing struck a
                     // pass late.
                     let cone_seats: Vec<u8> = if entry == 904
                         && ctx.phase == ticks_a::THEEDER_SWEEP_ARM
-                        && ticks_a::theeder_pass_tested(ctx.ctx_6d8.wrapping_add(
-                            ticks_a::theeder_ramp_per_tick(ticks_a::THEEDER_SWEEP_ARM),
-                        )) {
+                        && ticks_a::theeder_pass_tested(
+                            ctx.ctx_6d8.wrapping_add(ticks_a::theeder_ramp_per_tick(
+                                ticks_a::THEEDER_SWEEP_ARM,
+                            )),
+                            self.module_frame_step(),
+                        ) {
                         use legaia_engine_cast::seru_magic_ticks::{
                             MONSTER_ROW_END, THEEDER_CONE_HALF_WIDTH,
                         };

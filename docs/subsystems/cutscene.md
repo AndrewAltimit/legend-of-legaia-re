@@ -1359,8 +1359,16 @@ line of `vozz_ozma_hatching_crawl` stood one pixel right of retail's; placed thi
 columns coincide and the state's image reads `.942` to `.953`. Grade `disassembly` + `capture`.
 
 **Port.** [`CutsceneNarration`](../../crates/engine-field/src/cutscene_narration.rs); its
-`RollerSeed` is read off the seed op before each block. Neither host scissors the text, so
-`visible_lines` returns only the rows wholly inside the clip window. The roller counts display
+`RollerSeed` is read off the seed op before each block. Both hosts draw the crawl through
+`engine-screens::field_screens::cutscene_narration_stage_draws`, which cuts every glyph quad to
+the clip window's rows, so a line entering at the foot or leaving at the head shows the part
+inside, as retail's `DR_AREA` pair leaves it. The area's rows are absolute (`top + 4 + 240 *
+buffer`, `0x80037660..0x80037698`) while the glyph sprites take the field's draw offset `(0, 4)`,
+so on screen the window is `top..bottom - 4`: a display-crop of a retail state in `opdeene`'s first
+crawl holds its text on rows `64..=187`, and a line enters four rows later than the window the
+roller computes would let it (`RollerSeed` keeps the computed window, `stage_clip_window` the
+shown one). It draws in the dialogue white (`(206, 206, 206)`,
+ink 7), the colour a retail film of `opdeene`'s first crawl reads off every glyph. The roller counts display
 vsyncs: `World::tick` is one retail vsync and hands it `display_frame_step`, and the roller
 runs one pass of the handler per `frame_step` vsyncs (the cadence it was opened at), adding that
 step to its accumulator the way retail adds `DAT_1F800393`. Disc-gated
@@ -2885,6 +2893,44 @@ port keeps a CPU model of the display for this style, as it does for the curtain
 uploaded under each frame's particles, and each frame's particles and ring rasterised into it
 (`screen_prim_raster::rasterize_onto_15bpp`). Retail double-buffers the display, so each buffer
 takes every second frame; the single model accumulates every frame (`inference`).
+
+The scatter field (`FUN_801CFDA0`, the selector's arm for slot-0 monsters `0x4C`, `0x88` and
+`0xB3`) runs on the same display and differs by its wash: from the second frame on (entity clock
+`+0x1A` non-zero) it arms `func_0x8004695C(0x101010)` (`0x801CFE1C..0x801CFE24`), which the
+frame driver drains as a subtractive full-screen quad in the farthest OT bucket, ahead of every
+particle. A patch at rest is opaque and redraws its own cell, so the field that has not peeled
+off holds; where a patch has flown, the field fades out, and each flying patch leaves a fading
+trail. The drain scales the colour by the frame step, which the same body floors at `3`
+(`sw v0,-0x4628(v1)` at `0x801CFE00`), and lands on the buffer the frame draws into: two levels
+times the step every other frame, one 5-bit level a vsync on the displayed pixel. The port runs
+this style on the spin-up's display model and takes one level a clock unit off it
+(`SCATTER_DISPLAY_DECAY_5`) before the frame's particles land; composed over the backdrop, every
+departed patch opened black at once.
+
+A PCSX-Redux film of formation `[136]` (slot-0 monster `0x88`) from `retona_field_card_boot`,
+made with the harvester's `LEGAIA_INTRO_SHOTS` (a screenshot every vsync from the field exit,
+the frame step and floor beside it, and a state at the exit), reads step `3` and floor `3`
+through the style and the display changing every third vsync. A vacated pixel reads `31, 31,
+25, 25, 19, 19` on consecutive frames: six levels a buffer every two frames, which is what fixed
+the model's rate at one level a unit rather than two. Grade `capture`.
+
+The port draws the style on retail's cadence and blend. `BattleIntro::advance_to` steps it on
+the multiples of three its clock passes, at step `3` (`SCATTER_FRAME_STEP`), so the display
+model lands a frame's patches once every three units as retail's buffers do; stepped once a
+unit, every patch smeared a continuous trail. The capture lands with the mask bit clear for this
+style: a moved patch is a semi-transparent packet, and two pixels in three of the display at the
+field exit carry no mask bit, so retail draws them opaquely. With the bit set, every moved patch
+added itself over the model's copy of its cell and the frame washed out to yellow.
+
+The engine side of the film is the retail-compare child for `retona_field_card_boot` run with
+`--battle 11` (the row the harvester's `LEGAIA_WANT=136` rolled), `--screenshot-every 1` and
+`LEGAIA_BATTLE_ARM_TICK=120`, so the fight is armed out of a field the window has drawn. Scored
+frame by frame on the retail-compare block metric, the film reads `.565` at its best pairing, the
+engine twelve vsyncs ahead. Six of them are retail's mode `8`, which runs before the transition
+mode starts and which the engine's transition does not model; the rest are unaccounted. The rest of the gap is one draw the port
+lacks: from about the twenty-fifth vsync retail grows a white starburst with a blue core at the
+player's screen position until it fills the frame, and the engine's frames there are black.
+Which routine draws it is open; none of the style bodies `FUN_801CF5BC` calls emits it.
 
 #### The fade's second argument is a blend mode, not a depth
 

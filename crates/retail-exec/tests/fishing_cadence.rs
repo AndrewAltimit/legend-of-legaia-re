@@ -510,7 +510,7 @@ fn the_lure_flies_and_comes_in_as_retails_does() {
                 cpu.calls
             );
             port.water_step(port.heading(), facing, record, hooked.then_some(swim), step);
-            port.pull_step(edge, step);
+            port.pull_step(edge, held, step);
             let at = format!("scenario {scenario} water {frame} hooked {hooked} record {record}");
             assert_eq!(cpu.mem.rd32(ACC_X) as i32, port.x_fixed, "{at}: x");
             assert_eq!(cpu.mem.rd32(ACC_Z) as i32, port.z_fixed, "{at}: z");

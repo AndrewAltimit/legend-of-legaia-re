@@ -581,7 +581,15 @@ The terminator stages both in one block (`FUN_801DEA50`, `0x801DF284..0x801DF2E0
 
 The launch position is not the bare actor position. Retail re-seeds its stack pair from `actor[+0x34..+0x3B]` at the top of every record iteration and runs the scale + facing rotation on it before the terminator test, so the seed loop copies out the terminator record's own placement.
 
-**Port.** `engine-effects::action_effect_script::MoveFxStreak` (file `crates/engine-effects/src/action_effect_script.rs`) is the block: record id rather than pointer, one shared launch point rather than four identical copies. The live per-frame walk `World::step_actor_effect_script` installs it and `World::move_fx_streak` reads it back. `render-kernels::streak_pass` projects it once per frame and hands the corners to the packet builder `afterimage::build_afterimage_quad`, whose jitter law, brightness band, UVs, CLUT (`0x7700 + trail id`) and texpage (`0x0027`) are retail's.
+**The emitter's gates.** The phase driver `FUN_801E09F8` runs the emitter only while slot `0`'s phase byte `+0x24E` is `1` and the counter `+0x6C6` was non-zero before the pass's walk (`0x801E0BF4..0x801E0C14`), and only for a record whose `+0x0E` list byte is `0xFF` (`0x801E0C54..0x801E0C5C`). Three records carry that byte: moves `0x1B`, `0x1F` and the unused Freeze Thunder `0x2C`. Every other move draws no streak.
+
+The emitter is a loop of four (`0x801E0C64..0x801E0CE8`): a party acting actor (`ctx[+0x13] < 3`) calls `FUN_801E1AB0` once while the walked counter is `0x281` or more and leaves the loop (`li s3,0x4` in the call's delay slot), calls nothing through `0x280..0x201`, and below `0x201` calls the ribbon `FUN_801E1D98` on every iteration; a monster calls the ribbon on every iteration. So the ribbon arm is four ribbons a pass on one anchor, each on its own `rand()` words.
+
+**Port.** `engine-effects::action_effect_script::MoveFxStreak` (file `crates/engine-effects/src/action_effect_script.rs`) is the block: record id rather than pointer, one shared launch point rather than four identical copies. The live per-frame walk `World::step_actor_effect_script` installs it and `World::move_fx_streak` reads it back. The pass's counter walk runs the emitter on those gates (`World::deal_move_fx_streak`, `render-kernels::streak_pass::streak_pass_dealt`) on the game's stream, projecting through the battle view the pass holds, and keeps the packets on `BattleState::move_fx_streak_quads`, which the hosts draw as built. 
+
+The packet builder `afterimage::build_afterimage_quad` carries retail's jitter law, brightness band, UVs, CLUT (`0x7700 + trail id`) and texpage (`0x0027`).
+
+The hosts used to rebuild one ribbon at draw time on a private generator for every move whose effect scene staged, whatever its list byte; no capture holds a retail streak from these three moves, so the gates are `disassembly`-grounded.
 
 Both hosts draw it through one function, `engine-screens::battle_fx::battle_fx_prims`: the packets as semi-transparent screen prims at `streak_pass::MOVE_FX_STREAK_OT`, projected through the battle VP with the 4x world scale composed.
 
@@ -609,7 +617,9 @@ Which 2D emitter runs is not per-move data. The phase driver `FUN_801E09F8` walk
 
 Port: `render-kernels::streak_pass::streak_quads_scheduled` + `MoveFxStreak::tick_counter`.
 
-The ribbon has a second caller outside that dispatcher: the per-clip pass of `FUN_8004CE2C` (SCUS). Its Gala tag-`0x67` arm (`0x8004D1E8..0x8004D248`) calls `FUN_801E1D98(&target[+0x3C], 0xC)` on every frame the committed clip's cursor sits in `0xB0..=0xF0` (`addiu a0,s1,0x3c` in the branch delay slot at `0x8004D220`, `li a1,0xc` at `0x8004D224`). The anchor is the target's seat vector (`+0x3C..+0x43`, copied verbatim from the spawn node by the battle setup at `0x8005158C..0x80051598`), not the launch point `ctx[+0x1144]`, and the trail id is the literal `0xC`, not the move record's `+0x0B`. Port: the impact pass stores the frame's source in `BattleState::clip_ribbon` and both hosts draw it through `streak_pass::clip_ribbon_quads`.
+The ribbon has a second caller outside that dispatcher: the per-clip pass of `FUN_8004CE2C` (SCUS). Its Gala tag-`0x67` arm (`0x8004D1E8..0x8004D248`) calls `FUN_801E1D98(&target[+0x3C], 0xC)` on every frame the committed clip's cursor sits in `0xB0..=0xF0` (`addiu a0,s1,0x3c` in the branch delay slot at `0x8004D220`, `li a1,0xc` at `0x8004D224`). The anchor is the target's seat vector (`+0x3C..+0x43`, copied verbatim from the spawn node by the battle setup at `0x8005158C..0x80051598`), not the launch point `ctx[+0x1144]`, and the trail id is the literal `0xC`, not the move record's `+0x0B`.
+
+The clip is Gala's Heaven's Drop (art record `0x2E`, the only record in his bank whose `+0x77` is `0x67`). Port: the impact pass stores the frame's source in `BattleState::clip_ribbon`, and `World::deal_clip_ribbon` makes the call once a pass on the game's stream through the battle view, ahead of the frame's draw, as the actor-pool walk does; both hosts draw the packets it kept (`BattleState::clip_ribbon_quads`). A PCSX-Redux recording of the art (Gala on a Theeder in `jou`, the strike loop entered by the harvester's `LEGAIA_PARTY_ARTS`, `--ribbon-trace`) logs ten calls returning to `0x8004D248`, one every three vsyncs, each anchored on the target's moving seat; the port's film from the same state draws the burst over the same frames. Grade `capture`.
 
 ### Move-FX streak ribbon (`FUN_801E1D98`)
 

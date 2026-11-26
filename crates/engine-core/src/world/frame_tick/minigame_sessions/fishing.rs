@@ -391,6 +391,17 @@ impl World {
                         legaia_engine_system::sound_state::SfxRingOp::WriteSlot(1, 0x201),
                     );
                 }
+                // The reel's whirr, keyed and released on its own voice.
+                let (stop, key) =
+                    legaia_engine_fishing::fishing_actors::reel_voice_ops(&s.take_reel_voice());
+                if stop {
+                    self.audio
+                        .sfx_voice_stops
+                        .push(legaia_engine_fishing::fishing_actors::REEL_WHIRR_VOICE);
+                }
+                if key {
+                    self.audio.sfx_voice_keys.push(reel_whirr_cue());
+                }
                 (
                     s.take_events(),
                     s.persist().casts != casts,
@@ -492,6 +503,17 @@ impl World {
     }
 }
 
+/// The reel whirr's direct key-on (`FUN_80065034`, `0x801D2EB8`).
+pub(crate) fn reel_whirr_cue() -> legaia_engine_minigames::other_game_overlay::VoiceAttrCue {
+    use legaia_engine_fishing::fishing_actors::{REEL_WHIRR_ATTR, REEL_WHIRR_VOICE};
+    legaia_engine_minigames::other_game_overlay::VoiceAttrCue {
+        voice: u32::from(REEL_WHIRR_VOICE),
+        vab_program_tone: REEL_WHIRR_ATTR.0,
+        note_and_fine: REEL_WHIRR_ATTR.1,
+        volume: REEL_WHIRR_ATTR.2,
+    }
+}
+
 #[cfg(test)]
 mod hook_audio_tests {
     use crate::world::{FieldEvent, World};
@@ -585,6 +607,52 @@ mod hook_audio_tests {
         w.enter_fishing(pond_world().minigames.fishing.take().unwrap());
         w.fishing_shore_replay();
         assert_eq!(restarts(&mut w), [2017]);
+    }
+
+    /// The reel's whirr reaches both play hosts' voice queues: a reel press
+    /// on a waiting line keys voice `0x13`, and the spent pull with the
+    /// button let go releases it (`0x801D2EB8`, `0x801D2F30`).
+    #[test]
+    fn the_reel_whirr_keys_and_releases_its_voice() {
+        use legaia_engine_fishing::fishing::{PondInput, PondPhase};
+        let mut w = pond_world();
+        let p = w.minigames.fishing.as_mut().unwrap();
+        let cast = PondInput {
+            cast_edge: true,
+            ..Default::default()
+        };
+        p.tick(cast, 1, 0x80);
+        for _ in 0..200 {
+            if p.phase() == PondPhase::Power {
+                break;
+            }
+            p.tick(PondInput::default(), 1, 0x80);
+        }
+        for _ in 0..24 {
+            p.tick(PondInput::default(), 1, 0x80);
+        }
+        p.tick(cast, 1, 0x80);
+        while p.phase() == PondPhase::Flight {
+            p.tick(PondInput::default(), 1, 0x80);
+        }
+        assert_eq!(p.phase(), PondPhase::Waiting);
+        let _ = p.take_reel_voice();
+        let cross = legaia_engine_system::input::PadButton::Cross.mask();
+        w.set_pad(cross);
+        let _ = w.tick();
+        let keys = w.take_sfx_voice_keys();
+        assert!(
+            keys.iter()
+                .any(|k| k.voice == 0x13 && k.vab_program_tone == (2, 0, 0)),
+            "a reel press keys the whirr: {keys:?}"
+        );
+        w.set_pad(0);
+        let mut released = false;
+        for _ in 0..40 {
+            let _ = w.tick();
+            released |= w.take_sfx_voice_stops().contains(&0x13);
+        }
+        assert!(released, "a spent pull with the button up releases it");
     }
 
     /// The head copies `surge / 8` and `surge / 4` into the motor words while

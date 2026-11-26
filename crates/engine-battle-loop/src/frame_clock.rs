@@ -717,6 +717,29 @@ pub const fn xa_polled_work_cost(work: u16) -> u16 {
     }
 }
 
+/// What a frame an arts shout's polls load costs over the census's work of the
+/// same pass ([`linked_frame_work`]), in thousandths. The census prices a pass's
+/// own work, which under the polls reads below retail's: the work left between
+/// the CD interrupt spans carries the exception exits too
+/// ([`ARTS_SHOUT_POLL_WORK_RATIO_MILLI`]). Fitted over `--cd-trace` recordings of
+/// four arts (Flying Knee, Tri-Somersault, Gala's Chain, Sonic Javelin), each
+/// polled frame's cost over the engine's census work on the paired tick: the
+/// films' medians read `3.06` to `3.38`, and over their `73` polled frames
+/// `3.2` puts the frame's span on retail's vsync count for `35` where
+/// [`XA_POLL_WORK_RATIO_MILLI`] puts `21`, short on `51` of them.
+pub const ARTS_SHOUT_CENSUS_RATIO_MILLI: u32 = 3200;
+
+/// What a frame of census `work` hblanks costs under an arts shout's polls
+/// ([`ARTS_SHOUT_CENSUS_RATIO_MILLI`]).
+pub const fn arts_shout_census_cost(work: u16) -> u16 {
+    let c = (work as u32 * ARTS_SHOUT_CENSUS_RATIO_MILLI + 500) / 1000;
+    if c > u16::MAX as u32 {
+        u16::MAX
+    } else {
+        c as u16
+    }
+}
+
 /// What the pass after a clip's cue costs over its base: Amethyst's Heal's
 /// `507` against the lone member's `0x3E` frames near `385`.
 pub const XA_STREAM_ONSET_COST: u16 = 122;
@@ -1363,6 +1386,11 @@ mod frame_cost_tests {
         assert_eq!(step_of_cost(polygon_frame_work(3884)), 4);
         // Kiss of Death's arm 4 under its line: an eight-vsync frame.
         assert_eq!(frame_span(xa_polled_work_cost(665), 4), 8);
+        // An arts shout's polled frames over the census's work: Sonic
+        // Javelin's `600` spans retail's eight vsyncs, Tri-Somersault's first
+        // line's `666` its nine.
+        assert_eq!(frame_span(arts_shout_census_cost(600), 4), 8);
+        assert_eq!(frame_span(arts_shout_census_cost(666), 4), 9);
         assert_eq!(polygon_frame_work(u32::MAX), u16::MAX);
     }
 

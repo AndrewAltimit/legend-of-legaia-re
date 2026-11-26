@@ -1774,6 +1774,25 @@ impl BattleDrive {
             world.battle.approach_idle_seated = true;
             world.seat_battle_clip_cursor(usize::from(engine_seat(target, pc)), 0, cursor);
         }
+        // A delegated party seat's stream ([`ActionSteer::queue`] on a seat
+        // the auto-fill leg of `FUN_801F0450` took, `+0xF8 & 0x2000`): the leg
+        // rebuilds `+0x1DF..` at the round's state `0x00` from `rand()` draws
+        // the replay does not share, so from there to the strike loop the
+        // stream is the capture's. `evil_medallion_rage_battle` resolved
+        // `22 26 25 22 21`; the replay's fill drew `1F 23`, and its strike
+        // loop left `0x1E` after two swings where retail's runs five. A
+        // harness seat.
+        if seat < 3
+            && ours
+            && world.battle_ctx.delegated_seats & (1 << engine_seat(seat, pc)) != 0
+            && (0x0A..0x1E).contains(&state)
+            && let Some(queue) = steer.queue
+            && let Some(a) = world.actors.get_mut(usize::from(engine_seat(seat, pc)))
+            && a.battle.strike_index == 0
+        {
+            let n = a.battle.params.len().min(queue.len());
+            a.battle.params[..n].copy_from_slice(&queue[..n]);
+        }
         // A monster cast's clip bytes ([`ActionSteer::queue`] on a monster
         // seat whose drive is a cast): the capture's `+0x1E0` and the Spirit
         // band's `+0x1E7` (`params[1]` / `params[8]`), held from the seed to

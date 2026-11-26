@@ -750,11 +750,15 @@ pub(super) fn stoned(w: &legaia_engine_core::world::World, i: usize) -> bool {
 /// The healing spell worth casting now in a fight that forbids running: the
 /// one `actor` knows and can pay for that restores the most.
 ///
-/// - In a **solo duel** it is cast once the bag has no restorative left,
-///   while the member is under the duel's heal line (three fifths of its
-///   HP). The three Nivora duels are fought out of one bag, and each
-///   duellist knows Spoon (45 MP): a member that ran the bag dry held the
-///   Spirit stance with a full MP pool until the foe finished it.
+/// - In a **solo duel** it is cast ahead of the bag while the member is under
+///   the duel's heal line (three fifths of its HP). The three Nivora duels
+///   are fought out of one bag, and each duellist knows Spoon (45 MP): a
+///   member that ran the bag dry held the Spirit stance with a full MP pool
+///   until the foe finished it, and one that healed from the bag first ate
+///   Healing Shrooms (200) with 262 MP of Spoons (270) unspent until Gi's
+///   combos outran them. From six of the runs' own `nivora` saves on eight
+///   dealt streams each, the duels took one attempt past the first healed
+///   spell first, and thirteen healed from the bag first.
 /// - In a **party fight** the group heal is cast for any member under the
 ///   line once the bag is dry (Gaza's second fight, `korb3`, ran it dry with
 ///   every member's Spoon unspent), and ahead of the bag whenever two members
@@ -768,9 +772,6 @@ pub(super) fn spell_heal(w: &legaia_engine_core::world::World, actor: u8) -> Opt
         return None;
     }
     let duel = solo_duel(w);
-    if duel && bag_can_heal(w) {
-        return None;
-    }
     let a = &w.actors.get(usize::from(actor))?.battle;
     if a.hp == 0 {
         return None;

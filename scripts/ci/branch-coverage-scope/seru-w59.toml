@@ -1,0 +1,232 @@
+# Seru summon and cast module images: arms out of scope, by image.
+
+[[arm]]
+entry = "0x801F69D8"
+image = "7a33f8bcf06a069a"
+range = "0x801F6D68..0x801F6D68"
+verdict = "unreachable"
+reason = "PROT 0923 arm 0x3's head test of the countdown word 0x801FA4F8 (`lw -0x5B08`, `blez`): the arm's only hold is its own drain (`bgtz` to the busy exit), and the module's phase only rises by one (0x801F8470, 0x801F8A4C), so the arm is entered from arm 0x2's pass, which drains the word to at most zero but above -8 * step and re-arms it `+0x200` (0x801F6CE8); the word is positive on entry at any battle frame step up to 8."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "7a33f8bcf06a069a"
+range = "0x801F6DF0..0x801F6DF0"
+verdict = "unreachable"
+reason = "PROT 0923 arm 0x4's head test of the countdown word 0x801FA4F8 (`lw -0x5B08`, `blez`): the arm's only hold is its own drain (`bgtz` to the busy exit), and the module's phase only rises by one (0x801F8470, 0x801F8A4C), so the arm is entered from arm 0x3's pass, which drains the word to at most zero but above -8 * step and re-arms it `+0x400` (0x801F6DAC); the word is positive on entry at any battle frame step up to 8."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "7a33f8bcf06a069a"
+range = "0x801F72EC..0x801F72EC"
+verdict = "unreachable"
+reason = "PROT 0923 arm 0x5's head test of the countdown word 0x801FA4F8 (`lw -0x5B08`, `blez`): the arm's only hold is its own drain (`bgtz` to the busy exit), and the module's phase only rises by one (0x801F8470, 0x801F8A4C), so the arm is entered from arm 0x4's pass, which drains the word to at most zero but above -8 * step and re-arms it `+0x200` (0x801F7198); the word is positive on entry at any battle frame step up to 8."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "7a33f8bcf06a069a"
+range = "0x801F746C..0x801F746C"
+verdict = "unreachable"
+reason = "PROT 0923 arm 0x6's head test of the countdown word 0x801FA4F8 (`lw -0x5B08`, `blez`): the arm's only hold is its own drain (`bgtz` to the busy exit), and the module's phase only rises by one (0x801F8470, 0x801F8A4C), so the arm is entered from arm 0x5's pass, which drains the word to at most zero but above -8 * step and re-arms it `+0x3A0` (0x801F7454); the word is positive on entry at any battle frame step up to 8."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "7a33f8bcf06a069a"
+range = "0x801F7568..0x801F7568"
+verdict = "unreachable"
+reason = "PROT 0923 arm 0x7's head test of the countdown word 0x801FA4F8 (`lw -0x5B08`, `blez`): the arm's only hold is its own drain (`bgtz` to the busy exit), and the module's phase only rises by one (0x801F8470, 0x801F8A4C), so the arm is entered from arm 0x6's pass, which drains the word to at most zero but above -8 * step and re-arms it `+0x400` (0x801F7554); the word is positive on entry at any battle frame step up to 8."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "7a33f8bcf06a069a"
+range = "0x801F7604..0x801F7604"
+verdict = "unreachable"
+reason = "PROT 0923 arm 0x8's head test of the countdown word 0x801FA4F8 (`lw -0x5B08`, `blez`): the arm's only hold is its own drain (`bgtz` to the busy exit), and the module's phase only rises by one (0x801F8470, 0x801F8A4C), so the arm is entered from arm 0x7's pass, which drains the word to at most zero but above -8 * step and re-arms it `+0x400` (0x801F75EC); the word is positive on entry at any battle frame step up to 8."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "7a33f8bcf06a069a"
+range = "0x801F7864..0x801F7864"
+verdict = "unreachable"
+reason = "PROT 0923 arm 0x9's head test of the countdown word 0x801FA4F8 (`lw -0x5B08`, `blez`): the arm's only hold is its own drain (`bgtz` to the busy exit), and the module's phase only rises by one (0x801F8470, 0x801F8A4C), so the arm is entered from arm 0x8's pass, which drains the word to at most zero but above -8 * step and re-arms it `+0x600` (0x801F7698); the word is positive on entry at any battle frame step up to 8."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "7a33f8bcf06a069a"
+range = "0x801F7910..0x801F7910"
+verdict = "unreachable"
+reason = "PROT 0923 arm 0xa's head test of the countdown word 0x801FA4F8 (`lw -0x5B08`, `blez`): the arm's only hold is its own drain (`bgtz` to the busy exit), and the module's phase only rises by one (0x801F8470, 0x801F8A4C), so the arm is entered from arm 0x9's pass, which drains the word to at most zero but above -8 * step and re-arms it `+0x300` (0x801F78F4); the word is positive on entry at any battle frame step up to 8."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "7a33f8bcf06a069a"
+range = "0x801F7BC8..0x801F7BC8"
+verdict = "unreachable"
+reason = "PROT 0923 arm 0xb's head test of the countdown word 0x801FA4F8 (`lw -0x5B08`, `blez`): the arm's only hold is its own drain (`bgtz` to the busy exit), and the module's phase only rises by one (0x801F8470, 0x801F8A4C), so the arm is entered from arm 0xa's pass, which drains the word to at most zero but above -8 * step and re-arms it `+0x600` (0x801F79A4); the word is positive on entry at any battle frame step up to 8."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "7a33f8bcf06a069a"
+range = "0x801F7D50..0x801F7D50"
+verdict = "unreachable"
+reason = "PROT 0923 arm 0xc's head test of the countdown word 0x801FA4F8 (`lw -0x5B08`, `blez`): the arm's only hold is its own drain (`bgtz` to the busy exit), and the module's phase only rises by one (0x801F8470, 0x801F8A4C), so the arm is entered from arm 0xb's pass, which drains the word to at most zero but above -8 * step and re-arms it `+0x100` (0x801F7C48); the word is positive on entry at any battle frame step up to 8."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "7a33f8bcf06a069a"
+range = "0x801F7EB8..0x801F7EB8"
+verdict = "unreachable"
+reason = "PROT 0923 arm 0xd's head test of the countdown word 0x801FA4F8 (`lw -0x5B08`, `blez`): the arm's only hold is its own drain (`bgtz` to the busy exit), and the module's phase only rises by one (0x801F8470, 0x801F8A4C), so the arm is entered from arm 0xc's pass, which drains the word to at most zero but above -8 * step and re-arms it `+0x800` (0x801F7D94); the word is positive on entry at any battle frame step up to 8."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "7a33f8bcf06a069a"
+range = "0x801F7F44..0x801F7F44"
+verdict = "unreachable"
+reason = "PROT 0923 arm 0xe's head test of the countdown word 0x801FA4F8 (`lw -0x5B08`, `blez`): the arm's only hold is its own drain (`bgtz` to the busy exit), and the module's phase only rises by one (0x801F8470, 0x801F8A4C), so the arm is entered from arm 0xd's pass, which drains the word to at most zero but above -8 * step and re-arms it `+0x200` (0x801F7EE0); the word is positive on entry at any battle frame step up to 8."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "7a33f8bcf06a069a"
+range = "0x801F8178..0x801F8178"
+verdict = "unreachable"
+reason = "PROT 0923 arm 0xf's head test of the countdown word 0x801FA4F8 (`lw -0x5B08`, `blez`): the arm's only hold is its own drain (`bgtz` to the busy exit), and the module's phase only rises by one (0x801F8470, 0x801F8A4C), so the arm is entered from arm 0xe's pass, which drains the word to at most zero but above -8 * step and re-arms it `+0x40` (0x801F8114); the word is positive on entry at any battle frame step up to 8."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "7a33f8bcf06a069a"
+range = "0x801F822C..0x801F822C"
+verdict = "unreachable"
+reason = "PROT 0923 arm 0x10's head test of the countdown word 0x801FA4F8 (`lw -0x5B08`, `blez`): the arm's only hold is its own drain (`bgtz` to the busy exit), and the module's phase only rises by one (0x801F8470, 0x801F8A4C), so the arm is entered from arm 0xf's pass, which drains the word to at most zero but above -8 * step and re-arms it `+0x3C0` (0x801F81AC); the word is positive on entry at any battle frame step up to 8."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "7a33f8bcf06a069a"
+range = "0x801F8320..0x801F8320"
+verdict = "unreachable"
+reason = "PROT 0923 arm 0x11's head test of the countdown word 0x801FA4F8 (`lw -0x5B08`, `blez`): the arm's only hold is its own drain (`bgtz` to the busy exit), and the module's phase only rises by one (0x801F8470, 0x801F8A4C), so the arm is entered from arm 0x10's pass, which drains the word to at most zero but above -8 * step and re-arms it `+0x200` (0x801F82A0); the word is positive on entry at any battle frame step up to 8."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "7a33f8bcf06a069a"
+range = "0x801F85C4..0x801F85C4"
+verdict = "unreachable"
+reason = "PROT 0923 arm 0x14's head test of the countdown word 0x801FA4F8 (`lw -0x5B08`, `blez`): the arm's only hold is its own drain (`bgtz` to the busy exit), and the module's phase only rises by one (0x801F8470, 0x801F8A4C), so the arm is entered from arm 0x13's pass, which drains the word to at most zero but above -8 * step and re-arms it `+0x200` (0x801F84CC); the word is positive on entry at any battle frame step up to 8."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "7a33f8bcf06a069a"
+range = "0x801F87E4..0x801F87E4"
+verdict = "unreachable"
+reason = "PROT 0923 arm 0x15's head test of the countdown word 0x801FA4F8 (`lw -0x5B08`, `blez`): the arm's only hold is its own drain (`bgtz` to the busy exit), and the module's phase only rises by one (0x801F8470, 0x801F8A4C), so the arm is entered from arm 0x14's pass, which drains the word to at most zero but above -8 * step and re-arms it `+0x600` (0x801F85F4); the word is positive on entry at any battle frame step up to 8."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "7a33f8bcf06a069a"
+range = "0x801F848C..0x801F848C"
+verdict = "unreachable"
+reason = "PROT 0923 arm 0x13's head test of the countdown word 0x801FA4F8 (`lw -0x5B08`, `blez`): the arm's only hold is its own drain, and it is entered from arm 0x12, which runs one pass with no gate, draining `8 * step` (0x801F8454..0x801F8464) off the `+0x400` arm 0x11's pass stored (0x801F8350), so the word is above 0x3C0 on entry."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "7a33f8bcf06a069a"
+range = "0x801F8AD0..0x801F8AD0"
+verdict = "unreachable"
+reason = "PROT 0923 arm 0x16's row settle loop guard (`3 < ctx[+1] + 3`, `beqz` at 0x801F8AD0): ctx[+1] is the battle's monster count, at least 1 while a fight runs, so the loop is always entered."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "471f5e89a01ebb6f"
+range = "0x801F706C..0x801F706C"
+verdict = "unreachable"
+reason = "PROT 0915 arm 7's spin word 0x801F8150 read for its quarter (`bgez` rounding fix-up at 0x801F706C): arm 6's pass zeroes it (0x801F6FD0) and arms 7 and 8 only add `(step * scalar) >> 3` to it (0x801F7058, 0x801F72A4), so it is never negative."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "471f5e89a01ebb6f"
+range = "0x801F72B4..0x801F72B4"
+verdict = "unreachable"
+reason = "PROT 0915 arm 8's spin word 0x801F8150 read for its quarter (`bgez` rounding fix-up at 0x801F72B4): arm 6's pass zeroes it (0x801F6FD0) and arms 7 and 8 only add `(step * scalar) >> 3` to it, so it is never negative."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "471f5e89a01ebb6f"
+range = "0x801F70C0..0x801F70C0"
+verdict = "unreachable"
+reason = "PROT 0915 arm 7's bank `-sin(word * 32) / 8` (`bgez` rounding fix-up at 0x801F70C0 on the negated sine): arm 7 is entered on arm 6's re-arm of `scalar << 6` and holds until the countdown is at most `scalar << 5`, `scalar << 5` drained at `step * scalar` a pass while the spin word grows `step` a pass from 0 (scalar 8, planted by SCUS), so the word stays at most 33 and its angle below 0x800: the sine is positive and the negated value never at or above zero."
+
+[[arm]]
+entry = "0x801F69D8"
+image = "471f5e89a01ebb6f"
+range = "0x801F71FC..0x801F71FC"
+verdict = "unreachable"
+reason = "PROT 0915 arm 7's quarter hit leaving no HP (`beqz` on `+0x14C` at 0x801F71FC): the hit is clamped to HP - 1 (0x801F7174..0x801F718C), and the latched victim is a living monster the cast targeted, struck by nothing in the module before arm 7, so it keeps at least 1 HP."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "f0403708cf2879aa"
+range = "0x801F7EF4..0x801F7F0C"
+verdict = "unreachable"
+reason = "PROT 0928: the compiler's divide guards (`break` on a zero divisor, the `-1` / `0x80000000` overflow test) around `div v0,v1` at 0x801F7EF0, whose divisor is the speed scalar byte `0x1F80037D` (`lbu 0x69` off 0x1F800314 at 0x801F7EE8), which SCUS plants at 8: never 0 or -1."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "f0403708cf2879aa"
+range = "0x801F8314..0x801F8314"
+verdict = "unreachable"
+reason = "PROT 0928: the rounding fix-up of `/ 4` on the absolute value of a seat's sign-extended halfword `+0x34` (`lh` at 0x801F8300, negated below zero at 0x801F8310): the value is at most 0x8000, never negative, so the `bgez` is always taken."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "f0403708cf2879aa"
+range = "0x801F844C..0x801F844C"
+verdict = "unreachable"
+reason = "PROT 0928: the rounding fix-up of `/ 4` on the absolute value of a seat's sign-extended halfword `+0x34` (`lh` at 0x801F8438, negated below zero at 0x801F8448): the value is at most 0x8000, never negative, so the `bgez` is always taken."
+
+[[arm]]
+entry = "0x801F6A74"
+image = "f69a9ec23b1185ea"
+range = "0x801F6AE8..0x801F6AE8"
+verdict = "unreachable"
+reason = "PROT 0930's phase dispatch bound (`sltiu 0x1F` / `beqz` at 0x801F6AE4..0x801F6AE8): the module's one phase store is the shared `+1` (0x801F7C60..0x801F7C70), taken by arms 0..10 only; arm 11 (0x801F7C74) returns its busy word cleared (`sw zero,0x38(sp)` at 0x801F7D20) without it, so the phase never passes 11."
+
+[[arm]]
+entry = "0x801F6A74"
+image = "f69a9ec23b1185ea"
+range = "0x801F7E40..0x801F7E64"
+verdict = "unreachable"
+reason = "PROT 0930's clip-cycle arm at 0x801F7E34, the jump table's entry for phase 30 (the table at 0x801F69D8 sends 12..29 to the epilogue): the phase is stored only by the shared `+1` (0x801F7C70) from arms 0..10, so it never passes 11 and the arm is never dispatched."
+
+[[arm]]
+entry = "0x801F6A08"
+image = "756fcc7a853b8393"
+range = "0x801F6A7C..0x801F6A7C"
+verdict = "unreachable"
+reason = "PROT 0921's phase dispatch bound (`sltiu 0xC` / `beqz` at 0x801F6A78..0x801F6A7C): the module's one phase store is the shared `+1` (0x801F7DD0..0x801F7DE0), and its last arm 11 (0x801F7DE4) returns its busy word cleared (`sw zero,0x38(sp)` at 0x801F7FD4) without jumping to it, so the phase never passes 11."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "f0403708cf2879aa"
+range = "0x801F7064..0x801F7064"
+verdict = "unreachable"
+reason = "PROT 0928: the rounding fix-up of `/ 8` on three times the module word 0x801FA0D0 (`addu v0,a3,a1` at 0x801F7060): the word is zeroed (0x801F6DB8) and only grows by `step * scalar` a pass to its clamp `scalar << 8` (0x801F6EC8..0x801F6EE8) before this read, so the product is never negative."
+
+[[arm]]
+entry = "0x801F69F4"
+image = "f0403708cf2879aa"
+range = "0x801F7344..0x801F7398"
+verdict = "unreachable"
+reason = "PROT 0928: the rounding fix-ups on `sin(word)` (`/ 4`, 0x801F7344), `3 * word` (`/ 4`, 0x801F7364) and `sin(2 * word)` (`/ 32`, 0x801F7398), the sines read off the table `*0x8007B81C`: the previous arm's pass zeroes the word 0x801FA0D0 (0x801F722C) and this arm adds `step * scalar` a pass and clamps it at `scalar << 7` = 0x400 (0x801F7294..0x801F72DC), so the word, `sin(word)` and `sin(2 * word)` (angles in 0..0x800) are never negative."
+
+[[arm]]
+entry = "0x801F6A08"
+image = "756fcc7a853b8393"
+range = "0x801F765C..0x801F765C"
+verdict = "unreachable"
+reason = "PROT 0921: the `beqz` on the battle's monster count `ctx[+1]` (`lbu 0x1` off `*0x8007BD24` at 0x801F7654) that skips the row loop: a fight that runs has at least one monster seated, so the count is never 0."
+
+[[arm]]
+entry = "0x801F6A08"
+image = "756fcc7a853b8393"
+range = "0x801F77D0..0x801F77D0"
+verdict = "unreachable"
+reason = "PROT 0921: the rounding fix-up of `/ 4` on `step * scalar`, the product of the unsigned bytes `0x1F800393` and `0x1F80037D` (`lbu` / `mult` at 0x801F77BC..0x801F77CC), which is never negative."

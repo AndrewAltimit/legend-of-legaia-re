@@ -76,6 +76,9 @@
 .play-dock-btn[aria-expanded="true"]::after { content: "\25B4"; }
 .play-dock-panels > .play-card { margin-bottom: 0.8rem; }
 .play-dock-panels > .play-card[hidden] { display: none; }
+/* The key list is a reference read beside the game: capped so opening it
+   leaves the picture on screen under it. */
+.play-dock-panels > .play-keys-card { max-height: min(60vh, 34rem); overflow-y: auto; }
 /* Expansion packs are the port's own, still-moving feature: every place
  * the page offers one says so. */
 .play-experimental {
@@ -201,6 +204,60 @@ body.xw-preview .touch-pad { display: none; }
   .play-screen:not(:fullscreen) .touch-pad .tp-face { width: 152px; bottom: 3%; }
   .play-screen:not(:fullscreen) .touch-pad .tp-middle { bottom: auto; top: 3%; }
   .play-screen:not(:fullscreen) .touch-pad .tp-small { padding: 0.45rem 0.7rem; }
+}
+/* The title and the screens it hands off to (the New Game rules, Continue,
+   Options) draw their tabs along the top and their help and key hint along the
+   foot, where the pad's shoulders, D-pad, face buttons and START / SELECT sat
+   over them in every landscape layout. While the title runs (`pad-band` on the
+   wrap) the pad takes the band under the picture there too. */
+.play-screen:not(:fullscreen) .play-canvas-wrap.pad-band:has(> .touch-pad:not(.is-hidden)) { margin-bottom: 212px; }
+.play-screen:not(:fullscreen) .pad-band > .touch-pad { inset: auto 0 auto 0; top: calc(100% + 8px); height: 200px; }
+.play-screen:not(:fullscreen) .pad-band > .touch-pad .tp-dpad { width: 148px; bottom: 3%; }
+.play-screen:not(:fullscreen) .pad-band > .touch-pad .tp-face { width: 152px; bottom: 3%; }
+.play-screen:not(:fullscreen) .pad-band > .touch-pad .tp-middle { bottom: auto; top: 3%; }
+.play-screen:not(:fullscreen) .pad-band > .touch-pad .tp-small { padding: 0.45rem 0.7rem; }
+/* Fullscreen keeps the picture 4:3 in the middle of the screen, so the title's
+   pad goes where the letterbox is: down both sides on a wide landscape screen
+   (shoulders at the top, START / SELECT under the right pair, D-pad and face
+   buttons at the foot), into the band under the picture on a tall portrait
+   one. A screen near 4:3 has no letterbox to give, and keeps the pad over it. */
+.play-screen:fullscreen {
+  --fs-wrap-w: min(calc(100vw - 2 * var(--play-fs-pad)),
+                   calc((100dvh - var(--play-fs-cap) - 2 * var(--play-fs-pad)) * 4 / 3));
+  --fs-side: calc((100vw - var(--fs-wrap-w)) / 2);
+  --fs-col: min(170px, calc(var(--fs-side) - 16px));
+}
+@media (min-aspect-ratio: 2/1) {
+  .play-screen:fullscreen .pad-band > .touch-pad { left: calc(-1 * var(--fs-side)); right: calc(-1 * var(--fs-side)); }
+  .play-screen:fullscreen .pad-band > .touch-pad .tp-dpad { left: 8px; width: var(--fs-col); }
+  .play-screen:fullscreen .pad-band > .touch-pad .tp-face { right: 8px; width: var(--fs-col); }
+  .play-screen:fullscreen .pad-band > .touch-pad .tp-shoulder { width: calc((var(--fs-col) - 8px) / 2); }
+  .play-screen:fullscreen .pad-band > .touch-pad .tp-l2 { left: 8px; }
+  .play-screen:fullscreen .pad-band > .touch-pad .tp-l1 { left: calc(16px + (var(--fs-col) - 8px) / 2); }
+  .play-screen:fullscreen .pad-band > .touch-pad .tp-r2 { right: 8px; }
+  .play-screen:fullscreen .pad-band > .touch-pad .tp-r1 { right: calc(16px + (var(--fs-col) - 8px) / 2); }
+  .play-screen:fullscreen .pad-band > .touch-pad .tp-middle {
+    left: auto; right: 8px; width: var(--fs-col); transform: none;
+    bottom: auto; top: calc(3% + 48px); justify-content: center; }
+}
+/* The rules screen's Back / Begin bar sits under the wrap in the page. In
+   fullscreen, a flex item under the wrap pushed the picture up by its height,
+   past the screen's top edge with the tabs on it, so the bar is laid over the
+   letterbox instead: under the left shoulders on a wide screen, at the foot
+   otherwise. Its touch hint has no room there. */
+.play-screen:fullscreen > .play-rules-buttons {
+  position: absolute; margin: 0; left: 50%; bottom: 8px; transform: translateX(-50%); }
+.play-screen:fullscreen > .play-rules-buttons .play-rules-touch-hint { display: none; }
+@media (min-aspect-ratio: 2/1) {
+  .play-screen:fullscreen > .play-rules-buttons {
+    left: 8px; transform: none; bottom: auto; top: calc(3% + 48px); width: var(--fs-col);
+    flex-direction: column; align-items: stretch; gap: 6px; }
+}
+@media (max-aspect-ratio: 3/5) {
+  .play-screen:fullscreen .pad-band > .touch-pad { inset: auto 0 auto 0; top: calc(100% + 8px); height: 200px; }
+  .play-screen:fullscreen .pad-band > .touch-pad .tp-dpad { width: 148px; bottom: 3%; }
+  .play-screen:fullscreen .pad-band > .touch-pad .tp-face { width: 152px; bottom: 3%; }
+  .play-screen:fullscreen .pad-band > .touch-pad .tp-middle { bottom: auto; top: 3%; }
 }
 body.xw-preview .play-canvas { height: 100%; aspect-ratio: auto; }
 /* The picture takes the frame's own shape: the workbench's view is as wide
@@ -659,10 +716,12 @@ div.play-vis-head { cursor: default; }
         </div>
         <div class="play-btn-row">
           <button id="play-recenter" type="button">Reset camera</button>
+          <button id="play-title-bar" type="button" disabled
+                  title="Leave the running game for the title card (New Game, Continue, Options). Progress since your last save is lost.">Back to title</button>
           <button id="play-fullscreen" class="btn-accent" type="button" title="Present the viewport full screen (F11; Esc to exit)">&#9974; Fullscreen</button>
           <button id="play-touch-pad" type="button" aria-pressed="false"
                   title="Show or hide the on-screen pad (D-pad, face buttons, shoulders, Start and Select) for a touch screen. Shown by default on a phone or tablet; remembered.">Touch pad</button>
-          <label class="play-volume" title="Scene BGM output gain (the engine's SPU mixer runs into a WebAudio GainNode)">
+          <label class="play-volume" title="Output level: the whole mix, music, sound effects, voices and movies (the window's Master volume; Music and SFX below set the two buses)">
             &#9834; <input type="range" id="play-volume" min="0" max="10" step="0.5" value="1">
             <span id="play-volume-value">1x</span>
           </label>
@@ -1493,7 +1552,18 @@ div.play-vis-head { cursor: default; }
   }
   /* For the web benches (frame-bench-web, movie-timeline-web): a fresh title. */
   window.__playBootNewGame = bootNewGameTitle;
-  document.getElementById('play-back-to-title').addEventListener('click', bootNewGameTitle);
+  /* Back to title, in the expansion panel and in the row under the picture.
+   * Leaving a running game drops everything since the last save, so it asks
+   * first; from the title or its screens it just restarts the title. */
+  function backToTitleAsked() {
+    if (!runtime) return;
+    if (!cancelBootTitle && view
+        && !window.confirm('Leave the running game for the title card? Progress since your last save is lost.')) return;
+    bootNewGameTitle();
+  }
+  for (const id of ['play-back-to-title', 'play-title-bar']) {
+    document.getElementById(id).addEventListener('click', backToTitleAsked);
+  }
 
   /* The dock: each button opens its panel and closes the others; a second
    * press closes it. The Scene picker also shows the stage, so the list can
@@ -1578,6 +1648,7 @@ div.play-vis-head { cursor: default; }
       statusEl.textContent = `Disc loaded (${count} PROT entries). Starting a New Game.`;
       modesEl.style.display = 'flex';
       document.getElementById('play-back-to-title').disabled = false;
+      document.getElementById('play-title-bar').disabled = false;
       window.__playRuntime = runtime;
       if (typeof window.__playListHotkeys === 'function') window.__playListHotkeys(runtime);
       if (typeof window.__playApplyDevMenu === 'function') window.__playApplyDevMenu();
@@ -2256,6 +2327,7 @@ div.play-vis-head { cursor: default; }
      * buttons under the canvas. Both queue for the next frame. */
     const rulesTaps = [];
     const wrapEl = menuCanvas.parentElement;
+    wrapEl.classList.add('pad-band');
     const onRulesTap = (e) => {
       if (handoff !== 'rules') return;
       const t = e.target;
@@ -2276,8 +2348,8 @@ div.play-vis-head { cursor: default; }
         return;
       }
       if (rulesButtons) {
-        /* The on-screen pad covers the canvas's foot, where the key hint
-         * is drawn: while it is shown, the bar carries the touch hint. */
+        /* The canvas's key hint names keyboard keys: while the on-screen
+         * pad is shown, the bar carries the touch hint as well. */
         const pad = wrapEl.querySelector('.touch-pad');
         rulesButtons.classList.toggle('with-touch-hint', !!pad && !pad.classList.contains('is-hidden'));
         return;
@@ -2306,6 +2378,7 @@ div.play-vis-head { cursor: default; }
       bootTitleRAF = 0;
       syncSeedBox(false);
       syncRulesButtons(false);
+      wrapEl.classList.remove('pad-band');
       wrapEl.removeEventListener('pointerdown', onRulesTap);
       window.removeEventListener('keydown', onKey);
       ctx.clearRect(0, 0, menuCanvas.width, menuCanvas.height);
@@ -3536,8 +3609,19 @@ div.play-vis-head { cursor: default; }
     applyVolume();
   });
   window.__playApplyVolume = applyVolume;
+  /* One mute on this page: the Sound button and the engine's stored master
+   * mute (`F2`, `OptionsState::muted`) hold the same state, the button's
+   * winning when a runtime comes up. Without it `F2` muted the game with
+   * nothing on the page saying so, across reloads too. */
+  function syncEngineMute() {
+    const rt = window.__playRuntime;
+    if (!window.LegaiaSound || !rt || typeof rt.set_audio_muted !== 'function') return;
+    try { rt.set_audio_muted(!window.LegaiaSound.isSoundOn()); } catch (e) {}
+  }
+  window.__playSyncEngineMute = syncEngineMute;
   if (window.LegaiaSound) {
     window.LegaiaSound.onChange(applyVolume);
+    window.LegaiaSound.onChange(syncEngineMute);
     /* The toggle button itself, beside the volume control, so the gate has a
      * control on this page and not only on the pages that mount their own. */
     const volLabel = volEl.closest('label');
@@ -3958,6 +4042,7 @@ div.play-vis-head { cursor: default; }
     syncRenderToggles();
     syncGroundFog();
     syncPreciseMove();
+    if (window.__playSyncEngineMute) window.__playSyncEngineMute();
     syncAudioOptions();
     syncCameraDistance();
     syncPageToggles();
@@ -4550,7 +4635,15 @@ div.play-vis-head { cursor: default; }
   });
   window.__playHotkeyActions = {
     diag_rows: () => { if (hudEl) hudEl.style.display = hudEl.style.display === 'none' ? '' : 'none'; },
-    audio_mute: () => {},
+    /* `F2` flipped the engine's stored mute; the Sound button beside the
+     * volume slider shows it (its change handler writes the same state
+     * back, a no-op here). */
+    audio_mute: () => {
+      const rt = window.__playRuntime;
+      if (window.LegaiaSound && rt && typeof rt.audio_muted === 'function') {
+        try { window.LegaiaSound.setSoundOn(!rt.audio_muted()); } catch (e) {}
+      }
+    },
     occlusion_fade: () => { syncRenderToggles(); applySeeThrough(); },
     cheat_max_ap: () => document.getElementById('play-cheat-max-ap').click(),
     cheat_encounters: () => cheatNoEncEl.click(),

@@ -73,6 +73,14 @@ pub const OPENING_FRAME_STEP: u16 = 3;
 /// Bottom of the clip window never passes this line (`slti v0,a3,0xe9`).
 pub const CLIP_BOTTOM_MAX: i32 = 0xE8;
 
+/// Rows the field's draw offset puts between a primitive's coordinates and
+/// the buffer's (`(0, 4)` / `(0, 244)`, the display window starting on the
+/// offset row): the roller's glyph sprites go through it, its `DR_AREA`
+/// rows are absolute (`top + 4 + 240 * buffer`, `0x80037660..0x80037698`),
+/// so on screen the clip window sits this many rows above the window the
+/// roller computes.
+pub const CLIP_DRAW_OFFSET: i32 = 4;
+
 /// Slot state: empty (`0xFF`).
 const SLOT_EMPTY: u8 = 0xFF;
 /// Slot state: a page with no text - consumes a page, draws nothing (`0xFE`).
@@ -290,6 +298,16 @@ impl CutsceneNarration {
         self.seed.clip_window()
     }
 
+    /// [`Self::clip_window`] in the stage the glyphs draw in: the roller's
+    /// `DR_AREA` skips the draw offset its sprites take
+    /// ([`CLIP_DRAW_OFFSET`]), so the window shows `top..bottom - 4` of the
+    /// display. A retail display-crop of `opdeene`'s first crawl holds its
+    /// text on rows `64..=187` under the scene reset's seed.
+    pub fn stage_clip_window(&self) -> (i32, i32) {
+        let (top, bottom) = self.clip_window();
+        (top - CLIP_DRAW_OFFSET, bottom - CLIP_DRAW_OFFSET)
+    }
+
     /// `true` while the pause bit is set.
     pub fn is_paused(&self) -> bool {
         self.paused
@@ -337,11 +355,10 @@ impl CutsceneNarration {
         out
     }
 
-    /// The lines on screen, top first, each with its PSX-space Y. Only lines
-    /// whose whole 16-pixel row lies inside [`Self::clip_window`] are
-    /// returned, because neither host scissors the text: retail's window
-    /// shows the rows at its two edges partially, which a host with a scissor
-    /// can reproduce from [`Self::all_lines`].
+    /// The lines whose whole 16-pixel row lies inside [`Self::clip_window`],
+    /// top first, each with its PSX-space Y. Retail's window shows the rows
+    /// at its two edges partially: the hosts draw [`Self::all_lines`] cut to
+    /// the window (`engine-screens::field_screens::cutscene_narration_stage_draws`).
     pub fn visible_lines(&self) -> Vec<NarrationLine<'_>> {
         let (top, bottom) = self.clip_window();
         self.slot_lines()

@@ -77,6 +77,7 @@ impl PondSession {
             line_fish_prev: None,
             creak_timer: 0,
             rod_creaks: 0,
+            reel_voice: Vec::new(),
             spent_lures: Vec::new(),
         }
     }
@@ -147,6 +148,20 @@ impl PondSession {
     #[doc(hidden)]
     pub fn seat_repeat_countdown(&mut self, countdown: i32) {
         self.reel_repeat_in = countdown;
+    }
+
+    /// Seat the band check's hold countdown (`DAT_801D90EC`), the strike
+    /// credit's base, as a harness standing a waiting line at a strike does.
+    #[doc(hidden)]
+    pub fn seat_band_countdown(&mut self, countdown: i32) {
+        self.band.countdown = countdown;
+    }
+
+    /// Seat the band check's live cast band (`DAT_801D90E8`), as a harness
+    /// standing a waiting line on a band a cadence matched does.
+    #[doc(hidden)]
+    pub fn seat_band(&mut self, band: u32) {
+        self.band.band = band;
     }
 
     /// Seat the session on the line-break screen (state `0x28`) with its
@@ -362,6 +377,13 @@ impl PondSession {
         std::mem::take(&mut self.rod_creaks)
     }
 
+    /// The reel whirr's key-ons (`true`) and key-offs (`false`) since the
+    /// last call, in retail's call order
+    /// ([`crate::fishing_actors::LureActor::pull_step`]).
+    pub fn take_reel_voice(&mut self) -> Vec<bool> {
+        std::mem::take(&mut self.reel_voice)
+    }
+
     /// Lure item ids the line breaks consumed since the last call - one
     /// `lure + 0x9D` per break (`FUN_80042310(_DAT_80084450 + 0x9D, 1)` at
     /// `0x801D3C14..0x801D3C24`). The session holds no bag, so a host debits
@@ -426,6 +448,9 @@ impl PondSession {
             self.catch_banner = 1;
             self.events.push(PondEvent::Landed(award));
             self.phase = PondPhase::Landed;
+            // The reel-in arm keys the whirr off (`0x801D3C98`), leaving
+            // the voice word as it was.
+            self.reel_voice.push(false);
             // So does the reel-in arm (`0x801D3CB4`).
             if let Some(rod) = self.rod_actor.as_mut() {
                 rod.recover();
@@ -476,6 +501,8 @@ impl PondSession {
     ///
     /// PORT: FUN_801d26cc (the line-break arm, `0x801D3C0C..0x801D3C64`)
     fn break_line(&mut self) {
+        // The whirr's key-off (`0x801D3C0C`), the voice word left as it was.
+        self.reel_voice.push(false);
         self.events.push(PondEvent::Snapped);
         self.phase = PondPhase::Snapped;
         self.break_banner = 1;
@@ -848,7 +875,13 @@ impl PondSession {
                     _ => Default::default(),
                 };
                 if let Some(lure) = self.lure_actor.as_mut() {
-                    lure.pull_step(reel_edge, fs);
+                    let v = lure.pull_step(reel_edge, input.reel_mask, fs);
+                    if v.key_on {
+                        self.reel_voice.push(true);
+                    }
+                    if v.key_off {
+                        self.reel_voice.push(false);
+                    }
                     lure.sink_step(self.line_record, self.lure, fs);
                 }
                 let struck = self.band.tick(
@@ -936,7 +969,13 @@ impl PondSession {
                     self.lure_probe.drift = lure.drift(&venue.map, self.casts, fs);
                 }
                 if let Some(lure) = self.lure_actor.as_mut() {
-                    lure.pull_step(reel_edge, fs);
+                    let v = lure.pull_step(reel_edge, input.reel_mask, fs);
+                    if v.key_on {
+                        self.reel_voice.push(true);
+                    }
+                    if v.key_off {
+                        self.reel_voice.push(false);
+                    }
                     lure.sink_step(self.line_record, self.lure, fs);
                 }
                 // The band segment runs on a hooked frame too: the hooked
@@ -1097,7 +1136,12 @@ impl PondSession {
 
     /// Back to the cast loop (state `10`): the working set of the cast goes,
     /// and the hosts hear [`PondEvent::Recast`].
+    ///
+    /// The shore arm also releases the reel's whirr, whatever the voice
+    /// word says (`FUN_800653C8(0x13)` at `0x801CF830`), so a reel still
+    /// sounding when the cast is given up stops with it.
     fn return_to_shore(&mut self) {
+        self.reel_voice.push(false);
         self.fight_species = None;
         self.line_record = 0;
         self.depth = 0;

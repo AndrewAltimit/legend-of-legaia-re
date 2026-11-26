@@ -234,7 +234,7 @@ pub fn dialog_picker_label_draws_for(
 
 /// Crop a 1:1 glyph quad to the stage rows `top..bottom` (exclusive end),
 /// moving the atlas window with it. `None` when nothing is left.
-fn crop_rows(d: TextDraw, top: i32, bottom: i32) -> Option<TextDraw> {
+pub fn crop_rows(d: TextDraw, top: i32, bottom: i32) -> Option<TextDraw> {
     let (x, y, w, h) = d.dst;
     let y0 = y.max(top);
     let y1 = (y + h as i32).min(bottom);

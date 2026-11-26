@@ -412,7 +412,10 @@ fn site_arm(image: &[u8], site: usize) -> Option<u8> {
 /// PROT 0923 arm 2 drains its countdown `0x801FA4F8` (`bgtz a1,0x801F8B5C` at
 /// `0x801F6CAC`) before it polls (`0x801F6CB4`) and calls `0x16E`. Such a call
 /// lands on the pass the arm's hold lets through; a call that follows only the
-/// poll (Orb's PROT 0911 arm 2) lands once the drive is idle.
+/// poll (Orb's PROT 0911 arm 2) lands once the drive is idle. The gate can
+/// also follow the poll, as Mule's PROT 0929 arm 2 tests its band word after
+/// `FUN_8003F2B8(1)`, or leave on a `j` to the busy return, as Iota's PROT
+/// 0921 arm 2 drains its countdown.
 pub fn head_cue_waits_arm_gate(image: &[u8], body_va: Option<u32>) -> bool {
     let Some((_, site)) = head_cue_site(image, body_va) else {
         return false;
@@ -436,9 +439,26 @@ pub fn head_cue_waits_arm_gate(image: &[u8], body_va: Option<u32>) -> bool {
     else {
         return false;
     };
-    let Some(busy) = (poll + 1..(poll + 4).min(site)).find_map(target) else {
+    let Some((busy_at, busy)) =
+        (poll + 1..(poll + 4).min(site)).find_map(|i| target(i).map(|t| (i, t)))
+    else {
         return false;
     };
+    // A gate's exit can land one word ahead of the busy return, on a copy of
+    // the poll branch's delay slot that falls into it: Puera's PROT 0922
+    // (`bgtz a0,0x801F90B0`) and Slippery's PROT 0920 (`j 0x801F7B54`), whose
+    // polls return busy through `bne v0,zero,<+1>` with that word in the slot.
+    let lands_busy = |t: usize| {
+        t == busy
+            || (t + 1 == busy && words.get(t).is_some() && words.get(t) == words.get(busy_at + 1))
+    };
+    // A gate between the poll and the call: Mule's PROT 0929 arm 2 polls
+    // (`0x801F6E14`), then returns busy again while its band word reads
+    // non-zero (`lh v0,0x6d8(s3)` / `bne v0,zero,0x801F8B0C` at
+    // `0x801F6E24..0x801F6E2C`) before it calls `0x170`.
+    if (busy_at + 1..site).any(|i| target(i).is_some_and(lands_busy)) {
+        return true;
+    }
     // Back from the poll to the arm's head: the previous arm's closing jump
     // (`j` / `jr`) bounds it. The dispatch walk can read an arm-internal skip
     // (Gilium's `blez v1,0x801F6CB4` past its countdown) as the body's start.
@@ -447,13 +467,39 @@ pub fn head_cue_waits_arm_gate(image: &[u8], body_va: Option<u32>) -> bool {
             .get(i)
             .is_some_and(|&w| w >> 26 == 0x02 || (w >> 26 == 0 && w & 0x3F == 0x08))
     };
+    // A countdown arm can also leave on a `j` to the busy return, with a
+    // branch over it to the poll: Iota's PROT 0921 arm 2 drains `0x801F8CB0`
+    // (`blez a2,0x801F6D60` / `j 0x801F7FD8` at `0x801F6D1C..0x801F6D58`)
+    // before it polls (`0x801F6D60`) and calls `0x16C`.
+    let base = legaia_overlay_images::slot_b_module::SLOT_B_LINK_BASE;
+    let jumps_to_busy = |i: usize| {
+        words.get(i).is_some_and(|&w| {
+            w >> 26 == 0x02 && {
+                let va = (base & 0xF000_0000) | ((w & 0x03FF_FFFF) << 2);
+                va.checked_sub(base)
+                    .is_some_and(|d| lands_busy((d / 4) as usize))
+            }
+        })
+    };
+    // The `j` counts only with that branch over it to the poll ahead of it in
+    // the same arm: the arms' shared busy return is also where a previous
+    // arm's closing jump can land.
+    let mut busy_jump = false;
     let mut i = poll;
     while i > poll.saturating_sub(DISPATCH_WALK_LIMIT) && i > 0 {
         i -= 1;
+        if jumps_to_busy(i) {
+            busy_jump = true;
+            continue;
+        }
         if jump(i) {
             break;
         }
-        if target(i) == Some(busy) {
+        // Past such a `j` only the branch to the poll counts: a branch to
+        // the busy return there is the previous arm's own (Theeder's PROT
+        // 0904 arm 2 tests its band word ahead of arm 3's poll).
+        let gated = target(i).is_some_and(|t| if busy_jump { t == poll } else { lands_busy(t) });
+        if gated {
             return true;
         }
     }

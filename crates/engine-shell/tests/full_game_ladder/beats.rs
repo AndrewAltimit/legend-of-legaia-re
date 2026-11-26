@@ -1601,6 +1601,13 @@ pub(super) fn touch_prop(session: &mut NativeSession, anchor: (u8, u8), at: (i32
     let mut pad_reached = false;
     let mut far = false;
     let mut whys: Vec<String> = Vec::new();
+    // A side walk that a script on the way carried off refuses the
+    // placement, unless some side was only far
+    // ([`unwalkable_placement_refused`]): `balden`'s lift at (97, 9)
+    // carries a walker on its own side to (29, 16), and the one side that
+    // does not, (96, 9), is walled off.
+    // Whether a script on the way carried some seat's walk off.
+    let mut carried = false;
     for ((dx, dz), try_pad) in attempts {
         let (sx, sz) = (tx + dx, tz + dz);
         if !(0..128).contains(&sx) || !(0..128).contains(&sz) {
@@ -1609,10 +1616,27 @@ pub(super) fn touch_prop(session: &mut NativeSession, anchor: (u8, u8), at: (i32
         if !try_pad && pad_hand() && (pad_reached || shortcuts_refused() || !walking(session)) {
             break;
         }
-        if try_pad && !prop_seat_in_walk_reach(session, (sx, sz)) {
-            far = true;
-            whys.push(format!("{:?} far", (sx, sz)));
-            continue;
+        if !try_pad && pad_hand() && carried && !far && unwalkable_placement_refused() {
+            refuse_placement(format_args!(
+                "touch in {} for {anchor:?}: {}",
+                scene_name(session),
+                whys.join("; ")
+            ));
+            break;
+        }
+        if try_pad {
+            match prop_seat_reach(session, (sx, sz)) {
+                SeatReach::Walk => {}
+                SeatReach::Far => {
+                    far = true;
+                    whys.push(format!("{:?} far", (sx, sz)));
+                    continue;
+                }
+                SeatReach::Unreachable => {
+                    whys.push(format!("{:?} unreachable", (sx, sz)));
+                    continue;
+                }
+            }
         }
         session.host_pad(0);
         let by_pad = try_pad
@@ -1621,6 +1645,7 @@ pub(super) fn touch_prop(session: &mut NativeSession, anchor: (u8, u8), at: (i32
                 Ok(Walk::Arrived) => walking(session),
                 Err(e) if e.contains("party wiped") => return Run::Battle(e),
                 Err(e) => {
+                    carried |= walk_carried_off(&e);
                     whys.push(format!(
                         "{:?} {}",
                         (sx, sz),

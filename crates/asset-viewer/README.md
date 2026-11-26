@@ -126,9 +126,13 @@ Keys (the same in the `tmd` and `stage` directory walks): `N` / `P` or the
 arrows step, `PgDn` / `PgUp` step 10, `Home` / `End` go to the first and last
 item, and digits followed by `Enter` jump straight to a number (`goto`): a
 PROT index here, the 1-based position the title shows in a directory walk.
-The window title is the only text these views draw, so it carries the key
-list and, while a number is typed, the number; an out-of-range number says
-the valid range there. `Esc` cancels a typed number, and otherwise quits.
+The keys are drawn in the window, over the preview, at start and on `H` or
+`F1` (any key closes them), with the entry's full name, which the title bar
+cuts short; the font is the dialog font of the first extracted tree at or
+above a path the viewer was given, or `extracted/` in the working directory.
+With no font found the title carries the key list instead. While a number is
+typed the title shows it; an out-of-range number says the valid range there.
+`Esc` cancels a typed number, and otherwise quits.
 
 A `scene_tmd_stream` entry is previewed the way retail *places* it rather than
 drawn raw: object 1 dropped, and a second copy under the stage's transform

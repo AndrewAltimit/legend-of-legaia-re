@@ -681,7 +681,7 @@ The other three bits are Rot's limb bits, one latch each at `+0x221 + n`: they b
 
 The two Gala tint-only arms are open-ended: `slti v0,v0,0x20` / `0x40` at `0x8004D14C` / `0x8004D168` gate the start and nothing gates the end. Noa's arm needs a fired strike (acting `+0x1F4 != 0`), an ordinary fight (`ctx[+0x287] == 0`), an even `rand()` (`0x8004D0EC`) and a first monster other than `0xA7` (the byte read is `gp+0x9F4` = `0x8007BD0C`). It has no latch, so it rolls on every battle frame the clip cursor sits in `[384, 704)`: from the first strike keyframe to the end of the 44-keyframe stream, which both art entries always reach because their `+0x76` is `1` ([glitches/status-and-damage.md](../reference/glitches/status-and-damage.md#the-roll-count)). The pass spans `0x8004D01C..0x8004D32C`.
 
-The tag-`0x67` ribbon call is surfaced as `ClipImpactWrite::effect_at_target`, staged on `World::battle.clip_ribbon` and drawn on both hosts by `render-kernels::streak_pass::clip_ribbon_quads`.
+The tag-`0x67` ribbon call (Heaven's Drop) is surfaced as `ClipImpactWrite::effect_at_target`, staged on `World::battle.clip_ribbon`, dealt once a pass on the game's stream by `World::deal_clip_ribbon` and drawn as built on both hosts.
 
 ## Runtime residency windows
 

@@ -2095,10 +2095,13 @@ the sweep, so the band holds `0x36` until the phase has run its turn. Retail's p
 follow its frame step: a Mednafen frame-stepped recording of `theeder_summon_mid_cast`
 runs arm 11 at steps 2 then 1, arm 12 at step 2 (the word `0x80` a pass, tested from
 `0x80`) and arm 13 at step 3, and strikes seat 3 (dead ahead) on arm 12's first test,
-seat 5 at `0x280` and seat 4 at `0x980` (vsyncs `+0 / +8 / +36`). The engine runs both
-arms on its table's step 4 and tests on `0x40 + 0x100 * k`, which lands the same hits on
-the same gaps (`0x40 / 0x240 / 0x940`, a vsync earlier); testing on `0x100 * k` struck seat
-5 first and seat 3 at the `0x800` crossing, eight passes late. Arm 13 retracts one a pass,
+seat 5 at `0x280` and seat 4 at `0x980` (vsyncs `+0 / +8 / +36`). A pass ramps the
+word by `step * 0x40` (`scalar * delta << 3` at `0x801F7AC8..0x801F7AF0`) and tests the
+ramped word, so the port tests on the ticks that close a pass at the step its clock runs the
+arm at (`World::module_frame_step`): `0x100 * k` on the arm table's step 4, the console's
+clock that the PCSX-Redux film `s82` scores (its five cues on retail's ticks), and `0x80 * k`
+under a Mednafen step track. A phase fitted to the Mednafen vsync gaps on the step-4 clock
+(`0x40 + 0x100 * k`) moved `s82`'s arm-12 and arm-13 cues 28 ticks early. Arm 13 retracts one a pass,
 so on retail's step 3 the trail empties in 45 vsyncs where the engine's step 4 takes 60.
 A hit in
 the sweep arm stages the victim's knockdown id `+0x1F1` when its get-up id
@@ -2567,16 +2570,37 @@ and the streaks whose chain length sits on a segment's edge drew a segment fewer
 more; with it the anchors match the recording's unit for unit, the cast's `rand()`
 stream holds retail's words through arm 13, and arm 12 reads `.756` against `.672`.
 
+**A streak is drawn as its call built it.** With the stream seated, the frame's draws
+fall in retail's order: counted in LCG steps between the seed word's per-vsync samples,
+the frame driver's discard and the sixteen calls come first (`253`), then two words, then
+the burning bodies' twelve, on both sides; and a `--ribbon-trace` recording's seed for every
+call matches the engine's deal, the three anchors whose top edge spans more than `0x40`
+(`0x801E1E5C`) drawing nothing on both. The bolts still differed, because the hosts
+re-ran each call on the drawn frame's camera and the point as it stood at the draw, a
+few units off the pass's: every jitter draw is taken modulo a span read off the
+projected box (`rand() % (w / 2 + 1)`, `0x801E1EA0`), so the same words drew other
+bolts. The deal now keeps the packets each call built
+(`BattleState::cast_ribbon_quads`, `flight_ribbon_quads`) and the hosts draw those, as
+retail's frame shows the packets the call linked. Arm 12 reads `.881` against `.755`
+on `--rand-track` and the film `.964` against `.935`; the same draw serves every module
+ring and a landed bolt's ribbons. Grade `capture`.
+
 **Arm 12's ground ring is retail's part for part.** The ring `0x801F7FE0` and the column
 `0x801F8094` turn from red `0xCB0000FF` to green `0xCB00FF00` on their own programs, and a
 `--retail-parts` recording holds the same radius, height and level channels on both sides
 (inner `1024`, outer `2976`, heights `-512` / `0`, level `3808` at the green's peak). A
 `--prim-calls` recording shows each drawn once a frame through the dispatcher with a
 `128`-packet object, the battle VRAM's texture page `0x8A` and CLUT row `490` match the
-engine's byte for byte, and both parts' model lists hold one slot. Retail's green floor
-still reads about twice the engine's ring over the frame's lower half (`G` `255` against
-`214..222`), and the engine's ring level runs a few ticks behind the pairing: what raises
-retail's green is open. Grade `capture`.
+engine's byte for byte, and both parts' model lists hold one slot. The recorded green floor
+is the PCSX-Redux instrument's arithmetic, not a second layer. A RAM image of an arm-12
+frame, its ordering table walked over the frame's VRAM, puts four layers on a floor pixel:
+the stage floor, the ring (`0x3E`, colour `(8, 246, 8)`, ABR `3`), and the stager's held
+additive fade (`0x2B`, `(0x73, 0x73, 0x9B)`, ABR `1`) over them. The recorded pixel is that sum
+with the ring's modulate unsaturated, `texel * 246 / 128` quartered (`G` `27` against `27`
+predicted, `31` where it saturates): that emulator clamps only the sum, where the console
+clamps the foreground first ([renderer](renderer.md#psx-mode-blends-at-the-gpus-5-bit-precision)).
+With the instrument blending the raw modulate, arm 12 reads `.978` against `.881` and the
+`0x87` film `.986` against `.964` on `--rand-track`. Grade `capture`.
 
 ### PROT 0910 (Swordie)
 
@@ -4027,6 +4051,14 @@ with him. Seated where the fight left him, arm `0xB`'s burst stood a hundred uni
 retail's in the frame, and the `0x9C` film's arm `0xB` read `.893` on every seat; re-seated
 it reads `.998` on `--retail-steps --rand-track` (`World::seat_party_for_horn`,
 `ModuleCamState::caster_saved`). Grade `disassembly` + `capture`.
+Horn's heal arm `0xA` cures as well as it heals: the loop over every seat below `ctx[+0]`
+stores `+0x14C += max - hp`, then clears the status word (`sh zero,0x16e` at
+`0x801F7ACC`) whatever it held, first reloading the seat's palette row and raising its
+limb bytes `+0x220..+0x223` for a Stone or Rot bit (`andi 0x3C` at `0x801F7A50`).
+The port cleared nothing, so a Venomed or Stoned member kept the ailment through the
+summon; it now clears each seat's status list on the arm's pass
+(`World::horn_cures_the_party`), and the summon walk compares it. Grade `disassembly`
++ differential.
 Mushura's arms 0 and 1 show the latched victim the band's freeze hid
 (`World::apply_mushura_writes`). Horn's seat visibility is carried
 (`World::apply_horn_writes`): arm 1 shows

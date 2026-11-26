@@ -829,6 +829,88 @@ pub const ENTRY_WORD_COLD_BOOT: u32 = 1;
 /// so the `0x11` arm holds, but the asset stream is skipped.
 pub const ENTRY_WORD_FROM_ATTRACT: u32 = 2;
 
+/// Vsyncs the New Game's field MAIN INIT holds the black screen in game mode
+/// `0x02`: `FUN_80025B64` streams the field overlay (`FUN_8003EBE4(2)`) and
+/// `FUN_801D6704` loads `opdeene`'s block, its BGM and its pack behind the
+/// init's floor. A per-vsync PCSX-Redux film of a New Game confirmed on
+/// `title_attract` reads mode `0x02` from vsync `132` to `511` and mode `3`
+/// at `512`. The New Game is the one entry that reads the overlay and the
+/// opening scene together, so it holds longer than a door
+/// ([`DOOR_FIELD_INIT_HOLD_RELOAD_VSYNCS`]).
+pub const NEW_GAME_FIELD_INIT_HOLD_VSYNCS: u16 = 380;
+
+/// The New Game's field MAIN INIT hold, in the retail-faithful mode only
+/// (`skip_load_holds` off): the port's loads are instant otherwise.
+pub fn new_game_field_init_hold_vsyncs(skip_load_holds: bool) -> u16 {
+    if skip_load_holds {
+        0
+    } else {
+        NEW_GAME_FIELD_INIT_HOLD_VSYNCS
+    }
+}
+
+/// The title tick's `LaunchFade` sub-mode (`0x16`) on the NEW GAME route,
+/// and the `LaunchGame` frame (`0x06`) after it: the black between the
+/// title's confirm and the field's MAIN INIT.
+///
+/// Each frame the arm adds the frame step to its wait (`state - 0xEFC`), and
+/// a newly pressed face button or L1 / L2 (`_DAT_8007B874 & 0xF5`) while the
+/// wait is under `0x5A` adds `0x5A`, so a press skips it. Once the wait reaches
+/// `0x5B` a ramp (`state - 0xEAC`) climbs by the step shifted left 8 (it
+/// also sets the title BGM's volume); at `0x1200` the arm moves to
+/// `LaunchGame`, which writes master mode `2` on the next frame. Every frame
+/// pushes a white wash on the subtractive equation (`FUN_80024EE4(1, 2,
+/// 0xFFFFFF)`), so the screen is black throughout. Unpressed that is 108
+/// frames (90 of wait, then 18 of ramp, the first on the wait's 91st) and
+/// the `LaunchGame` frame. The title film above presses Cross on vsync 20,
+/// is black by 24 and reads mode `2` at `132`: the menu's confirm frame and
+/// the pad's latency make up the rest.
+///
+/// PORT: FUN_801DD35C (LaunchFade arm `0x801DF8D0..0x801DFA90`, LaunchGame `0x801DFB5C..0x801DFC04`)
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct LaunchFade {
+    /// The wait, `state - 0xEFC`.
+    pub wait: i32,
+    /// The ramp, `state - 0xEAC`.
+    pub ramp: i32,
+    /// `LaunchFade` has handed over: the next frame is `LaunchGame`'s.
+    pub launching: bool,
+}
+
+/// The pad bits that skip [`LaunchFade`]'s wait, in retail's byte-swapped
+/// word (`_DAT_8007B874`): square, cross, circle, triangle, L1, L2.
+pub const LAUNCH_FADE_SKIP_MASK: u16 = 0xF5;
+
+/// [`LaunchFade`]'s wait ceiling the skip tests (`slti 0x5A`) and adds.
+pub const LAUNCH_FADE_WAIT: i32 = 0x5A;
+
+/// [`LaunchFade`]'s ramp ceiling (`0x1200`).
+pub const LAUNCH_FADE_RAMP_END: i32 = 0x1200;
+
+impl LaunchFade {
+    /// One frame of the arm, `frame_step` vsyncs long, with `edge` the
+    /// frame's newly pressed retail pad word. `true` on the `LaunchGame`
+    /// frame, after which master mode `2` begins.
+    pub fn step(&mut self, frame_step: u8, edge: u16) -> bool {
+        if self.launching {
+            return true;
+        }
+        let step = i32::from(frame_step);
+        self.wait += step;
+        if edge & LAUNCH_FADE_SKIP_MASK != 0 && self.wait < LAUNCH_FADE_WAIT {
+            self.wait += LAUNCH_FADE_WAIT;
+        }
+        if self.wait > LAUNCH_FADE_WAIT {
+            self.ramp += step << 8;
+        }
+        if self.ramp >= LAUNCH_FADE_RAMP_END {
+            self.ramp = LAUNCH_FADE_RAMP_END;
+            self.launching = true;
+        }
+        false
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1016,5 +1098,41 @@ mod tests {
             *FIELD_INIT_STEPS.last().unwrap(),
             FieldInitStep::EnterFieldLoop
         );
+    }
+
+    #[test]
+    fn launch_fade_runs_its_wait_its_ramp_and_the_launch_frame() {
+        let mut f = LaunchFade::default();
+        let mut frames = 0;
+        while !f.step(1, 0) {
+            frames += 1;
+            assert!(frames < 1000);
+        }
+        // 90 wait frames, 18 ramp frames (the wait's 91st is the first),
+        // then the LaunchGame frame.
+        assert_eq!(frames + 1, 109);
+    }
+
+    #[test]
+    fn a_press_skips_the_launch_fade_wait() {
+        let mut f = LaunchFade::default();
+        f.step(1, 0);
+        // Cross in the byte-swapped word.
+        f.step(1, 0x40);
+        let mut frames = 2;
+        while !f.step(1, 0) {
+            frames += 1;
+        }
+        assert!(frames < 30, "the wait is skipped ({frames})");
+        // A direction does not skip.
+        let mut g = LaunchFade::default();
+        g.step(1, 0x1000);
+        assert!(g.wait < LAUNCH_FADE_WAIT);
+    }
+
+    #[test]
+    fn the_new_game_main_init_holds_only_in_the_faithful_mode() {
+        assert_eq!(new_game_field_init_hold_vsyncs(true), 0);
+        assert_eq!(new_game_field_init_hold_vsyncs(false), 380);
     }
 }

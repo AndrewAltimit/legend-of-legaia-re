@@ -900,6 +900,8 @@ impl LegaiaMinigames {
             })),
             "seat_retired": [f.seat_retired(0), f.seat_retired(1)],
             "clear_fade": f.cabinet_frame().clear_fade,
+            // The exit state's fade to black (`FUN_80024EE4(0, 2, ..)`).
+            "exit_fade": f.cabinet_frame().exit_fade,
             // The round chrome's full-screen additive tint (the title card's
             // red flash and its fade-in, `FUN_80024EE4(1, 1, colour)`), as
             // `[r, g, b]` - the quad the play hosts draw through

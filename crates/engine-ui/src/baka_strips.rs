@@ -226,6 +226,18 @@ pub fn baka_clear_fade(level: u8) -> legaia_render_kernels::screen_prim::ScreenP
     )
 }
 
+/// The exit state's full-screen quad: `FUN_80024EE4(0, 2, level *
+/// 0x010101)`, [`baka_clear_fade`]'s quad on ordering-table layer `0`.
+///
+/// REF: FUN_801CF388 (`0x801D1F38..0x801D1F70`), FUN_80024EE4
+pub fn baka_exit_fade(level: u8) -> legaia_render_kernels::screen_prim::ScreenPrim {
+    let mut prim = baka_clear_fade(level);
+    if let legaia_render_kernels::screen_prim::ScreenPrim::Flat(q) = &mut prim {
+        q.ot_index = 0;
+    }
+    prim
+}
+
 /// The ordering-table layer the chrome's full-screen tint links at: the
 /// first argument of the title card's `FUN_80024EE4(1, 1, colour)` calls
 /// (`0x801D5AC4`, `0x801D5BCC`), in front of the HUD renderer's and the

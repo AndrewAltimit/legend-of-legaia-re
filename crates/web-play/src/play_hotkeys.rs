@@ -199,4 +199,17 @@ mod tests {
         assert!(view.contains("play_host_hotkey_refusal"));
         assert!(page.contains("host_hotkeys_json"));
     }
+
+    /// `F2` is a page control too: the mute shows on the Sound button, and
+    /// the button writes the stored mute back. An empty `audio_mute` action
+    /// left a muted game with nothing on the page saying so.
+    #[test]
+    fn the_mute_key_shows_on_the_sound_button() {
+        let page = include_str!("../../../site/_content/play.html");
+        let action = &page[page.find("audio_mute: () =>").unwrap()..];
+        let action = &action[..action.find("\n    },").unwrap()];
+        assert!(action.contains("setSoundOn"), "{action}");
+        assert!(action.contains("audio_muted()"), "{action}");
+        assert!(page.contains("rt.set_audio_muted("));
+    }
 }

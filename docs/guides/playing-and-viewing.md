@@ -535,7 +535,10 @@ on any device, and the choice is remembered. Its presses reach the game as a
 controller's do, so every screen that takes a pad takes it; a drag on the
 picture outside the buttons still turns the camera. On a phone held upright
 the pad sits under the picture rather than over it, so the HUD and the scene
-stay clear; turned sideways or in fullscreen it is back over the picture.
+stay clear; turned sideways or in fullscreen it is back over the picture. The
+title and the screens it opens (the New Game rules, Continue, Options) keep it
+under the picture, or in fullscreen beside it on a wide screen, so their tabs,
+help line and key hint stay readable.
 
 **Camera.** Left-mouse drag orbits the camera around your character
 (horizontal) and tilts it (vertical), the wheel zooms in and out, and a
@@ -1245,12 +1248,13 @@ tower's entrance) the reload waits, saying so once, and goes in by itself when
 you are back on the map, so a cutscene always plays to its end.
 
 **In the browser**, the sample pack is built in: once the disc is up, the play page's
-*Sample Expansion Pack* boot mode loads it and opens the title screen, and
-the *Expansion pack* card lists it first with a *Play* button. The page fetches
+*Expansion pack* panel (its button is in the row above the picture) lists it
+first, and its *Enable* button loads it; *Back to title* then opens the title
+screen with it. The page fetches
 the pack tree the site serves (`packs/sample.json`, regenerated from
 `packs/sample/` on every site build) and the engine bundles it, so it is
 always the site's current version and is never copied into the browser's
-library. The same card loads any other `.lxpack`. While a pack is active, the
+library. The same panel loads any other `.lxpack`. While a pack is active, the
 Scenes list opens with a section under the pack's name listing its maps; a
 click walks straight onto one, as a retail scene's row does. The
 packs you install stay in the browser's pack library, listed with their cover,

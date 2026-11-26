@@ -674,16 +674,33 @@ pub(super) fn displayed_cam_live_steps(
                 ((g + fs * inc + inc / 2) / inc).clamp(fs + 1, 0x40)
             })
     };
+    // A component whose increment is set but whose gap reads `0` landed on
+    // the RAM's own pass: the magic band's framings re-arm the table every
+    // pass (`FUN_801DC0A0` case `0xA`, `0x801DC8F4` -> `0x801D829C` with
+    // `d = 6`), and a component armed already home gets increment `0`. It
+    // stood short of its endpoint on the displayed frame, so it walks back
+    // too ([`landed_first_pass`]). Only while some other component still
+    // walks: a turning shot's yaw lands inside every pass with the rest of
+    // the table idle, and the turn rule below walks it.
+    let landed_walks = (0x29..=0x2E).contains(&game_anchors::u8_at(ram, ctx + 7))
+        && (0..9u32)
+            .filter(|&k| k != 2)
+            .any(|k| rec(k).0 != 0 && gap(k) != 0);
     let mut back = [0i32; 9];
     for k in (0..9u32).filter(|&k| k != 2) {
         let (inc, _) = rec(k);
         let g = gap(k);
-        if passes == 0 || inc == 0 || g == 0 {
+        let landed = g == 0 && inc != 0 && landed_walks;
+        if passes == 0 || inc == 0 || (g == 0 && !landed) {
             continue;
         }
-        let dir = g.signum();
+        let dir = if landed { inc.signum() } else { g.signum() };
         // One pass back is the table's own increment...
-        let mut moved = fs * inc.abs();
+        let mut moved = if landed {
+            landed_first_pass(inc.abs(), fs, d)
+        } else {
+            fs * inc.abs()
+        };
         // ...and each pass before it the re-arm's share of the wider gap.
         // Once a pass back would carry the component past the endpoint the
         // earlier table chased, that pass ran on the earlier table: the
@@ -749,6 +766,23 @@ pub(super) fn displayed_cam_live_steps(
             live.focus[2] + back[8] as f32,
         ],
     }
+}
+
+/// How far a component that landed on the RAM's pass stood from its endpoint
+/// before that pass: the re-arm gave it `inc = ceil(gap / d)` and the pass's
+/// `step * inc` reached the endpoint, so the gap lay in
+/// `(inc - 1) * d + 1 ..= min(step * inc, inc * d)`. The table does not say
+/// where in that range; the walk takes its middle. Over the retail films'
+/// magic and strike bands every set increment on a zero gap had landed on
+/// that pass (`0` of `~290` stood landed a pass earlier), where the middle
+/// lands within a unit or two of the recorded pose and a zero walk `5` off
+/// two passes back (median). `battle_balden_devil_pump_multi_cutter_mid_cast`:
+/// pitch `64` on increment `1` stood at `59` on the displayed frame (its
+/// film's own recording).
+fn landed_first_pass(inc: i32, fs: i32, d: i32) -> i32 {
+    let lo = (inc - 1) * d + 1;
+    let hi = (fs * inc).min(inc * d);
+    if lo > hi { inc } else { (lo + hi) / 2 }
 }
 
 /// The pose the near-camera ghost pass read for the displayed frame: one pass

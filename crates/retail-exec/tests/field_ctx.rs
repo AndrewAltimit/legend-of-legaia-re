@@ -543,7 +543,9 @@ fn a_tile_warp_lands_on_the_context_it_names() {
     let gp = cpu.regs.r[GP];
     let clean = cpu.mem.clone();
     let mut rng = Rng(0x5741_5250);
-    let (mut own, mut other) = (0u32, 0u32);
+    let (mut own, mut other, mut player, mut refloored) = (0u32, 0u32, 0u32, 0u32);
+    // The floor sample op 23 stores under its gate: the empty World's floor.
+    cpu.hook(0x8001_9278, |r, _| r.r[2] = 0);
     let mut differ: BTreeMap<String, (u32, String)> = BTreeMap::new();
     for (script, pc, label) in corpus() {
         if label != "23" || (script[pc] & 0x80 != 0 && matches!(script[pc + 1], 0xF8 | 0xFB)) {
@@ -553,11 +555,25 @@ fn a_tile_warp_lands_on_the_context_it_names() {
         cpu.regs.r[GP] = gp;
         cpu.mem.load(SCRIPT, &script);
         cpu.mem.wr32(CTX + 0x94, SCRIPT);
+        let cross = script[pc] & 0x80 != 0;
+        // The player context now and then (`_DAT_8007C364`, the identity the
+        // arm compares at `0x801DEC7C`), and the per-scene MAN flag
+        // `_DAT_8007B6A8` that gates the floor sample.
+        let is_player = !cross && rng.below(3) == 0;
+        cpu.mem
+            .wr32(0x8007_C364, if is_player { CTX } else { 0x8012_8000 });
+        let scene_flag = rng.below(4) == 0;
+        cpu.mem.wr8(0x8007_B6A8, u8::from(scene_flag));
         let mut ctx = FieldCtx::default();
         for (name, off, width) in FIELDS {
             let mut v = rng.next();
             match name {
-                "flags" => v &= !0x0100_0400,
+                "flags" => {
+                    v &= !0x0100_0400;
+                    if is_player {
+                        v |= 0x0100_0000;
+                    }
+                }
                 "script_id" => v = rng.below(0x40),
                 _ => {}
             }
@@ -573,8 +589,9 @@ fn a_tile_warp_lands_on_the_context_it_names() {
             continue;
         }
         let mut w = legaia_engine_core::world::World::new();
-        w.field_vm.executing_channel = Some(0);
-        let cross = script[pc] & 0x80 != 0;
+        w.party.scene_save_allowed = scene_flag;
+        w.field_vm.executing_channel = (!is_player).then_some(0);
+        player += u32::from(is_player);
         if cross {
             let mut tctx = ctx.clone();
             tctx.script_id = u16::from(script[pc + 1]);
@@ -605,12 +622,15 @@ fn a_tile_warp_lands_on_the_context_it_names() {
         for (name, off, width) in FIELDS {
             let (mut r, mut p) = (rd(&mut cpu, off, width), port_field(&c, name));
             match name {
-                "world_y" | "script_id" => continue,
+                "script_id" => continue,
                 "flags" => {
                     r &= !2;
                     p &= !2;
                 }
                 _ => {}
+            }
+            if name == "world_y" && r == 0 && p == 0 {
+                refloored += 1;
             }
             if r != p {
                 wrong.push(format!("{name} retail {r:#x} port {p:#x}"));
@@ -631,7 +651,10 @@ fn a_tile_warp_lands_on_the_context_it_names() {
         .map(|(k, (n, ex))| format!("{k}: {n} e.g. {ex}"))
         .collect();
     assert!(report.is_empty(), "{}", report.join("\n"));
-    assert!(own > 100 && other > 500, "{own} {other}");
+    assert!(
+        own > 100 && other > 500 && player > 30 && refloored > 100,
+        "{own} {other} {player} {refloored}"
+    );
 }
 
 /// The answers a stubbed retail world gives the VM, read off the same RAM
@@ -1214,7 +1237,17 @@ fn an_attached_light_is_found_where_retail_finds_it() {
 /// The field VM's host globals the port's `FieldHost` hooks name one to one:
 /// `(address, width)`. A store the hook owns lands here on the port's side,
 /// as the hook's documentation spells it.
-const HOST_GLOBALS: [(u32, u8); 15] = [
+/// The host-globals pass's scene record (`*0x801C6EA4`) and player context
+/// (`*0x8007C364`).
+const HG_SCENE: u32 = 0x8013_0000;
+const HG_PLAYER: u32 = 0x8014_0000;
+/// The script-register table, `0x801C6460 + slot * 2`.
+const SLOT_TABLE: u32 = 0x801C_6460;
+
+const HOST_GLOBALS: [(u32, u8); 20] = [
+    (0x8007_3EF4, 4), // op 3F, the destination-entry X and Z words
+    (0x8007_3EF8, 4),
+    (0x8007_3EFC, 4), // op 3F, the arrival facing
     (0x8007_B910, 4), // op 4C 4D, the audio duck level (scaled by 0x8008457C)
     (0x8007_BCD0, 4), // ops 4C 4A..4C, the horizon gate's scale / step / layer
     (0x8007_BCD4, 4),
@@ -1227,9 +1260,11 @@ const HOST_GLOBALS: [(u32, u8); 15] = [
     (0x8007_B780, 2), // op 4C 8A, the field light's three angles
     (0x8007_B782, 2),
     (0x8007_B784, 2),
-    (0x8007_B788, 4), // op 4C 8A, the packed back colour
-    (0x8007_B854, 4), // ops 4C 30 / 31, the ambient-particle gate
-    (0x8007_BA66, 2), // op 4C ED, the dither word
+    (0x8007_B788, 4),     // op 4C 8A, the packed back colour
+    (0x8007_B854, 4),     // ops 4C 30 / 31, the ambient-particle gate
+    (0x8007_BA66, 2),     // op 4C ED, the dither word
+    (0x8007_BCAC, 4),     // op 4C 49, the camera-offset accumulator
+    (HG_SCENE + 0x4A, 2), // op 4C 49, the scene record's camera offset
 ];
 
 /// `Inert`, with the hooks whose whole effect is a store to a
@@ -1245,6 +1280,16 @@ struct Recording {
     /// Stores to words outside [`HOST_GLOBALS`] a hook names by an
     /// operand (op 43 07's rotation row): `address -> (width, value)`.
     rows: BTreeMap<u32, (u8, u32)>,
+    /// The scene names op `3F` handed the scene-change packet.
+    warps: Vec<String>,
+    /// How many of those warps carried a far-half entry byte.
+    half_tiles: usize,
+    /// The story-flag word `0x1F800394`, seeded alike on retail's side.
+    flags: u32,
+    /// The player context's `+0x16`, seeded alike on retail's side.
+    player_y: i16,
+    /// The script-register table `0x801C6460` (s16 per slot), seeded alike.
+    slots: Vec<i16>,
 }
 impl Recording {
     fn put(&mut self, at: u32, v: u32) {
@@ -1253,16 +1298,46 @@ impl Recording {
 }
 impl FieldFlagsHost for Recording {
     fn global_flags(&self) -> u32 {
-        self.inert.global_flags()
+        self.flags
     }
     fn set_global_flags(&mut self, value: u32) {
-        self.inert.set_global_flags(value)
+        self.flags = value;
     }
     fn frame_delta(&self) -> u16 {
         self.inert.frame_delta()
     }
+    fn slot_table_read(&self, slot: u8) -> i16 {
+        self.slots[usize::from(slot)]
+    }
+    // `4C CA` / `CB` / `CC` (`0x801E2930..0x801E29DC`): a slot set, or moved
+    // by the operand (the frame step for `0xFFFF`), as a 16-bit store.
+    fn slot_table_write(&mut self, slot: u8, value: i16) {
+        self.slots[usize::from(slot)] = value;
+        let at = SLOT_TABLE + 2 * u32::from(slot);
+        self.rows.insert(at, (2, value as u16 as u32));
+    }
+    fn slot_table_adjust(&mut self, slot: u8, delta: i16, subtract: bool) {
+        let old = self.slots[usize::from(slot)];
+        let new = if subtract {
+            old.wrapping_sub(delta)
+        } else {
+            old.wrapping_add(delta)
+        };
+        self.slot_table_write(slot, new);
+    }
 }
-impl FieldSceneHost for Recording {}
+impl FieldSceneHost for Recording {
+    fn scene_transition_named(&mut self, scene: &str, entry_x: u8, entry_z: u8, dir: u8) {
+        // `0x801DEB1C..0x801DEBAC`: the scene-change packet, then the entry
+        // words and the facing the scene host arms from these bytes.
+        use legaia_engine_vm::field::dispatch_leaves::{warp_arrival_facing, warp_entry_coord};
+        self.warps.push(scene.to_string());
+        self.put(0x8007_3EF4, warp_entry_coord(entry_x) as u16 as u32);
+        self.put(0x8007_3EF8, warp_entry_coord(entry_z) as u16 as u32);
+        self.put(0x8007_3EFC, i32::from(warp_arrival_facing(dir)) as u32);
+        self.half_tiles += usize::from((entry_x | entry_z) & 0x80 != 0);
+    }
+}
 impl FieldTerrainHost for Recording {}
 impl FieldCameraHost for Recording {
     fn set_camera_focus_override(&mut self, x_global: i16, z_global: i16) {
@@ -1276,6 +1351,43 @@ impl FieldCameraMotionHost for Recording {
     }
     fn set_shake_amplitude(&mut self, value: u8) {
         self.put(0x8007_B630, value.into());
+    }
+    // `4C 49` (`0x801E1480..0x801E162C`): the scene record's `+0x4A` and the
+    // accumulator `_DAT_8007BCAC`, written or ramped on the story-flag bits.
+    fn write_camera_offset(&mut self, target: i16) {
+        self.put(HG_SCENE + 0x4A, target as u16 as u32);
+    }
+    fn ramp_camera_offset(&mut self, target: i16, ticks: u16) {
+        self.ramps.push((
+            HG_SCENE + 0x4A,
+            i32::from(target) as u32,
+            i32::from(ticks as i16) as u32,
+        ));
+    }
+    fn write_camera_offset_player_relative(&mut self, target: i16, ticks: u16) {
+        // Bit 24: `BCAC = target`, `+0x4A = target + player+0x16`.
+        let raised = i32::from(target) + i32::from(self.player_y);
+        if ticks == 0 {
+            self.put(0x8007_BCAC, i32::from(target) as u32);
+            self.put(HG_SCENE + 0x4A, raised as u16 as u32);
+        } else {
+            let t = i32::from(ticks as i16) as u32;
+            self.ramps.push((0x8007_BCAC, i32::from(target) as u32, t));
+            self.ramps.push((HG_SCENE + 0x4A, raised as u32, t));
+        }
+    }
+    fn write_camera_offset_delta(&mut self, target: i16, ticks: u16) {
+        // Bit 25: `+0x4A = target`, `BCAC = target - player+0x16`.
+        let delta = i32::from(target) - i32::from(self.player_y);
+        if ticks == 0 {
+            self.put(HG_SCENE + 0x4A, target as u16 as u32);
+            self.put(0x8007_BCAC, delta as u32);
+        } else {
+            let t = i32::from(ticks as i16) as u32;
+            self.ramps.push((0x8007_BCAC, delta as u32, t));
+            self.ramps
+                .push((HG_SCENE + 0x4A, i32::from(target) as u32, t));
+        }
     }
 }
 impl FieldScreenHost for Recording {
@@ -1296,7 +1408,8 @@ impl FieldScreenHost for Recording {
         if ticks == 0 {
             self.put(at, value);
         } else {
-            self.ramps.push((at, value, u32::from(ticks)));
+            // The ticks word is `FUN_8003CE9C`'s sign-extended `s16`.
+            self.ramps.push((at, value, i32::from(ticks as i16) as u32));
         }
     }
     fn set_ambient_particle_gate(&mut self, enabled: bool) {
@@ -1375,8 +1488,11 @@ impl FieldActorHost for Recording {
             8 => 0x26,
             _ => return,
         };
-        self.ramps
-            .push((CTX + off, i32::from(target) as u32, u32::from(ticks)));
+        self.ramps.push((
+            CTX + off,
+            i32::from(target) as u32,
+            i32::from(ticks as i16) as u32,
+        ));
     }
 }
 impl FieldActorSpawnHost for Recording {
@@ -1401,7 +1517,8 @@ impl FieldActorFxHost for Recording {
         }
         let blend_word = i32::from(blend as i16) as u32;
         if ctx.field_78 != 0 && blend != 0 {
-            self.ramps.push((CTX + 0x74, colour, u32::from(ticks)));
+            self.ramps
+                .push((CTX + 0x74, colour, i32::from(ticks as i16) as u32));
         }
         self.ramps
             .push((CTX + 0x78, blend_word, i32::from(ticks as i16) as u32));
@@ -1453,6 +1570,25 @@ fn every_instruction_leaves_the_host_globals_as_retail_leaves_them() {
             }
         });
     }
+    // The name-based scene-change packet `FUN_8001FD44(name, index)` op 3F
+    // hands its copied name: the names, in call order.
+    let packets: std::rc::Rc<std::cell::RefCell<Vec<String>>> = Default::default();
+    {
+        let packets = packets.clone();
+        cpu.hook(0x8001_FD44, move |r, m| {
+            let at = r.r[4];
+            let name: Vec<u8> = (0..32)
+                .map(|k| m.rd8(at + k))
+                .take_while(|&b| b != 0)
+                .collect();
+            packets
+                .borrow_mut()
+                // The resolver `FUN_8001D7F8` lower-cases it; so does the
+                // port's name gate.
+                .push(String::from_utf8_lossy(&name).to_ascii_lowercase());
+        });
+    }
+    let (mut warped, mut half_tiles) = (0usize, 0usize);
     // The 32-bit operand reader op 43 07 loads its packed word through.
     cpu.hook(0x8003_CED8, |r, m| {
         let a = r.r[4];
@@ -1463,9 +1599,22 @@ fn every_instruction_leaves_the_host_globals_as_retail_leaves_them() {
         let a = r.r[4];
         r.r[2] = u32::from(m.rd8(a)) | u32::from(m.rd8(a + 1)) << 8 | u32::from(m.rd8(a + 2)) << 16;
     });
+    cpu.mem.wr32(0x801C_6EA4, HG_SCENE);
+    cpu.mem.wr32(0x8007_C364, HG_PLAYER);
     let gp = cpu.regs.r[GP];
     let clean = cpu.mem.clone();
-    let corpus = corpus();
+    // The disc corpus, then every op over generated operand bytes, so an
+    // arm only a mutated operand reaches (a ramp's non-zero ticks, an
+    // all-zero colour) stores where retail stores. A generated `3F` is left
+    // out: its name bytes are not a CDNAME label, which the port's name gate
+    // refuses (a phantom `3F` inside message text must not warp) and retail
+    // hands the packet as they are.
+    let mut corpus = corpus();
+    corpus.extend(
+        crate::field_vm::synthetic()
+            .into_iter()
+            .filter(|(script, _, _)| script.first() != Some(&0x3F)),
+    );
     let mut rng = Rng(0x484F_5354);
     let read = |cpu: &mut psx_retail_exec::Cpu, at: u32, w: u8| {
         if w == 2 {
@@ -1510,8 +1659,21 @@ fn every_instruction_leaves_the_host_globals_as_retail_leaves_them() {
                 ramps: Vec::new(),
                 duck_scale: cpu.mem.rd32(0x8008_457C),
                 rows: BTreeMap::new(),
+                warps: Vec::new(),
+                half_tiles: 0,
+                // Only `4C 49`'s two bits: the other flag readers answer
+                // from the same word on both sides, clear as before.
+                flags: [0, 0x0100_0000, 0x0200_0000, 0x0300_0000][rng.below(4) as usize],
+                player_y: rng.next() as i16,
+                slots: (0..0x100).map(|_| rng.next() as i16).collect(),
             };
+            for (i, &v) in host.slots.iter().enumerate() {
+                cpu.mem.wr16(SLOT_TABLE + 2 * i as u32, v as u16);
+            }
+            cpu.mem.wr32(0x1F80_0394, host.flags);
+            cpu.mem.wr16(HG_PLAYER + 0x16, host.player_y as u16);
             ramps.borrow_mut().clear();
+            packets.borrow_mut().clear();
             let mut seeds = BTreeMap::new();
             for (at, w) in HOST_GLOBALS {
                 let v = if w == 2 {
@@ -1563,6 +1725,15 @@ fn every_instruction_leaves_the_host_globals_as_retail_leaves_them() {
                 ));
             }
             ramped += usize::from(!retail_ramps.is_empty());
+            let retail_packets = packets.borrow().clone();
+            if retail_packets != host.warps {
+                wrong.push(format!(
+                    "scene packet retail {retail_packets:?} port {:?}",
+                    host.warps
+                ));
+            }
+            warped += host.warps.len();
+            half_tiles += host.half_tiles;
             if !wrong.is_empty() {
                 let e = differ.entry(label.clone()).or_default();
                 e.0 += 1;
@@ -1585,6 +1756,8 @@ fn every_instruction_leaves_the_host_globals_as_retail_leaves_them() {
     assert!(ran > 4000, "{ran}");
     assert!(ramped > 0, "no instruction ramps a hook-owned word");
     assert!(rows_held > 0, "no rotation row held");
+    eprintln!("{warped} scene changes, {half_tiles} with a far-half entry byte");
+    assert!(warped > 50, "{warped} scene changes");
     // Every hook's word is stored by some instruction of the corpus.
     for (at, _) in HOST_GLOBALS {
         assert!(

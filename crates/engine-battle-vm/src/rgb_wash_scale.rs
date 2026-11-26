@@ -19,12 +19,27 @@
 //! `swirl::LATE_WASH_RGB` (pushed once per frame, which is retail's re-arm),
 //! and the submit `FUN_80024EE4(otlen - 1, 2, rgb)` is
 //! `battle_intro::wash_prim`, the same farthest-bucket ABR-`2` full-screen
-//! quad. What is inert is the **scale**: `0x1F800393` is the adaptive
-//! frame-skip factor (`docs/subsystems/actor-vm.md`, "Tick cadence"), every
-//! port host ticks at cadence `1`, and `scale_rgb24(rgb, 1)` is the identity
-//! on a 24-bit colour. Calling it from `wash_prim` would move the
-//! reachability graph and change no pixel. It becomes a real wire the day a
-//! host runs a cadence above `1`.
+//! quad. What is inert is the **scale**, and the reason is the emitter's
+//! clock, not the host's. `0x1F800393` is the adaptive frame-skip factor
+//! (`docs/subsystems/actor-vm.md`, "Tick cadence"), and retail does run the
+//! intro above `1`: on a walked fight the step falls `3`/`4` -> `2` -> `1` as
+//! the intro's cost drops, and the scatter style's own body installs a floor
+//! of `3` (`engine-core::world::frame_step_floor`). A retail frame at step
+//! `s` advances the intro entity's clock by `s` and drains the wash scaled by
+//! `s`. The port's emitter instead steps **once per clock unit**
+//! (`BattleIntro::advance_to`, each step at `frame_step = 1`), so the same
+//! clock span is `s` port steps that each drain the unscaled colour - the
+//! scale is the frame-skip compensation the per-unit stepping already does.
+//! For the curtain's display decay (`CURTAIN_DISPLAY_DECAY_5`, one 5-bit level
+//! each time a host refreshes the page, once per presented frame, and the
+//! entity clock moves one unit per world tick) the totals agree exactly,
+//! since `0x08 * s >> 3 == s` and nothing saturates below `s = 32`. The
+//! scatter style's `0x101010` comes off its display model per clock unit too
+//! (`SCATTER_DISPLAY_DECAY_5`, one level a unit: two a draw, each of the two
+//! display buffers drawn every other frame), and the swirl's late wash
+//! lands on a black backdrop, where a subtraction of any size is a no-op.
+//! Calling this from `wash_prim` with the step would double-count the
+//! cadence.
 //!
 //! It is ported because its edge case (the pre-multiply saturation) is
 //! observable and testable on its own.
@@ -39,12 +54,14 @@
 /// which push the same farthest-bucket ABR-2 full-screen quad retail's
 /// submit `FUN_80024EE4(otlen - 1, 2, rgb)` builds, once per frame on both
 /// hosts. Every part of the armed-wash protocol therefore has a live engine
-/// form except the *scale*, and that one has no layer to come from: the
-/// factor is `0x1F800393`, the adaptive frame-skip cadence, and every port
-/// host ticks at cadence 1, where this function is the identity on a 24-bit
-/// colour. A call from `wash_prim` would move the reachability graph and
-/// change no pixel. It becomes a real wire only if a host ever runs a
-/// cadence above 1 - a scheduling change, not a missing call site.
+/// form except the *scale*, and the scale is the cadence compensation the
+/// emitter already performs: the factor is `0x1F800393`, the adaptive
+/// frame-skip step, and where retail drains one wash scaled by a step `s`
+/// (`3`/`4` early in a walked fight's intro, a floor of `3` under the scatter
+/// style), `BattleIntro::advance_to` runs `s` unit steps over the same clock
+/// span, each draining the unscaled colour. A call from `wash_prim` with the
+/// step would count the cadence twice. See the module heading for why the
+/// totals agree.
 ///
 /// Retail unpacks the stored colour word into its low three bytes, and for
 /// each channel computes `channel * scale` (an 8-bit `* 8-bit` product, at
@@ -103,6 +120,20 @@ mod tests {
         assert_eq!(scale_rgb24(0x00_00_00_34, 5) & 0xFF, 0xFF);
         // 0x33 * 4 = 0xCC -> below threshold, kept as product.
         assert_eq!(scale_rgb24(0x00_00_00_33, 4) & 0xFF, 0xCC);
+    }
+
+    /// The replacement's arithmetic: one retail drain at step `s` takes the
+    /// same 5-bit levels off a 15-bpp pixel as `s` unscaled drains, for the
+    /// curtain's `0x80808` wash at every step the intro runs (`1..=4`) and
+    /// well past it. This is what lets the emitter's once-per-clock-unit
+    /// stepping stand in for the scale.
+    #[test]
+    fn one_scaled_drain_is_s_unscaled_drains_in_five_bit_levels() {
+        let level = |rgb: u32| (rgb & 0xFF) >> 3;
+        for s in 1..=31u8 {
+            let scaled = level(scale_rgb24(0x0008_0808, s));
+            assert_eq!(scaled, u32::from(s) * level(0x0008_0808), "step {s}");
+        }
     }
 
     #[test]

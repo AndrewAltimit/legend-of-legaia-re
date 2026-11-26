@@ -176,6 +176,11 @@ pub struct World {
     /// every door
     /// ([`legaia_engine_system::mode_entry_init::door_field_init_hold_vsyncs`]).
     pub field_init_hold: u16,
+    /// The title's `LaunchFade` / `LaunchGame` frames a New Game runs before
+    /// its field MAIN INIT ([`legaia_engine_system::mode_entry_init::LaunchFade`]):
+    /// the opening scene is loaded, nothing of it runs and the frame is black
+    /// until it hands over to [`Self::field_init_hold`].
+    pub launch_fade: Option<legaia_engine_system::mode_entry_init::LaunchFade>,
 
     /// Cutscene presentation state: narration, timeline, caption / card / balloon overlays, FMV handoff and the opening-chain latches.
     pub cutscene: CutsceneState,
@@ -512,6 +517,7 @@ impl World {
             pending_named_scene_transition: None,
             scene_transition_hold: None,
             field_init_hold: 0,
+            launch_fade: None,
             encounters: EncounterState::new(),
             pending_field_events: Vec::new(),
             pending_actor_spawns: Vec::new(),
@@ -743,6 +749,7 @@ impl World {
         // follows.
         self.audio.credits_latch = false;
         self.field_init_hold = 0;
+        self.launch_fade = None;
         // The staged run's rules take over (retail when nothing is staged).
         self.begin_run_new_game();
         self.flags.story_flags = 0;

@@ -339,6 +339,62 @@ pub fn ribbon_quads_seeded(
     (quads, state)
 }
 
+/// One pass of the move-FX streak emitter as retail's phase driver runs it
+/// (`FUN_801E09F8`, `0x801E0C64..0x801E0CE8`), dealt on the game's stream:
+/// a loop of four, which for a **party** acting actor (`ctx[+0x13] < 3`)
+/// calls the single afterimage `FUN_801E1AB0` once while `counter >= 0x281`
+/// and leaves the loop (`li s3,0x4` in the call's delay slot), draws
+/// nothing through `0x280..0x201`, and below `0x201` calls the chained
+/// ribbon `FUN_801E1D98` on **every** iteration; a monster acting actor
+/// calls the ribbon on every iteration whatever the counter. So the ribbon
+/// arm is four ribbons a pass on one anchor, each on its own words.
+///
+/// `counter` is `ctx[+0x6C6]` after the pass's walk (the loop reads it
+/// fresh); `point` is `ctx[+0x1144]`, retail battle space. The afterimage
+/// projects through the view with its `+0x120` push and the counter's
+/// half-width; the ribbon is [`ribbon_quads_seeded`]. Returns the packets
+/// and the stream state the draws leave.
+// REF: FUN_801E09F8
+pub fn streak_pass_dealt(
+    view: &crate::gte::FieldGteView,
+    point: [i16; 3],
+    counter: u16,
+    party: bool,
+    trail_id: u8,
+    seed: u32,
+) -> (Vec<AfterimageQuad>, u32) {
+    use legaia_engine_system::rand::{bios_rand_shape, world_lcg_step};
+    let signed = counter as i16;
+    let mut state = seed;
+    let mut out = Vec::new();
+    if party && signed >= AFTERIMAGE_COUNTER_MIN as i16 {
+        let corners = crate::afterimage::project_streak_corners(
+            &view.rot,
+            crate::gte::GteVec3::new(view.tr[0], view.tr[1], view.tr[2]),
+            (point[0], point[1], point[2]),
+            crate::afterimage::streak_half_width(signed),
+            i32::from(view.h),
+            view.ofx,
+            view.ofy,
+            0,
+        );
+        out.push(build_afterimage_quad(corners.xy, trail_id, || {
+            state = world_lcg_step(state);
+            bios_rand_shape(state)
+        }));
+        return (out, state);
+    }
+    if party && signed >= RIBBON_COUNTER_MAX as i16 {
+        return (out, state);
+    }
+    for _ in 0..4 {
+        let (quads, next) = ribbon_quads_seeded(view, point, trail_id, state);
+        out.extend(quads);
+        state = next;
+    }
+    (out, state)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -482,6 +538,45 @@ mod tests {
     /// enough to pass the top-edge test takes seven words for its bottom
     /// segment and four a chained one, and one inside the suppression range
     /// (or behind the eye) leaves the stream where it stood.
+    /// `FUN_801E09F8`'s emitter loop: a party afterimage once, nothing in
+    /// the dead band, and four ribbons a pass on one anchor otherwise, each
+    /// on the words the one before it left.
+    #[test]
+    fn the_streak_pass_deals_one_afterimage_or_four_ribbons() {
+        use legaia_engine_camera::projection::BattleCamPose;
+        use legaia_engine_system::rand::world_lcg_step;
+        let view = crate::gte::FieldGteView::from_battle_pose(&BattleCamPose {
+            pitch: 0.0,
+            yaw: 0.0,
+            tr: [0.0, 0.0, 8000.0],
+            focus: [0.0, 0.0, 0.0],
+        });
+        let seed = 0x0BAD_F00D;
+        let (one, state) = streak_pass_dealt(&view, [0, 0, 0], 0x300, true, 4, seed);
+        assert_eq!(one.len(), 1, "the afterimage leaves the loop");
+        let mut walked = seed;
+        for _ in 0..9 {
+            walked = world_lcg_step(walked);
+        }
+        assert_eq!(state, walked, "nine draws");
+        let (none, state) = streak_pass_dealt(&view, [0, 0, 0], 0x240, true, 4, seed);
+        assert!(none.is_empty());
+        assert_eq!(state, seed, "the dead band draws nothing");
+        for party in [true, false] {
+            let counter = if party { 0x180 } else { 0x300 };
+            let (four, state) = streak_pass_dealt(&view, [0, 0, 0], counter, party, 4, seed);
+            let mut want = Vec::new();
+            let mut s = seed;
+            for _ in 0..4 {
+                let (q, next) = ribbon_quads_seeded(&view, [0, 0, 0], 4, s);
+                assert!(!q.is_empty());
+                want.extend(q);
+                s = next;
+            }
+            assert_eq!((four, state), (want, s), "party {party}");
+        }
+    }
+
     #[test]
     fn a_seeded_ribbon_steps_the_stream_only_when_it_draws() {
         use legaia_engine_camera::projection::BattleCamPose;

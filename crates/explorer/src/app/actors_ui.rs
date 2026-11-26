@@ -91,7 +91,8 @@ impl App {
             return;
         };
         self.actors_auto();
-        let side = self.side_width("actors", 330.0);
+        let side_max = super::side_panel_max(ui, 260.0);
+        let side_panel = self.left_panel("actors", 330.0, 260.0, side_max);
         let st = &mut self.actors;
         if st.catalogs.is_none() {
             st.catalogs = Some(actors::character_catalogs(&lib).map_err(|e| format!("{e:#}")));
@@ -124,61 +125,53 @@ impl App {
         if let Some(p) = walked {
             st.pick = Some(p);
         }
-        let side_max = super::side_panel_max(ui, 260.0);
-        let panel = egui::Panel::left("actors")
-            .resizable(true)
-            .default_size(side.min(side_max))
-            .min_size(260.0)
-            .max_size(side_max)
-            .show(ui, |ui| {
-                ui.heading("Party");
-                if let Some(Ok(cats)) = &st.catalogs {
-                    for c in cats {
-                        let sel = st.pick == Some(Pick::Character(c.cslot));
-                        if ui.selectable_label(sel, c.name).clicked() {
-                            st.pick = Some(Pick::Character(c.cslot));
-                        }
+        let panel = side_panel.show(ui, |ui| {
+            ui.heading("Party");
+            if let Some(Ok(cats)) = &st.catalogs {
+                for c in cats {
+                    let sel = st.pick == Some(Pick::Character(c.cslot));
+                    if ui.selectable_label(sel, c.name).clicked() {
+                        st.pick = Some(Pick::Character(c.cslot));
                     }
-                } else if let Some(Err(e)) = &st.catalogs {
+                }
+            } else if let Some(Err(e)) = &st.catalogs {
+                ui.colored_label(ui.visuals().error_fg_color, e);
+            }
+            ui.separator();
+            ui.heading("Monsters");
+            ui.add(egui::TextEdit::singleline(&mut st.filter).hint_text("name or id"));
+            match &st.monsters {
+                Some(Ok(rows)) => {
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
+                            for r in rows.iter().filter(shown) {
+                                let sel = st.pick == Some(Pick::Monster(r.id));
+                                let text = format!(
+                                    "{:3}  {:<16} {:<7} HP {}",
+                                    r.id,
+                                    r.name,
+                                    r.badge.unwrap_or(""),
+                                    r.hp
+                                );
+                                let row = ui.selectable_label(sel, RichText::new(text).monospace());
+                                if row.clicked() {
+                                    st.pick = Some(Pick::Monster(r.id));
+                                }
+                                if walked == Some(Pick::Monster(r.id)) {
+                                    row.scroll_to_me(None);
+                                }
+                            }
+                        });
+                }
+                Some(Err(e)) => {
                     ui.colored_label(ui.visuals().error_fg_color, e);
                 }
-                ui.separator();
-                ui.heading("Monsters");
-                ui.add(egui::TextEdit::singleline(&mut st.filter).hint_text("name or id"));
-                match &st.monsters {
-                    Some(Ok(rows)) => {
-                        egui::ScrollArea::vertical()
-                            .auto_shrink([false, false])
-                            .show(ui, |ui| {
-                                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
-                                for r in rows.iter().filter(shown) {
-                                    let sel = st.pick == Some(Pick::Monster(r.id));
-                                    let text = format!(
-                                        "{:3}  {:<16} {:<7} HP {}",
-                                        r.id,
-                                        r.name,
-                                        r.badge.unwrap_or(""),
-                                        r.hp
-                                    );
-                                    let row =
-                                        ui.selectable_label(sel, RichText::new(text).monospace());
-                                    if row.clicked() {
-                                        st.pick = Some(Pick::Monster(r.id));
-                                    }
-                                    if walked == Some(Pick::Monster(r.id)) {
-                                        row.scroll_to_me(None);
-                                    }
-                                }
-                            });
-                    }
-                    Some(Err(e)) => {
-                        ui.colored_label(ui.visuals().error_fg_color, e);
-                    }
-                    None => {}
-                }
-            });
-        self.side_widths
-            .insert("actors", panel.response.rect.width());
+                None => {}
+            }
+        });
+        self.note_left_panel(ui, "actors", panel.response.rect.width());
         // Ctrl+E is left for the status line when nothing is shown.
         let key = self.actors.view.is_some() && self.take_export_key();
         let st = &mut self.actors;

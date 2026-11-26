@@ -53,7 +53,9 @@ impl World {
             slot,
             start,
             end,
-            total: ticks,
+            // A negative count (`legaia_engine_motion_vm::ambient_motion::script_ramp_ticks`)
+            // lands on the endpoint on the first tick, as a zero length does.
+            total: if (ticks as i16) < 0 { 0 } else { ticks },
             elapsed: 0,
         });
     }

@@ -90,6 +90,8 @@ fn next_game_keeps_the_pot_at_risk_and_pay_out_banks_it() {
     play_out(&mut w);
     assert_eq!(fight(&w).winner(), Some(0));
     idle_to_state(&mut w, ST_CHOICE);
+    // The sheet draws from the state's first full frame on, as retail's arm.
+    step(&mut w, 0);
     assert_eq!(
         w.minigames.winnings, PRIZE,
         "the tally drained the rung prize"
@@ -145,6 +147,7 @@ fn late_triangles_do_not_open_the_pause_menu() {
         press(&mut w, PadButton::Triangle.mask());
     }
     idle_to_state(&mut w, ST_CHOICE);
+    step(&mut w, 0);
     assert!(fight(&w).cabinet().choice_sheet().is_some());
 }
 

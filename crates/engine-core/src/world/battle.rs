@@ -42,6 +42,7 @@ mod member_step;
 mod message_banner;
 mod monster_ai;
 mod present;
+pub(in crate::world) use present::carry_pose_back;
 mod selectable;
 mod seru_absorb;
 mod sideband;

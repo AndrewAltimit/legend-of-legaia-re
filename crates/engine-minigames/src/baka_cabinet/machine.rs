@@ -82,6 +82,12 @@ pub struct CabinetFrame {
     ///
     /// REF: FUN_80024EE4
     pub clear_fade: Option<u8>,
+    /// The level of the full-screen subtractive quad the exit state draws
+    /// every frame on its way out (`FUN_80024EE4(0, 2, level * 0x010101)`,
+    /// `0x801D1F38..0x801D1F70`): the exit clock times six, held to `0xFF`.
+    ///
+    /// REF: FUN_80024EE4
+    pub exit_fade: Option<u8>,
 }
 
 /// Per-frame inputs the cabinet reads out of shared globals.
@@ -228,6 +234,8 @@ pub struct BakaCabinet {
     /// `DAT_801DBF28` - matches won without dropping a round (shutouts);
     /// zeroed at the player select.
     pub(super) perfect_matches: i32,
+    /// The "NEXT GAME / PAY OUT" sheet the last tick drew, if it drew one.
+    pub(super) sheet: Option<[SheetCell; 5]>,
     /// The parsed action tables, when a host installed them: the only thing
     /// the developer dump state has to dump.
     pub(super) action_tables: Vec<BakaActionSet>,
@@ -273,6 +281,7 @@ impl BakaCabinet {
             pot: 0,
             max_streak: 0,
             perfect_matches: 0,
+            sheet: None,
             action_tables: Vec::new(),
         }
     }
@@ -403,13 +412,14 @@ impl BakaCabinet {
         self.blink
     }
 
-    /// The "NEXT GAME / PAY OUT" sheet this frame, when the cabinet is on
-    /// it. Retail draws the sheet only while the confirm latch
-    /// `DAT_801DBF88` is still zero (`bne v1,zero,0x801D0DD8` at
-    /// `0x801D0BB4`), so it disappears the frame NEXT GAME is taken.
+    /// The "NEXT GAME / PAY OUT" sheet the last tick drew. Retail draws it
+    /// inside state `0x68`'s arm, after the cursor step and before the
+    /// confirm, and only while the confirm latch `DAT_801DBF88` is still
+    /// zero (`bne v1,zero,0x801D0DD8` at `0x801D0BB4`): not on the frame
+    /// the state is entered, still on the frame a confirm is taken, and no
+    /// more once NEXT GAME has latched.
     pub fn choice_sheet(&self) -> Option<[SheetCell; 5]> {
-        (self.state == ST_CHOICE && self.state_timer == 0)
-            .then(|| choice_sheet(self.menu_cursor, self.blink))
+        self.sheet
     }
 
     /// `true` once the exit state's fade has run (`DAT_801DBE9C >= 0x3D`),

@@ -90,8 +90,14 @@ pub struct BattleIntro {
     /// This frame's spin-up particle and ring primitives, held between
     /// [`BattleIntro::tick`] (which emits them) and
     /// [`BattleIntro::refresh_captured_page`] (which lands them in the CPU
-    /// display model the next frame draws over). Only the spin-up fills it.
+    /// display model the next frame draws over). Only the two particle styles
+    /// fill it.
     pub(super) pending_particles: Vec<crate::screen_prim::ScreenPrim>,
+    /// The scatter style's screen washes the steps since the last
+    /// [`BattleIntro::refresh_captured_page`] armed, as a 5-bit-channel step
+    /// ([`SCATTER_DISPLAY_DECAY_5`] each), which the refresh takes off the
+    /// display model before this frame's particles land.
+    pub(super) pending_wash_5: u16,
     /// The curtain's intermediate ([`FIELD_CAPTURE_ROWS`] content) as a
     /// persistent buffer: retail never clears it - `FUN_801D1D9C` decays it by
     /// [`CURTAIN_MIDPASS_DECAY_5`] each frame before the column strips draw.
@@ -195,6 +201,7 @@ impl BattleIntro {
             pending_columns: Vec::new(),
             pending_rows: Vec::new(),
             pending_particles: Vec::new(),
+            pending_wash_5: 0,
             intermediate: Vec::new(),
             display_accum: Vec::new(),
             last_frame: None,
@@ -296,7 +303,7 @@ impl BattleIntro {
     /// rows rect (see the module docs) - after clearing the page around it as
     /// retail's init does ([`FIELD_CAPTURE_CLEARS`]). The mask
     /// bit is set so a black field pixel samples as opaque black rather than
-    /// as a transparent hole.
+    /// as a transparent hole, except for the scatter field (below).
     ///
     /// `base` is the scene's own VRAM, which is **cloned** rather than edited:
     /// the capture is transient and the host's pristine page has to survive
@@ -320,7 +327,18 @@ impl BattleIntro {
             None
         };
         let page = self.captured.insert(base.clone());
-        let opts = CaptureOpts { set_mask_bit: true };
+        // The scatter field's packets are semi-transparent (ABR `1`), so a
+        // patch blends only where its texel carries the mask bit, which the
+        // captured display holds as the field drew it: two pixels in three
+        // clear in a PCSX-Redux state at the scatter's field exit
+        // (`retona_field_card_boot`), so a patch reconstructs its cell
+        // opaquely. A readback carries no mask bit, so the scatter lands it
+        // clear; with the bit set, every patch at rest added itself over the
+        // display model's copy of the same cell and the field read at about
+        // twice its brightness. A black pixel is then a hole, as retail's is.
+        let opts = CaptureOpts {
+            set_mask_bit: style != IntroStyle::ScatterParticles,
+        };
         // Retail's init clears the page around its capture to `0x0000`
         // (transparent): the rows above the frame, the rows below it and the
         // strip past the right edge (`FIELD_CAPTURE_CLEARS`). A texel
@@ -347,7 +365,10 @@ impl BattleIntro {
             entry0.textures.retain(|t| t.index == 0);
             entry0.upload_to_vram(page, false);
         }
-        if style == IntroStyle::Curtain || style == IntroStyle::SpinUpParticles {
+        if matches!(
+            style,
+            IntroStyle::Curtain | IntroStyle::SpinUpParticles | IntroStyle::ScatterParticles
+        ) {
             self.capture_src = lift_capture_src(page);
         }
         self.upload_pending = true;
@@ -375,7 +396,10 @@ impl BattleIntro {
     /// the last uploaded page is still correct.
     pub fn refresh_captured_page(&mut self) -> Option<&Vram> {
         let landed = std::mem::take(&mut self.upload_pending);
-        if self.style == IntroStyle::SpinUpParticles {
+        if matches!(
+            self.style,
+            IntroStyle::SpinUpParticles | IntroStyle::ScatterParticles
+        ) {
             self.captured.as_ref()?;
             self.update_spinup_display();
             return self.captured.as_ref();
@@ -460,7 +484,8 @@ mod capture_landing_tests {
         let land = crate::vram_capture::FIELD_CAPTURE_LAND;
         let (x, y) = (land.x as usize, land.y as usize);
 
-        let mut plain = bare_intro(IntroStyle::ScatterParticles);
+        // The spin-up keeps the mask bit (the scatter lands it clear).
+        let mut plain = bare_intro(IntroStyle::SpinUpParticles);
         plain.land_capture_rgba(&rgba, 2, 2, &Vram::new());
         let page = plain.captured_vram().expect("capture landed");
         // The 2x2 source point-samples across the 320x240 rect; the top half
@@ -468,11 +493,46 @@ mod capture_landing_tests {
         assert_eq!(page.pixel(x, y), red, "top-down: first row first");
         assert_eq!(page.pixel(x, y + 239), blue, "top-down: last row last");
 
-        let mut flipped = bare_intro(IntroStyle::ScatterParticles).with_flipped_capture();
+        let mut flipped = bare_intro(IntroStyle::SpinUpParticles).with_flipped_capture();
         flipped.land_capture_rgba(&rgba, 2, 2, &Vram::new());
         let page = flipped.captured_vram().expect("capture landed");
         assert_eq!(page.pixel(x, y), blue, "flipped: bottom row first");
         assert_eq!(page.pixel(x, y + 239), red, "flipped: top row last");
+    }
+
+    /// The scatter draws once every [`SCATTER_FRAME_STEP`] clock units:
+    /// the clocks between two draws re-show the last one, and the emitter's
+    /// clock lands a step past each draw.
+    #[test]
+    fn the_scatter_draws_every_third_clock_unit() {
+        let mut intro = bare_intro(IntroStyle::ScatterParticles);
+        let at = |i: &mut BattleIntro, e: i16| i.advance_to(e).prims.len();
+        let three = at(&mut intro, 3);
+        assert_eq!(intro.clock, 3 + i16::from(SCATTER_FRAME_STEP));
+        assert_eq!(at(&mut intro, 4), three);
+        assert_eq!(at(&mut intro, 5), three);
+        assert_eq!(intro.clock, 6, "no draw between multiples");
+        at(&mut intro, 6);
+        assert_eq!(intro.clock, 9);
+    }
+
+    /// The scatter field lands its capture with the mask bit clear, so a
+    /// moved patch (a semi-transparent packet) draws opaquely where the
+    /// display's pixel has no mask bit, as two in three retail pixels at the
+    /// scatter's field exit have none, and a black pixel is a hole.
+    #[test]
+    fn the_scatter_capture_lands_without_the_mask_bit() {
+        let mut rgba = Vec::new();
+        for c in [[0xF8u8, 0, 0], [0, 0, 0]] {
+            rgba.extend_from_slice(&[c[0], c[1], c[2], 0xFF]);
+        }
+        let land = crate::vram_capture::FIELD_CAPTURE_LAND;
+        let (x, y) = (land.x as usize, land.y as usize);
+        let mut scatter = bare_intro(IntroStyle::ScatterParticles);
+        scatter.land_capture_rgba(&rgba, 2, 1, &Vram::new());
+        let page = scatter.captured_vram().expect("capture landed");
+        assert_eq!(page.pixel(x, y), 0x1F);
+        assert_eq!(page.pixel(x + 319, y), 0);
     }
 
     /// The page around the frame is retail's: drawn row `d` at
@@ -517,11 +577,12 @@ mod capture_landing_tests {
     }
 
     /// The capture is a one-shot and `refresh_captured_page` reports the
-    /// landing exactly once for a non-curtain style - the page's re-upload
-    /// contract.
+    /// landing exactly once for a style with no display model (the curtain
+    /// and the two particle styles re-upload theirs every frame) - the page's
+    /// re-upload contract.
     #[test]
     fn refresh_reports_the_landing_once_then_goes_quiet() {
-        let mut it = bare_intro(IntroStyle::ScatterParticles);
+        let mut it = bare_intro(IntroStyle::TileShatter);
         assert!(it.needs_capture());
         assert!(it.refresh_captured_page().is_none(), "nothing landed yet");
         let rgba = vec![0xFFu8; 2 * 2 * 4];

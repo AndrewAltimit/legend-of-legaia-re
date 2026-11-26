@@ -134,10 +134,14 @@ impl World {
         // A harness seat, the host's for the whole run.
         self.casting.capture_seek_recorded = recorded;
         self.battle.clip_ribbon = None;
+        self.battle.clip_ribbon_quads = None;
         self.battle.cast_ribbons = None;
         self.battle.cast_ribbon_seeds = None;
+        self.battle.cast_ribbon_quads = None;
         self.battle.flight_ribbons = None;
         self.battle.flight_ribbon_seeds = None;
+        self.battle.flight_ribbon_quads = None;
+        self.battle.move_fx_streak_quads = None;
         self.battle.effect_spawns.clear();
     }
 }

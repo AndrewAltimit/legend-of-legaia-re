@@ -118,12 +118,16 @@ pub fn step_from_caller<H: FieldHost>(
             let world_z = grid_to_world(zb);
             ctx.world_x = world_x;
             ctx.world_z = world_z;
-            // `andi 0x7f` ahead of both stores (`0x801DECAC..0x801DECC8`):
+            // The player context re-centres the camera on the tile instead
+            // (`0x801DEC7C..0x801DECA8`); every other context takes the tile
+            // bytes, `andi 0x7f` ahead of both stores (`0x801DECAC..0x801DECC8`):
             // the half-tile bit moves the seat, not the tile bytes.
-            ctx.npc_x = xb & 0x7F;
-            ctx.npc_facing = zb & 0x7F;
-            ctx.field_8b = 0;
-            let is_player = ctx.flags & 0x1000000 != 0;
+            let is_player = host.is_player_context(ctx);
+            if !is_player {
+                ctx.npc_x = xb & 0x7F;
+                ctx.npc_facing = zb & 0x7F;
+                ctx.field_8b = 0;
+            }
             host.move_to(ctx, world_x, world_z, is_player);
             StepResult::Advance {
                 next_pc: pc + header_size + 2,

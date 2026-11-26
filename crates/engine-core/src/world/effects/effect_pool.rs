@@ -372,8 +372,9 @@ impl World {
         &mut self,
         ring: &legaia_engine_cast::cast_module_camera::CastRibbonRing,
     ) {
-        let seeds = self.deal_ribbon_rands(ring);
+        let (seeds, quads) = self.deal_ribbon_rands(ring);
         self.battle.cast_ribbon_seeds = Some(seeds);
+        self.battle.cast_ribbon_quads = Some(quads);
     }
 
     /// [`Self::deal_cast_ribbon_rands`] for a homing flight's bolts: the
@@ -384,32 +385,119 @@ impl World {
         &mut self,
         ring: &legaia_engine_cast::cast_module_camera::CastRibbonRing,
     ) {
-        let seeds = self.deal_ribbon_rands(ring);
+        let (seeds, quads) = self.deal_ribbon_rands(ring);
         self.battle.flight_ribbon_seeds = Some(seeds);
+        self.battle.flight_ribbon_quads = Some(quads);
     }
 
-    /// Each ribbon's start word, the stream stepped past its draws.
+    /// The move-FX streak emitter of `FUN_801E09F8`'s phase-1 arm, run where
+    /// the pass's counter walk runs and dealt on the game's stream: with slot
+    /// `0`'s phase byte `ctx[+0x24E]` at `1` and the counter non-zero before
+    /// the walk (`bne v1,v0,0x801E0F78` / `beq v0,zero,0x801E0CF8` at
+    /// `0x801E0C04..0x801E0C14`), and only for a record whose `+0x0E` list
+    /// byte is `0xFF` (`lbu v1,0xe(v0)` / `bne v1,0xff` at
+    /// `0x801E0C54..0x801E0C5C`), the loop of four calls the afterimage or
+    /// the ribbon ([`legaia_render_kernels::streak_pass::streak_pass_dealt`]).
+    /// Every other record draws no streak at all. The packets land on
+    /// `BattleState::move_fx_streak_quads`; the hosts draw them as built.
+    ///
+    /// The draws were missing from the stream before, and the hosts drew one
+    /// ribbon on a private generator, on every move whose effect scene
+    /// staged, whatever its list byte.
+    ///
+    /// PORT: FUN_801E09F8 (`0x801E0BF4..0x801E0CF0`, the phase-1 emitter loop and its gates)
+    pub(in crate::world) fn deal_move_fx_streak(&mut self, counter_before: u16) {
+        self.battle.move_fx_streak_quads = None;
+        let streak = self.casting.move_fx_streak;
+        if streak.phase != 1 || counter_before == 0 {
+            return;
+        }
+        let (Some(launch), Some(idx)) = (streak.launch, streak.move_id) else {
+            return;
+        };
+        let Some((list, trail)) = self.tables.move_power.as_ref().and_then(|cat| {
+            cat.record_at_index(usize::from(idx))
+                .map(|r| (r.raw[0x0E], r.raw[0x0B]))
+        }) else {
+            return;
+        };
+        if list != 0xFF {
+            return;
+        }
+        let party = self
+            .battle_seat_map()
+            .is_party(self.battle_ctx.active_actor);
+        let clamp = |v: i32| v.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
+        let point = [clamp(launch.0), clamp(launch.1), clamp(launch.2)];
+        let view =
+            legaia_render_kernels::gte::FieldGteView::from_battle_pose(&self.battle_cam_pose());
+        let (quads, state) = legaia_render_kernels::streak_pass::streak_pass_dealt(
+            &view,
+            point,
+            streak.counter_word,
+            party,
+            trail,
+            self.rng_state,
+        );
+        self.rng_state = state;
+        self.battle.move_fx_streak_quads = Some(quads);
+    }
+
+    /// Gala's tag-`0x67` arm (Heaven's Drop, art record `0x2E`): on every
+    /// frame the committed clip's cursor sits in `0xB0..=0xF0`,
+    /// `FUN_8004CE2C`'s clip pass calls `FUN_801E1D98(&target[+0x3C], 0xC)`
+    /// (`0x8004D1E8..0x8004D248`), so its seven-plus-four-a-segment words
+    /// come off the game's stream inside the actor-pool walk, ahead of the
+    /// frame's draw. Dealt once a pass, through the battle view the pass
+    /// holds, and kept on `BattleState::clip_ribbon_quads` for the hosts to
+    /// draw as built. The hosts used to rebuild it at draw time on a private
+    /// generator and draw no words.
+    ///
+    /// PORT: FUN_8004CE2C (`0x8004D1E8..0x8004D248`, the tag-`0x67` ribbon call's draws)
+    pub(in crate::world) fn deal_clip_ribbon(&mut self) {
+        self.battle.clip_ribbon_quads = None;
+        let Some(c) = self.battle.clip_ribbon else {
+            return;
+        };
+        let mut points = [[0i16; 3]; 16];
+        points[0] = c.seat;
+        let ring = legaia_engine_cast::cast_module_camera::CastRibbonRing {
+            points,
+            trail_id: c.trail_id,
+            count: 1,
+        };
+        let (_, mut quads) = self.deal_ribbon_rands(&ring);
+        self.battle.clip_ribbon_quads = quads.pop();
+    }
+
+    /// Each ribbon's start word and the packets the call built, the stream
+    /// stepped past its draws.
     fn deal_ribbon_rands(
         &mut self,
         ring: &legaia_engine_cast::cast_module_camera::CastRibbonRing,
-    ) -> [u32; 16] {
+    ) -> (
+        [u32; 16],
+        Vec<Vec<legaia_render_kernels::afterimage::AfterimageQuad>>,
+    ) {
         let view =
             legaia_render_kernels::gte::FieldGteView::from_battle_pose(&self.battle_cam_pose());
         let mut seeds = [0u32; 16];
+        let mut quads = Vec::with_capacity(usize::from(ring.count));
         for (seed, p) in seeds
             .iter_mut()
             .zip(ring.points.iter().take(usize::from(ring.count)))
         {
             *seed = self.rng_state;
-            let (_, state) = legaia_render_kernels::streak_pass::ribbon_quads_seeded(
+            let (built, state) = legaia_render_kernels::streak_pass::ribbon_quads_seeded(
                 &view,
                 *p,
                 ring.trail_id,
                 *seed,
             );
+            quads.push(built);
             self.rng_state = state;
         }
-        seeds
+        (seeds, quads)
     }
 
     /// This frame's draw-kind-4 geometry - every live node whose model is

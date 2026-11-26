@@ -10,9 +10,11 @@ use crate::stage_view::load_stage_for_view;
 use crate::tmd_view::{TmdViewData, load_tmd_for_view};
 use legaia_engine_audio::AudioOut;
 use legaia_engine_render::{
-    RenderTarget, Renderer, UploadedLines, UploadedMesh, UploadedTexture, UploadedVram,
-    UploadedVramMesh,
+    RenderTarget, Renderer, TextOverlay, UploadedFontAtlas, UploadedLines, UploadedMesh,
+    UploadedTexture, UploadedVram, UploadedVramMesh,
 };
+use legaia_engine_ui::{TextDraw, text_draws_for};
+use legaia_font::Font;
 use legaia_prot::{archive::Archive, cdname};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -50,6 +52,63 @@ pub(crate) struct App {
     pub(crate) goto: GotoInput,
     /// The current display's title, without the go-to prompt.
     pub(crate) base_title: String,
+    /// The dialog font from an extracted tree near the paths the viewer was
+    /// given ([`find_font`]): the key help is drawn with it. Without one the
+    /// keys stay in the window title, where a long entry name cut them off.
+    pub(crate) font: Option<Font>,
+    pub(crate) font_atlas: Option<UploadedFontAtlas>,
+    /// The key help over the window: shown at start, closed by any key,
+    /// reopened by `H` / `F1`.
+    pub(crate) help: bool,
+}
+
+/// The dialog font of the first extracted tree found at or above `candidates`
+/// (each an argument path, or `extracted` under the working directory).
+pub(crate) fn find_font(candidates: &[PathBuf]) -> Option<Font> {
+    candidates
+        .iter()
+        .flat_map(|c| c.ancestors())
+        .find(|dir| dir.join("font").is_dir())
+        .and_then(|dir| Font::load_from_extracted(dir).ok())
+}
+
+/// The help's lines: the entry's full name and the keys that work now.
+fn help_lines(title: &str, browsing: bool) -> Vec<(String, bool)> {
+    let mut out = vec![(title.to_string(), true), (String::new(), false)];
+    if browsing {
+        for l in [
+            "N, P, Left / Right arrow, Space: next and previous",
+            "PgDn / PgUp: ten at a time    Home / End: first and last",
+            "Type a number and Enter: jump there (Backspace, Esc cancel)",
+        ] {
+            out.push((l.to_string(), false));
+        }
+    }
+    out.push(("H or F1: this help    Esc: quit".to_string(), false));
+    out.push((String::new(), false));
+    out.push(("Any key closes this help.".to_string(), false));
+    out
+}
+
+/// Break `text` into lines of at most `max` characters, at spaces where it can.
+fn wrap(text: &str, max: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut cur = String::new();
+    for word in text.split(' ') {
+        if !cur.is_empty() && cur.len() + 1 + word.len() > max {
+            lines.push(std::mem::take(&mut cur));
+        }
+        if !cur.is_empty() {
+            cur.push(' ');
+        }
+        cur.push_str(word);
+        while cur.len() > max {
+            let rest = cur.split_off(max);
+            lines.push(std::mem::replace(&mut cur, rest));
+        }
+    }
+    lines.push(cur);
+    lines
 }
 
 /// Directory walk for the `stage <DIR>` mode. Holds the list of files that
@@ -113,6 +172,53 @@ impl Browser {
 }
 
 impl App {
+    /// The keys named in a browse title: the help's key while the font can
+    /// draw it, else the whole list.
+    fn keys_hint(&self) -> &'static str {
+        if self.font.is_some() {
+            "H: keys"
+        } else {
+            BROWSE_KEYS
+        }
+    }
+
+    /// The help overlay's draws, scaled to stay legible on a large window.
+    fn help_draws(&self, surface: (u32, u32)) -> Vec<TextDraw> {
+        let Some(font) = &self.font else {
+            return Vec::new();
+        };
+        let scale = (surface.1 / 360).max(1) as i32;
+        let max_chars = ((surface.0 as i32 / scale - 32) / 7).max(20) as usize;
+        let mut out = Vec::new();
+        let mut y = 16;
+        // The title's own pointer to this help is left off its first line.
+        let title = self
+            .base_title
+            .strip_suffix(self.keys_hint())
+            .map(|t| t.trim_end_matches([' ', '-']))
+            .unwrap_or(&self.base_title);
+        for (line, strong) in help_lines(title, self.browse_len().is_some()) {
+            let color = if strong {
+                [1.0, 0.92, 0.55, 1.0]
+            } else {
+                [0.88, 0.9, 0.95, 1.0]
+            };
+            for part in wrap(&line, max_chars) {
+                for mut d in text_draws_for(&font.layout_ascii(&part), (16, y), color) {
+                    d.dst = (
+                        d.dst.0 * scale,
+                        d.dst.1 * scale,
+                        d.dst.2 * scale as u32,
+                        d.dst.3 * scale as u32,
+                    );
+                    out.push(d);
+                }
+                y += 16;
+            }
+        }
+        out
+    }
+
     /// The window title: the display's own, led by the go-to prompt while
     /// a number is typed.
     fn refresh_title(&self) {
@@ -237,9 +343,10 @@ impl App {
         b.last_count = count;
         let mut display = display;
         display.title = format!(
-            "{}  (of 0..{})  -  {BROWSE_KEYS}",
+            "{}  (of 0..{})  -  {}",
             display.title,
-            count.saturating_sub(1)
+            count.saturating_sub(1),
+            self.keys_hint()
         );
         self.apply(display);
     }
@@ -340,7 +447,7 @@ impl App {
                     payload.positions.len(),
                     payload.indices.len() / 2,
                     label,
-                    BROWSE_KEYS,
+                    self.keys_hint(),
                 );
                 Display {
                     title,
@@ -412,7 +519,7 @@ impl App {
                     positions.len(),
                     indices.len() / 3,
                     label,
-                    BROWSE_KEYS,
+                    self.keys_hint(),
                 );
                 Display {
                     title,
@@ -434,7 +541,7 @@ impl App {
                     payload.tim_dir_label,
                     payload.dark_note(),
                     label,
-                    BROWSE_KEYS,
+                    self.keys_hint(),
                 );
                 Display {
                     title,
@@ -486,6 +593,12 @@ impl ApplicationHandler for App {
                 return;
             }
         };
+        if let Some(font) = &self.font {
+            match renderer.upload_font(font) {
+                Ok(a) => self.font_atlas = Some(a),
+                Err(e) => log::warn!("font atlas upload failed (help stays in the title): {e:#}"),
+            }
+        }
         self.window = Some(window);
         self.renderer = Some(renderer);
         // Audio is best-effort: if no device is available the viewer still
@@ -529,6 +642,9 @@ impl ApplicationHandler for App {
                     },
                 ..
             } => match code {
+                KeyCode::KeyH | KeyCode::F1 if self.font.is_some() => self.help = !self.help,
+                // While the help is up, any key closes it and does nothing else.
+                _ if self.help && self.font_atlas.is_some() => self.help = false,
                 // Esc first cancels a number being typed, then quits.
                 KeyCode::Escape => {
                     if self.goto.cancel() {
@@ -562,7 +678,19 @@ impl ApplicationHandler for App {
                 }
             },
             WindowEvent::RedrawRequested => {
-                if let Some(r) = &self.renderer {
+                if let (true, Some(r), Some(atlas)) =
+                    (self.help, &self.renderer, self.font_atlas.as_ref())
+                {
+                    let draws = self.help_draws(r.surface_size());
+                    let overlay = TextOverlay {
+                        atlas,
+                        draws: &draws,
+                        blend: &[],
+                    };
+                    if let Err(e) = r.render(RenderTarget::TextOnly(&overlay)) {
+                        log::error!("render error: {e:#}");
+                    }
+                } else if let Some(r) = &self.renderer {
                     // Priority: VRAM mesh > flat mesh > wireframe > 2D texture > clear.
                     let target = if let (Some(vm), Some(vram), Some(view)) = (
                         self.vram_mesh.as_ref(),

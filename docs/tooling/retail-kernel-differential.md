@@ -313,14 +313,23 @@ An unchecked direction falls in one of these, read from the disassembly:
   the disc does not hold (a spell-0 guard ahead of a test of spell 0's
   description byte, which is zero).
 - **Equivalent under the harness.** The arms differ only in a call the test
-  stubs or hooks alike (two file loaders answered by one hook).
+  stubs or hooks alike (two file loaders answered by one hook). The field
+  VM's cross-context arms are the common case: the stub world's actor
+  resolver answers with the running context, so an arm that skips the
+  resolve when the header names the running context, or that parks the
+  caller as well when the target is the player, writes one context either
+  way. Telling them apart takes a host with a second context, the World's
+  own field host, as `a_tile_warp_lands_on_the_context_it_names` runs it.
 - **Comparison gap.** The arm writes something the test does not compare: a
   global the field VM writes beside the context the test holds, a mode word a
   battle exit sets beside the seats it checks. This is what the measurement is
   for; the fix is to widen the comparison.
 - **Weak inputs.** The arm is compared, but no generated input makes its two
   directions differ (arms that part only for an operand the generator never
-  makes negative, or never takes past a cap).
+  makes negative, or never takes past a cap), or makes them differ too
+  seldom: the fishing lure tick's strike arms (the bite divisor by line
+  record, the rare-band kit gate) decide the hooked fish only on the few
+  frames a random pad lands a strike.
 - **Unported effect.** The arm's write has no counterpart in the port: the
   dialog border's tile rows where the port keeps only the footprint, a heap
   free in an engine with no PSX heap. The arm belongs in a scope row,
@@ -617,6 +626,8 @@ The lure's flight and in-water move in `FUN_801D26CC`, with the tail's record, r
 
 Baka Fighter's damage kernel `FUN_801D3B18`, called on its own over every attack type and streak (`baka_leaves`), found the port zeroing a special's damage, where the kernel runs the same arithmetic for it: a power of `0` leaves the streak term `(streak - 1) * 0x40`, taken off a struck seat with HP left. No duel reaches it, since the special is thrown at a seat already at `0`.
 
+The cabinet `FUN_801CF388` with its widget emitter `FUN_801D5ED0` logged (`baka_cabinet`) found the "FIGHT!" card state `0x38` draws before every round missing from the port, and the "NEXT GAME / PAY OUT" sheet drawn a frame early (on the frame the state is entered) and dropped on the confirm frame, where retail draws it inside the arm between the cursor step and the confirm. With the title card, the round banner, the announcer, the arena and HUD passes and the full-screen fade logged too, it found the exit state's fade to black (`FUN_80024EE4(0, 2, ..)` at the exit clock times six, `0x801D1F38..0x801D1F70`) missing; every other callee agrees.
+
 Baka Fighter's chrome timelines, each called as its caller calls it with the widget emitter, the announcer and the tint hooked (`baka_chrome`): the round banner `FUN_801D5C7C` and the all-clear announcer `FUN_801D21FC` match, and the intro title card `FUN_801D59D4` found the subtitle's four-frame flash carried as white where the routine pushes the colour word `0xFF`, red alone. The sprite-actor draw callback `FUN_801D67F0` found the port rounding the fade level up before its shift, where the level is read unsigned and takes a plain `>> 4`, a brightness one step high on most frames. The impact pair `FUN_801D4DF8` and the all-clear fighter's tick `FUN_801D6F18` match.
 
 With the clip starter's hook raising the CD-XA word `_DAT_8007BC20` as the real starter does, the announcer found the port starting both of its opening lines on one frame, so the second replaced the first and channel `0x0A` never sounded; the cabinet's own run (`baka_cabinet`) found the beat `0xFB` moving on with a line still playing, where retail holds at full black.
@@ -896,7 +907,18 @@ where the arm stores `+0x6C` (`0x801E08AC`); op `0x23` keeping the half-tile bit
 `+0x8D`, which the arm masks with `0x7F`; and op `0x3E`'s minigame warp clearing `0x80000` on the context running
 the script, where the arm clears it on the player object (`0x801E07BC..0x801E07D8`), so a door's warp left the
 player's walk lock up. A field the port leaves to its host is counted rather than compared, since the host there is
-inert; what the test holds is every store `step` makes itself.
+inert; what the test holds is every store `step` makes itself. Its host-globals pass holds op `0x3F`'s
+scene-change packet name, entry words `0x80073EF4` / `0x80073EF8` and arrival facing `0x80073EFC`
+against the scene host's own conversion, which found the entry operand the scene host arms before
+the destination's initialiser taking the whole entry byte as the tile: on the 25 shipped scene
+changes whose entry byte asks for the far half of the tile (bit 7), the operand stood `0x3FC0` off
+the map until the player's re-seat after the initialiser. The real World's op `0x23`
+(`a_tile_warp_lands_on_the_context_it_names`), with the player pointer and the per-scene MAN flag
+dealt, found its floor gate unported and the player context taking the NPC arm's tile bytes: a
+seated context kept its old `+0x16` where retail re-floors it, and the player's `+0x8C` / `+0x8D`
+moved where retail leaves them. The first does not show on screen, since the actor driver's height
+arm re-floors every placement every tick (`field_npc_height`); the second only reaches a script op
+that reads the player context's `+0x8C` / `+0x8D` after a `0x23`.
 The seat `4C 51` is the op the port hands its host whole, so a second pass steps it on the real `World`, as a live
 placement channel's op, and compares the tile on the context and on the drawn seat, the party-bank bit, `+0x62`,
 `+0x5C` and the stored heading. Every seat matched but the hide box: the host returned early on tile `(127, 127)`, a
@@ -1241,6 +1263,19 @@ shape: Mushura's chase raises it to `9` mid-cast, and the port's single-target u
 tick bodies that roll inside their tick (Theeder, Zenoir, Swordie, Juggernaut's last hits) wrote their seat row
 back whole over the live seats, undoing each roll's spirit fill and status strip; the row now folds back only what
 the tick changed (`World::fold_cast_seat_row`).
+
+**Empty seats and the wider seeds.** A monster seat the formation leaves empty holds a null record pointer
+`0x801C9348[seat - 3]` and a body pair of `(0, 0)`, so a read off its record lands in the kernel's low RAM
+(byte `0x1F` reads `0x81` in a cast's RAM image). The walk once seeded a record and a ground pair on every seat,
+and copied the scatter PROT 0915's arm 0 puts on an empty seat's ground pair into its body pair. Mushura's chase
+then traded its target onto such a seat and aimed by a reach and a bearing retail never sees; with the seats as
+retail leaves them its creature's bank `+0x48` is compared on every pass. The scripted rolls add `2`, which
+PROT 0915 quarters to its floor of `1`, and `0x500`, past the walk's HP when quartered or taken by two thirds.
+The cycle turns with the frame step. The fallen runs hold the side band until PROT 0921's and 0923's arm 1 has
+spent its word. They start PROT 0908's and 0928's creature clips two passes late and reach a park a pass late.
+PROT 0930's fallen runs seed an unhurt Venomed member and a Stoned one. These found two defects: Mushura's arm
+`0xD` levelled the bank one tick's share on the tick that hands over, and Horn's heal arm cleared no status
+(`sh zero,0x16e` at `0x801F7ACC`), so a Venomed or Stoned member kept the ailment through the summon.
 
 The images the walk does not run (PROT 0903, 0904, 0906, 0909..0913, 0918,
 0919) have ported tick bodies, which their own tick differentials compare; of

@@ -520,14 +520,20 @@ pub trait NewGameHost {
 /// no session or neither scene would enter.
 pub fn start_new_game_on<H: NewGameHost>(host: &mut H) -> Option<&'static str> {
     host.new_game_session()?.begin_new_game_slate();
-    legaia_engine_scene_host::resume::enter_new_game(|scene| {
+    let scene = legaia_engine_scene_host::resume::enter_new_game(|scene| {
         host.enter_opening_scene(scene)
             .map_err(anyhow::Error::msg)?;
         let session = host
             .new_game_session()
             .ok_or_else(|| anyhow::anyhow!("the session went away entering '{scene}'"))?;
         session.confirm_scene_landed(scene)
-    })
+    })?;
+    // The title's NEW GAME runs `LaunchFade` and `LaunchGame` before master
+    // mode 2, and mode 2 then holds for the overlay and scene loads: the
+    // opening runs behind them (`World::launch_fade`, `World::field_init_hold`).
+    host.new_game_session()?.host.world.launch_fade =
+        Some(legaia_engine_system::mode_entry_init::LaunchFade::default());
+    Some(scene)
 }
 
 /// The session's own half of a New Game: the live field entry.

@@ -347,6 +347,11 @@ impl World {
             }
             self.tick_battle_impact_fx();
         }
+        // The tag-`0x67` arm's ribbon call, once a pass, on the game's
+        // stream (`World::deal_clip_ribbon`).
+        if only.is_none() {
+            self.deal_clip_ribbon();
+        }
         // The same pass's Mystic Shield pose and break
         // (`0x8004D534..0x8004D674`): once a pass - it counts nothing, it
         // seats the sphere and tests the break.
@@ -1106,6 +1111,7 @@ impl World {
             if vsyncs > 0 {
                 let streak_before = self.casting.move_fx_streak.counter_word;
                 self.casting.move_fx_streak.tick_counter_by(vsyncs);
+                self.deal_move_fx_streak(streak_before);
                 self.tick_homing_slots_pass(vsyncs, streak_before);
             }
             return;
@@ -1115,7 +1121,9 @@ impl World {
             // 1): `ctx[+0x6C6]` falls 4 per frame, shrinking the trail's
             // half-width and scheduling the afterimage -> ribbon emitter
             // handoff.
+            let streak_before = self.casting.move_fx_streak.counter_word;
             self.casting.move_fx_streak.tick_counter();
+            self.deal_move_fx_streak(streak_before);
             self.tick_homing_slots();
         }
     }

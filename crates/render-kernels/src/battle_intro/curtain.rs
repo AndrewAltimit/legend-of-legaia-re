@@ -34,6 +34,29 @@ pub const CURTAIN_MIDPASS_DECAY_5: u16 = 0x10;
 /// undrawn display pixel takes ~31 frames to reach black.
 pub const CURTAIN_DISPLAY_DECAY_5: u16 = 1;
 
+/// The scatter style's display wash (`FUN_801CFDA0`'s
+/// `func_0x8004695C(0x101010)`, armed on every frame after the first) as the
+/// fade one display pixel shows per clock unit: **one** 5-bit level.
+///
+/// The wash takes `0x10 >> 3 = 2` levels times the frame step off the buffer
+/// the frame draws into (the drain `FUN_80046978` scales by the step, which
+/// the scatter body floors at `3`, the `0x801CFE00` store). The display is
+/// double-buffered, so each buffer is washed every other frame: an undrawn
+/// pixel drops `2 * step` levels every two frames, one level a vsync. A
+/// PCSX-Redux recording of formation `[136]` from `retona_field_card_boot`
+/// (step `3` throughout) shows exactly that: a vacated pixel reads `31, 31,
+/// 25, 25, 19, 19` on consecutive frames. The model is one buffer stepped once
+/// per clock unit, so it takes one level a unit; an undrawn pixel reaches
+/// black in about half a second.
+pub const SCATTER_DISPLAY_DECAY_5: u16 = (super::PARTICLE_WASH_RGB as u16 & 0xFF) >> 4;
+
+/// The frame step the scatter style holds while it runs: its per-frame body
+/// stores `3` into the frame-step floor `DAT_8007B9D8` (`0x801CFE00`), and a
+/// PCSX-Redux film of formation `[136]` reads step `3` through the style.
+/// [`BattleIntro::advance_to`] draws the style once every this many clock
+/// units, at this step.
+pub const SCATTER_FRAME_STEP: u8 = 3;
+
 /// Where the port keeps its CPU model of the transition's display buffer in
 /// the cloned VRAM page, so the trail can be drawn as textured quads. Retail
 /// needs no such rect - on the console the display buffer *is* VRAM and the
@@ -166,8 +189,20 @@ impl BattleIntro {
         self.pending_rows = rows;
     }
 
-    /// Advance the spin-up style's CPU display model and land it in
+    /// Advance a particle style's CPU display model and land it in
     /// [`CURTAIN_TRAIL_RECT`].
+    ///
+    /// The scatter style (`FUN_801CFDA0`) runs on the same never-cleared
+    /// display, and its screen wash is what tells the two apart: each frame
+    /// after the first it subtracts `0x101010` (the farthest OT bucket, ABR
+    /// `2`, ahead of every particle), so where a patch has flown away the
+    /// field fades to black over about half a second and a flying patch
+    /// leaves a fading trail, rather than the hole opening at once that a
+    /// frame composed over the black backdrop shows. A patch at its rest pose
+    /// is opaque and redraws its own cell each frame, so the field that has
+    /// not peeled off stays intact under the wash. The wash comes off
+    /// ([`SCATTER_DISPLAY_DECAY_5`]) before the upload, since it lands on the
+    /// display ahead of this frame's particles; the spin-up arms none.
     ///
     /// `FUN_801D0370` arms no wash, and nothing clears the display buffer
     /// while the transition runs (game mode `9`, no field renderer; the only
@@ -202,6 +237,10 @@ impl BattleIntro {
         let Some(page) = self.captured.as_mut() else {
             return;
         };
+        let wash = std::mem::take(&mut self.pending_wash_5);
+        if wash != 0 {
+            decay_15bpp(&mut self.display_accum, wash);
+        }
         let r = CURTAIN_TRAIL_RECT;
         page.write_block(
             r.x,

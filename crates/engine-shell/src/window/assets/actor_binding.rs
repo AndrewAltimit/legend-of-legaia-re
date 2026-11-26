@@ -166,12 +166,22 @@ impl PlayWindowApp {
                             // colour prims the VRAM mesh can't carry) rides
                             // the colour pipeline, posed with the same bone
                             // set, drawn per-frame at the actor's live model.
-                            if let Some((_, offsets)) = &idle_pose {
-                                let cmesh = legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(
-                                    &player_tmd,
-                                    &g.raw,
-                                    offsets,
-                                );
+                            // A scene-bank model (`CC F8 50` below `0xF0`)
+                            // has no rest pose of its own and draws its
+                            // colour half unposed until a clip poses it.
+                            {
+                                let cmesh = match &idle_pose {
+                                    Some((_, offsets)) => {
+                                        legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(
+                                            &player_tmd,
+                                            &g.raw,
+                                            offsets,
+                                        )
+                                    }
+                                    None => {
+                                        legaia_tmd::mesh::tmd_to_color_mesh(&player_tmd, &g.raw)
+                                    }
+                                };
                                 if !cmesh.is_empty() {
                                     match r.upload_color_mesh_blended(
                                         &cmesh.positions,

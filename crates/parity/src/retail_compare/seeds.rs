@@ -1268,6 +1268,7 @@ pub fn retail_mesh_parts(
             (rec < 0x10_0000).then_some(())?;
             let model_sel = game_anchors::i16_at(ram, base + rec);
             (5..0x4000).contains(&model_sel).then_some(())?;
+            (!spawned_inside_lag(ram, n, base + rec, lag)).then_some(())?;
             let shown = |o: u16| {
                 crate::retail_compare_battle::ram_read::displayed_part_halfword(
                     ram,
@@ -1288,6 +1289,52 @@ pub fn retail_mesh_parts(
             })
         })
         .collect()
+}
+
+/// Whether part `node` was seated inside the display lag, so the displayed
+/// frame did not draw it: its record's program is a straight run into one
+/// `WAIT` and its `HALT` (the wait the part's life), and its wait `+0x54`,
+/// drained `8` a vsync, has run for no more than `lag` vsyncs.
+///
+/// `rugi` `P2[72]`'s fly-in seats a wind streak (`model_sel` `45`, record
+/// `WORLD_SET` at the slab's face, `VEL_SET` along `+Z`, `WAIT 26`) one a
+/// frame. `rugi_p2_72_flyin_crossing` holds six live, their waits `16` to
+/// `176` of `208`: the two newest had run `4` and `8` vsyncs against the
+/// state's lag of `8`, and taken back the lag the newest stood behind its own
+/// seat. Seated, both drew as streaks across the floor that retail's frame
+/// does not show.
+fn spawned_inside_lag(ram: &[u8], node: u32, record: u32, lag: u16) -> bool {
+    use legaia_overlay_images::move_disasm::{Flow, WalkOptions, disassemble};
+    let Some(start) = record.checked_sub(0x8000_0000).map(|o| o as usize + 4) else {
+        return false;
+    };
+    let Some(bytes) = ram.get(..(start + 0x200).min(ram.len())) else {
+        return false;
+    };
+    let insns = disassemble(
+        bytes,
+        start,
+        WalkOptions {
+            max_insns: 64,
+            ..WalkOptions::default()
+        },
+    );
+    let mut waits = insns.iter().filter_map(|i| match i.flow {
+        Flow::Wait { units } => Some(units),
+        _ => None,
+    });
+    let (Some(spawn_wait), None) = (waits.next(), waits.next()) else {
+        return false;
+    };
+    let straight = insns
+        .iter()
+        .all(|i| matches!(i.flow, Flow::Next | Flow::Wait { .. } | Flow::Halt));
+    let ends_on_halt = insns.last().is_some_and(|i| i.flow == Flow::Halt);
+    let now = i32::from(game_anchors::i16_at(ram, node + 0x54));
+    straight
+        && ends_on_halt
+        && (0..=spawn_wait).contains(&now)
+        && now + 8 * i32::from(lag) >= spawn_wait
 }
 
 /// A part's depth-cue level `+0x78` as the displayed frame drew it: the

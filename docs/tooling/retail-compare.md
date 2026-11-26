@@ -568,6 +568,12 @@ engine verdict:
   (flat `10`) onto index `3`, `0x600`, with `B8 0A 83 12`, on the tile his
   record `P1[4]` seats him on facing index `7` (`4C 51 92 BD 07 ..`), so a
   state past the beat otherwise scores his record's `0xE00`.
+  A placement standing exactly on a tile a beat walks it onto
+  (`C7 <flat> xb zb mode`) takes retail's heading the same way: the walk
+  turned it along the leg. `kor5` `P2[4]` walks flat `9` onto `(0x99, 0xA8)`
+  and `P2[5]` re-seats it there with `A3 09 99 A8`, which does not turn it,
+  so `kor5_p2_5_pre_raise` holds the walk's `0x400` where a resume of
+  `P2[5]` kept the record's `0xC00` (`facing` `.947` to `1`).
   A spawn under flags a probe has since lowered is the last of these. A
   capture made by loading a state inside a scene and clearing story flags
   there keeps every placement where its spawn section stood it under the
@@ -1069,6 +1075,14 @@ engine verdict:
   `0x3A0` stands two passes ahead in the RAM, and seated it cost
   `credits_eddoman_fullscreen_pcsx` `.003`. The six `juui1_vortex_*` rows read
   `.942` to `.979` (`.737` to `.821` before). A harness seat.
+  A part seated inside the display lag is left out: the displayed frame
+  had not drawn it. A record whose program runs straight into one `WAIT`
+  and its `HALT` gives each part its age off the wait `+0x54` (`8` a vsync),
+  and one that has run no longer than the lag stays out
+  (`spawned_inside_lag`). `rugi` `P2[72]`'s fly-in seats a wind streak a
+  frame (`WAIT 26`); the two newest in `rugi_p2_72_flyin_crossing` had run
+  `4` and `8` vsyncs against a lag of `8`, and seated they drew two streaks
+  across the floor that retail's frame does not show (`.866` to `.870`).
 
   So is the frame's clear colour, the draw environment's `r0 / g0 / b0`
   (`0x8007BF5D..5F`) that op `4C 13` writes and the MAN loader zeroes: the
@@ -1389,6 +1403,12 @@ started from:
   replays that arm's op-`0x35` words first
   (`man_field_scripts::walk_spawn_scores`: the last start within eight
   instructions of the `44`, through `World::replay_field_bgm_words`).
+  A start counts only when no branch from elsewhere in the record joins
+  between it and the spawn: `koin3`'s entry picks `2055` or `2018` on a box
+  test and both arms meet at `+0x16C` ahead of the `0x59B` test that spawns
+  `P2[8]`, so the `2018` start six instructions before `44 56` is one arm's,
+  not the spawn's. Scored by it, `koin3_disco_king_points_box` replaced the
+  `2055` the entry chose with `2018` (`bgm` `0` to `1`).
   A record that runs *after* a spawned record has ended inherits that
   record's music the same way. `vozz`'s entry spawns the Songi aftermath
   `P2[14]` (`44 2A`) behind the fight's marker `0x2B5`; `P2[14]` clears the
@@ -4189,6 +4209,14 @@ the seat's facing (`RetailBattle::inflight_ground`), so the replayed knockback
 starts where retail's did. Both apply only in `0x35` / `0x36`, where the
 module phase byte is the module's.
 
+**The value rows ride their plates' glide.** A row-aimed cast's value window opens each row's
+name plate (records `0x60..`) and its value record (`0x5C..`) on one frame (`0x801E8128..`). The
+seed lists the plates' glides still in flight; the host now takes their elapsed for the rows'
+glide too (`MultiReadout::age`), where the rows had kept the replay's own clock, two frames
+younger on `theeder_summon_value_rows_rising` (each value `20` px further from its rest, the first
+row left of retail's and the others right). A harness seat: the rising frame reads `.916` for
+`.842`. Whether the replay opens the window late against the gate is not measured.
+
 The gate places the frame inside the arm by the module's own clocks: arm 13
 (the retract) by the trail count `0x801F91FC` (`PhaseGate::trail_count`, the
 `r<n>` suffix) and arm 14 by the settle word `0x801F9204`
@@ -5063,6 +5091,26 @@ leader's back a few pixels round (`gaza2_card_first_menu` `.969` to `.995`,
 (flow `0xFF`, action `0x0A`) has no orbit store to date its yaw, which stands
 eight units short of the yaw counter `ctx[+0x6DA]` at any step; it keeps the
 eight (`nilboa_lava_face_pre_fissure` at step `3`: eight `.999`, twelve `.841`).
+
+**A component that landed on the RAM's pass.** The magic band's framings
+(`0x29..0x2E`, `FUN_801DC0A0` case `0xA` and its group shot) re-arm the table
+every pass, so a component already on its endpoint is armed increment `0`. One
+whose increment is still set on a zero gap therefore reached its endpoint on
+the RAM's own pass, and stood short of it on the displayed frame: its gap
+before that pass lay in `(inc - 1) * d + 1 ..= min(step * inc, inc * d)`, and
+the walk-back takes the middle of that range, then the re-arm's share as
+usual (`landed_first_pass`). Over the retail films' magic and strike bands no
+set increment on a zero gap had landed earlier than that pass, and the middle
+lands within a unit or two of the recording. On
+`battle_balden_devil_pump_multi_cutter_mid_cast` the pitch reads `64` on
+increment `1`; its recording stood at `59` two passes back, which is where the
+walk lands, and the frame reads `.950` to `.985` (`battle_noaru_barra_v2_multi_cutter_mid_cast`
+`.972` to `1.000`; no battle state falls). It is held to the magic band and to
+a table some other component still walks: a turning shot lands its yaw inside
+every pass with the rest idle, and the module states keep a once-built table's
+increments after landing. The strike band read mixed (`battle_cave01_theeder_strike`
+up, `battle_noa_miracle_art_combo` and `battle_melee_hit_spark` down), so it
+stays out.
 
 **Each pass on its own step.** The two passes the walk-back undoes need not
 share a step. The frame driver stores a duration of `0x2D0` hsyncs or more in
@@ -6918,6 +6966,20 @@ moved the strikes a stream already reached both ways
 which the Guardian's corrected cast clip
 ([above](#monster-casts-the-drive-relies-on)) took away; it reaches on the
 fallback.
+
+<a id="a-delegated-seats-stream"></a>
+**A delegated seat's stream.** A party seat the auto-fill leg of `FUN_801F0450` takes (record
+`+0xF8 & 0x2000`, status in the `0x380` delegation group: the Evil Medallion's Rage) has its
+`+0x1DF..` stream rebuilt at the round's state `0x00` from `rand()` draws the replay does not
+share. `evil_medallion_rage_battle` resolved `22 26 25 22 21`, five arts, and the replay's fill
+drew `1F 23`, so its strike loop left `0x1E` after two swings and reached the Done band at `+361`
+vsyncs where retail's takes `+640`. Frame-stepped, retail's loop paces each byte as the port's
+does: stage, commit on clip `0x11`, stage the next. So the action machine was right and the stream
+was the replay's. The drive now stands the delegated seat on the capture's stream from the round's
+fill to the strike loop (`RetailBattle::delegated_stream`, `ActionSteer::queue` on a party seat
+whose bit is in `BattleActionCtx::delegated_seats`). Harness-only. With it the engine's band follows
+retail's state for state, `6..11` vsyncs early: the seed's `0x0A` lasts `3` vsyncs where retail's
+lasts `9`, waiting on the previous action's clips.
 
 <a id="a-swing-staged-behind-the-capture"></a>
 A capture whose first swing is staged but not committed (`RetailBattle::strike_swing_pending`: `+0x1D9 <= 1`, the queue running on past the cursor) takes the same fallback. The strike loop tests the terminator at the new cursor on the pass that stages (`0x801E3998..0x801E39AC`), so a replay that rolled one byte leaves `0x1E` on its first pass where retail's two bytes hold it. The search treats that exit as a miss rather than re-running the state on its last tick, which stood ahead of the first case-7 arm.

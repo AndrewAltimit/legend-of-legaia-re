@@ -256,6 +256,20 @@ impl PlayWindowApp {
                             c.age = u16::from(g.elapsed);
                         }
                     } else {
+                        // A row-aimed cast's value window: each row's name
+                        // plate (records `0x60..`, seat B on row `192`) opens
+                        // with its value record (`0x5C..`) on the same frame
+                        // (`0x801E8128..`), so the plates' elapsed is the
+                        // rows' glide too, which the host owns.
+                        // The rows rest at `x = 16 / 92 / 168 / 244`
+                        // (the value readout's `MULTI_ROW_X`).
+                        if g.target[1] == 192
+                            && [16, 92, 168, 244].contains(&g.target[0])
+                            && let Some(m) =
+                                self.battle_hud.multi_readout.as_mut().filter(|m| m.open)
+                        {
+                            m.age = u16::from(g.elapsed);
+                        }
                         self.session
                             .host
                             .world
@@ -1007,6 +1021,17 @@ impl PlayWindowApp {
             {
                 for s in seeds {
                     world.seat_battle_clip_cursor(usize::from(s.slot), s.clip, s.cursor);
+                }
+                // The body pairs `+0x3C` / `+0x40` the state's RAM holds are
+                // its own poses' (`FUN_8004998C`), not the replay's: a strike's
+                // attacker re-faces every pass onto its target's body pair, so
+                // a pair left on the replay's keyframe turned the attacker
+                // off retail's bearing from the first pass. Only on the strike
+                // band (`0x14..=0x20`), the states that re-face off the pairs:
+                // a cast module's gate stands its bodies on the module's own
+                // seats. A harness seat.
+                if (0x14..=0x20).contains(&world.battle_ctx.action_state) {
+                    world.refresh_battle_body_pairs_now();
                 }
             }
         }

@@ -417,8 +417,11 @@ pub struct App {
     error_report: Option<(String, String)>,
     /// The failed game's log the error banner's *Show log* button opens.
     error_log: Option<PathBuf>,
-    /// Each view's left panel width this run, by view key, for the next start.
+    /// Each view's left panel width this run, by view key, for the next start:
+    /// the width the player chose, not one a narrower window clamped it to.
     side_widths: std::collections::BTreeMap<&'static str, f32>,
+    /// Each view's left panel width as last drawn.
+    side_shown: std::collections::BTreeMap<&'static str, f32>,
     /// The folder the last export or extraction wrote into, for the
     /// status line's *Show folder* button.
     last_written: Option<PathBuf>,
@@ -553,6 +556,7 @@ impl App {
             error_report: None,
             error_log: None,
             side_widths: Default::default(),
+            side_shown: Default::default(),
             last_written: None,
             status_seen: None,
             appearance_applied: false,
@@ -617,6 +621,40 @@ impl App {
 
     /// A view's left panel width: what it was when the app last closed, else
     /// `default`. Only read when the panel first shows; egui holds it after.
+    /// A view's resizable left panel, `max` wide at most. A window narrowed
+    /// past the chosen width clamps the panel; egui then keeps the clamped
+    /// width, so the list stayed cramped once the window grew back. While the
+    /// drawn width is short of the chosen one and the window has room, the
+    /// panel is set back to it.
+    fn left_panel(&self, view: &'static str, default: f32, min: f32, max: f32) -> egui::Panel {
+        let wanted = self
+            .side_widths
+            .get(view)
+            .copied()
+            .unwrap_or_else(|| self.side_width(view, default));
+        let target = wanted.min(max);
+        let panel = egui::Panel::left(view)
+            .resizable(true)
+            .default_size(target)
+            .min_size(min.min(max))
+            .max_size(max);
+        match self.side_shown.get(view) {
+            Some(shown) if *shown + 0.5 < target => panel.exact_size(target),
+            _ => panel,
+        }
+    }
+
+    /// Record the width [`Self::left_panel`] drew at. Only a change made
+    /// with the pointer held (the player dragging the divider) is a chosen
+    /// width; one the window's resize made is its clamp.
+    fn note_left_panel(&mut self, ui: &egui::Ui, view: &'static str, shown: f32) {
+        let prev = self.side_shown.insert(view, shown);
+        let dragging = ui.input(|i| i.pointer.primary_down());
+        if dragging && prev.is_some_and(|p| (p - shown).abs() > 0.5) {
+            self.side_widths.insert(view, shown);
+        }
+    }
+
     fn side_width(&self, view: &str, default: f32) -> f32 {
         self.explorer
             .settings
@@ -1665,9 +1703,9 @@ impl App {
             None => Err("Open your Legend of Legaia (USA) disc image first.".to_string()),
         };
         match (&self.engine, &disc) {
-            _ if self.game.is_some() && self.game_is_launcher => {
-                Some("The game's options window is open; its Play starts the game.".to_string())
-            }
+            _ if self.game.is_some() && self.game_is_launcher => Some(
+                "The game's options window, or the game its Play started, is open.".to_string(),
+            ),
             _ if self.game.is_some() => Some("The game is running.".to_string()),
             (None, _) => Some(format!(
                 "{} was not found. It ships in the release folder's {} \
@@ -1683,8 +1721,10 @@ impl App {
     fn play_button(&mut self, ui: &mut egui::Ui) {
         let running = self.game.is_some();
         let blocked = self.play_blocked();
+        // A launcher started from *Game options* turns into the game on its
+        // own Play, in the same process, so the label names both.
         let button = if running && self.game_is_launcher {
-            egui::Button::new("Options open")
+            egui::Button::new("Game open")
         } else if running {
             egui::Button::new("Game running")
         } else if blocked.is_none() {
@@ -1818,7 +1858,7 @@ impl App {
             Ok(()) => {
                 // The launcher ends with a game its Play started, or on Quit.
                 self.explorer.status = Some(if self.game_is_launcher {
-                    "The game's options window has closed.".into()
+                    "The game's window has closed.".into()
                 } else {
                     "The game has closed.".into()
                 })
@@ -3753,15 +3793,10 @@ impl eframe::App for App {
             }
             Mode::Browse => {
                 let side_max = side_panel_max(ui, 300.0);
-                let side = self.side_width("browse", 430.0).min(side_max);
-                let panel = egui::Panel::left("browser")
-                    .resizable(true)
-                    .default_size(side)
-                    .min_size(300.0)
-                    .max_size(side_max)
+                let panel = self
+                    .left_panel("browse", 430.0, 300.0, side_max)
                     .show(ui, |ui| self.browser(ui));
-                self.side_widths
-                    .insert("browse", panel.response.rect.width());
+                self.note_left_panel(ui, "browse", panel.response.rect.width());
                 egui::CentralPanel::default().show(ui, |ui| self.preview(ui));
             }
             Mode::Actors => self.actors_mode(ui),

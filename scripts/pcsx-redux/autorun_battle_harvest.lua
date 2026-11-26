@@ -131,6 +131,16 @@
 --                    adds a field screenshot every N vsyncs
 --                    (shot_<vsync>.raw + .meta). LEGAIA_OSC_AFTER=N ends the
 --                    run N field vsyncs after the first battle's return.
+--   LEGAIA_INTRO_SHOTS N = film the field-to-battle transition: on the first
+--                    vsync the game mode leaves the field (0x03) for anything
+--                    but the battle modes, save <prefix>_intro_v<vsync> and
+--                    take a display screenshot on that vsync and each of the
+--                    next N (intro_<vsync>.raw + .meta), with intro.csv one row
+--                    per vsync: game mode, frame step 0x1F800393, the floor
+--                    0x8007B9D8 and the seed word 0x80009010; the run ends
+--                    once the N shots are taken. Pair it with LEGAIA_WANT to
+--                    pick the formation, whose slot-0 monster picks the style
+--                    (render-kernels battle_intro_styles::select_intro_style)
 --
 -- No breakpoints are armed (unless LEGAIA_OSC_LOG), so --fast (dynarec)
 -- runs are fine.
@@ -525,6 +535,39 @@ function OSC.tick(ctx, vsync, mode)
     end
 end
 
+-- On `P` rather than its own local: the capture callback is at the upvalue limit.
+P.INTRO = { shots = probe.getenv_num("LEGAIA_INTRO_SHOTS", 0), at = nil, csv = nil }
+local INTRO = P.INTRO
+local function intro_shot(vsync)
+    local ok, ss = pcall(function() return PCSX.GPU.takeScreenShot() end)
+    if ok and ss then
+        local bpp = (tonumber(ss.bpp) or 0) > 16 and 24 or 16
+        local h = io.open(probe.out_path(string.format("intro_%06d.raw", vsync)), "wb")
+        h:write(tostring(ss.data)); h:close()
+        local m = io.open(probe.out_path(string.format("intro_%06d.meta", vsync)), "w")
+        m:write(string.format("width=%d\nheight=%d\nbpp=%d\n", tonumber(ss.width), tonumber(ss.height), bpp))
+        m:close()
+    end
+end
+-- One vsync of the transition film (LEGAIA_INTRO_SHOTS): arms on the first
+-- field exit that is not a battle mode, then shoots N + 1 vsyncs.
+function INTRO.tick(ctx, vsync, mode, last)
+    if INTRO.shots <= 0 then return end
+    if INTRO.at == nil then
+        if last == 0x03 and mode ~= 0x03 and mode ~= 0x14 and mode ~= 0x15 then
+            INTRO.at = vsync
+            INTRO.csv = probe.csv_open(probe.out_path("intro.csv"), "vsync,mode,step,floor,seed")
+            save_checkpoint(string.format("%s_intro_v%d", PREFIX, vsync), vsync)
+        else
+            return
+        end
+    end
+    INTRO.csv:row("%d,%d,%d,%.0f,%.0f", vsync, mode, probe.read_scratch_u8(0x393) or 0,
+        probe.read_u32(0x8007B9D8) or 0, probe.read_u32(0x80009010) or 0)
+    intro_shot(vsync)
+    if vsync - INTRO.at >= INTRO.shots then ctx.request_quit = true end
+end
+
 probe.run({
     sstate         = SSTATE_PATH,
     capture_frames = FRAMES,
@@ -553,6 +596,7 @@ probe.run({
                 ok_ptr(cp) and probe.read_u8(cp + 6) or 0, ok_ptr(cp) and probe.read_u8(cp + 7) or 0,
                 ok_ptr(cp) and probe.read_u8(cp + 0x13) or 0)
         end
+        P.INTRO.tick(ctx, vsync, mode, last_mode)
         if mode ~= last_mode then
             logf("vsync=%d game_mode=0x%02x scene=%q", vsync, mode, scene_name())
             if P.SAVE_RETURN and (last_mode == 0x14 or last_mode == 0x15)

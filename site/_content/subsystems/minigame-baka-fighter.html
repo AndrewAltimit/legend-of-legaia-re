@@ -128,7 +128,8 @@
     <li><strong>The pick is a roster record, not a skin.</strong> The chosen party member brings their own stats, action table, strike clips and special camera into the duel.</li>
   </ul>
   <h3>NEXT GAME / PAY OUT</h3>
-  <p>After a won match and its tally, a two-way menu offers NEXT GAME (fight the next rung, keeping the pot on the line) or PAY OUT (bank the pot and leave). The pot shows under it as a GET COIN readout. The menu&rsquo;s cursor wraps both ways, and the sheet vanishes the frame NEXT GAME is taken.</p>
+  <p>After a won match and its tally, a two-way menu offers NEXT GAME (fight the next rung, keeping the pot on the line) or PAY OUT (bank the pot and leave). The pot shows under it as a GET COIN readout. The menu&rsquo;s cursor wraps both ways, and the sheet vanishes the frame after NEXT GAME is taken.</p>
+  <p>Before every round, state <code>0x38</code> flashes the &ldquo;FIGHT!&rdquo; card at the screen centre with its announcer line, fading in over 32 steps and out over the next 16.</p>
   <details class="disclosure">
     <summary>Pad masks, cursor folds and draw gates</summary>
     <div class="disclosure-body">

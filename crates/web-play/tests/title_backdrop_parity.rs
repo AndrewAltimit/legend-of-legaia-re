@@ -7,7 +7,7 @@
 //! came-from-the-title word - is set (`lw v0,-0x4500(v0)` /
 //! `beq v0,zero,0x801E0270` at `0x801E01D0`). The port's
 //! `title_strip_rows` / `title_strip_sprites` is that drawer, reached on both
-//! hosts through `title_band_sprites(TitleBandState::backdrop(), ..)`.
+//! hosts through `title_band_sprites(TitleBandState::backdrop(shade), ..)`.
 //!
 //! This is the browser half of the parity. The native half is the
 //! `title_backdrop_tests` module beside `boot_title_band_state` in the
@@ -96,14 +96,18 @@ fn the_title_continue_save_select_draws_retails_title_strips() {
     assert!(rt.boot_continue_is_open(), "the Load save-select is up");
 
     // The backdrop is the title-strip drawer's own output at retail's dim,
-    // CONTINUE lit: five strips, sprite for sprite.
+    // CONTINUE lit: five strips, sprite for sprite, once the window's
+    // 32-frame dim-in has run.
+    for _ in 0..32 {
+        rt.boot_continue_step(0);
+    }
     let v = backdrop(&rt);
     assert_eq!(
         v["active"], true,
         "the save-select keeps the title behind it"
     );
     let got = v["sprites"].as_array().expect("sprites");
-    let b = (legaia_engine_ui::TITLE_BACKDROP_LUM * 128.0).round() as u8;
+    let b = legaia_engine_ui::TITLE_BACKDROP_REST;
     let want = legaia_engine_ui::title_strip_sprites(true, b, 1.0, (0, 0), 1);
     assert_eq!(
         got.len(),

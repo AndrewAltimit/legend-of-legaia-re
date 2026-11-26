@@ -623,7 +623,12 @@ fn the_launch_fade_hands_to_the_launcher_and_the_launcher_writes_mode_two() {
 fn the_attract_fires_from_attract_idle_with_fmv_zero() {
     let mut s = at_attract_idle();
     s.countdown = 1;
-    assert!(tick(&mut s, TitleTickPad::from_edge(0)).is_empty());
+    // Nothing but the backdrop the tail draws every frame.
+    assert!(
+        tick(&mut s, TitleTickPad::from_edge(0))
+            .iter()
+            .all(|e| matches!(e, TitleTickEffect::Backdrop { .. }))
+    );
     let fx = tick(&mut s, TitleTickPad::from_edge(0));
     assert!(fx.contains(&TitleTickEffect::FireAttract { fmv_id: 0 }));
     assert_eq!(s.submode, TitleOverlaySubMode::AttractIdle as u8);

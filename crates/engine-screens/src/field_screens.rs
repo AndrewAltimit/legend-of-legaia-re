@@ -342,22 +342,39 @@ pub fn field_window_stage_draws(
 }
 
 /// The opening cutscene's narration in the retail 320x240 stage: the
-/// bottom-up subtitle crawl (`FUN_80037174` - every visible line centred at
+/// bottom-up subtitle crawl (`FUN_80037174` - every slot's line centred at
 /// its current window Y) and the static title card, through
 /// `engine-ui::cutscene_text_stage_draws`. Empty when neither is up. A host
 /// scales the result with its stage transform.
+///
+/// The crawl is cropped to the roller's clip window row by row, as the
+/// `DR_AREA` pair the roller links after its lines does: a line entering at
+/// the window's foot or leaving at its head shows the part inside. The
+/// window is the one the screen shows (`stage_clip_window`): the area skips
+/// the draw offset the glyphs take. It draws
+/// in the dialogue white (ink 7, `(206, 206, 206)`), the colour a retail
+/// film of `opdeene`'s first crawl reads off every glyph.
 // REF: FUN_80037174
 pub fn cutscene_narration_stage_draws(
     world: &World,
     font: &legaia_font::Font,
 ) -> Vec<legaia_engine_ui::TextDraw> {
-    let lines = world
-        .cutscene
-        .narration
-        .as_ref()
-        .map(|n| n.visible_lines())
-        .unwrap_or_default();
-    let crawl: Vec<(&str, i32)> = lines.iter().map(|l| (l.text, l.y)).collect();
+    let mut out = Vec::new();
+    if let Some(n) = world.cutscene.narration.as_ref() {
+        let lines = n.all_lines();
+        let crawl: Vec<(&str, i32)> = lines.iter().map(|l| (l.text, l.y)).collect();
+        let (top, bottom) = n.stage_clip_window();
+        out.extend(
+            legaia_engine_ui::cutscene_text_stage_draws(
+                font,
+                &crawl,
+                &[],
+                legaia_engine_ui::MENU_TEXT_WHITE,
+            )
+            .into_iter()
+            .filter_map(|d| legaia_engine_ui::crop_rows(d, top, bottom + 1)),
+        );
+    }
     let card: Vec<&str> = world
         .cutscene
         .card
@@ -365,8 +382,49 @@ pub fn cutscene_narration_stage_draws(
         .flatten()
         .map(String::as_str)
         .collect();
-    if crawl.is_empty() && card.is_empty() {
-        return Vec::new();
+    if !card.is_empty() {
+        out.extend(legaia_engine_ui::cutscene_text_stage_draws(
+            font,
+            &[],
+            &card,
+            [1.0, 1.0, 1.0, 1.0],
+        ));
     }
-    legaia_engine_ui::cutscene_text_stage_draws(font, &crawl, &card, [1.0, 1.0, 1.0, 1.0])
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use legaia_engine_field::cutscene_narration::CutsceneNarration;
+
+    /// The first page enters at the window's foot a row at a time: the
+    /// glyph quads are cut at the clip window's bottom (`187` on screen under
+    /// the scene reset's seed), not dropped until the whole row fits.
+    #[test]
+    fn the_crawl_is_cut_at_the_clip_window() {
+        let font = legaia_font::Font::placeholder();
+        let mut world = World::new();
+        let mut n = CutsceneNarration::new(vec!["abc".to_string(), "def".to_string()]);
+        // The first pass admits page 0 at y = 192, below the window; climb
+        // it until its row reaches the window's foot.
+        let (top, bottom) = n.stage_clip_window();
+        assert_eq!((top, bottom), (64, 187));
+        for _ in 0..200 {
+            n.tick(1);
+            if n.all_lines().first().is_some_and(|l| l.y <= bottom - 2) {
+                break;
+            }
+        }
+        let y = n.all_lines()[0].y;
+        assert!(y <= bottom && y + 16 > bottom, "the row straddles the foot");
+        assert!(n.visible_lines().is_empty());
+        world.cutscene.narration = Some(n);
+        let draws = cutscene_narration_stage_draws(&world, &font);
+        assert!(!draws.is_empty(), "the part inside the window draws");
+        for d in &draws {
+            assert!(d.dst.1 >= top && d.dst.1 + d.dst.3 as i32 <= bottom + 1);
+            assert_eq!(d.color, legaia_engine_ui::MENU_TEXT_WHITE);
+        }
+    }
 }

@@ -243,6 +243,8 @@ pub struct CorpusEntry {
     /// The scenario's `spawned_under_flags` - system flags the scene spawned
     /// under and a probe lowered since ([`spawn_history_seats`]).
     pub spawned_under_flags: Vec<u16>,
+    /// The scenario's `kept_bgm` ([`RetailObs::kept_bgm`]).
+    pub kept_bgm: Option<u16>,
     /// The scenario's `memory_card`, resolved under the library's `cards/`
     /// directory: `Ok` the image on disk, `Err` the file name that is not
     /// there. A card-screen state mounts it on the engine side.
@@ -294,6 +296,7 @@ pub fn enumerate_corpus(manifest: &ScenarioManifest, library: &Path) -> Vec<Corp
                     resident_disc: sc.resident_disc.clone(),
                     ram_injected: sc.ram_injected.clone(),
                     spawned_under_flags: sc.spawned_under_flags.clone(),
+                    kept_bgm: sc.kept_bgm,
                     memory_card: sc.memory_card.as_ref().map(|name| {
                         let p = library.join("cards").join(name);
                         if p.is_file() {

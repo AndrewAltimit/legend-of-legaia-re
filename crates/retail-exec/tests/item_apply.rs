@@ -5,11 +5,13 @@
 use crate::common::{Rng, diff_offsets, scus, scus_cpu};
 use legaia_engine_battle::accessory_passives::AccessoryPassives;
 use legaia_engine_core::world::World;
-use legaia_engine_menus::items::ItemCatalog;
+use legaia_engine_menus::items::{ItemCatalog, ItemOutcome};
 use legaia_game_tables::accessory_passive::AccessoryPassiveTable;
 use legaia_game_tables::item_effect::ItemEffectTable;
 use legaia_save::{CharacterRecord, Party};
 use psx_retail_exec::{Stop, V0};
+use std::cell::RefCell;
+use std::rc::Rc;
 
 const RECORDS: u32 = 0x8008_4708;
 const STRIDE: u32 = 0x414;
@@ -17,6 +19,9 @@ const APPLIER: u32 = 0x8004_02F4;
 const AGGREGATOR: u32 = 0x8004_2558;
 const VALIDATOR: u32 = 0x8003_FB10;
 const RAND: u32 = 0x8005_6798;
+const LEARNED: u32 = 0x8003_5C00;
+const BATTLE_ACTORS: u32 = 0x801C_9370;
+const BATTLE_SCRATCH: u32 = 0x8013_0000;
 
 pub(crate) fn seed(rng: &mut Rng) -> Vec<u8> {
     let mut r = vec![0u8; STRIDE as usize];
@@ -60,6 +65,16 @@ fn every_field_item_writes_the_records_retail_writes() {
         return;
     };
     cpu.stub(RAND, 0);
+    // The field leg's "learned" notification `FUN_80035C00(char, art)`,
+    // logged (`0x8004208C`).
+    let learned: Rc<RefCell<Vec<(u32, u32)>>> = Rc::default();
+    let learn_log = learned.clone();
+    cpu.hook(LEARNED, move |r, _| {
+        learn_log
+            .borrow_mut()
+            .push((r.r[psx_retail_exec::A0], r.r[psx_retail_exec::A1]))
+    });
+    let mut notified = 0;
     // The present party: three members, in order.
     cpu.mem.wr32(0x8008_4594, 3);
     cpu.mem.load(0x8008_4598, &[0, 1, 2]);
@@ -99,8 +114,22 @@ fn every_field_item_writes_the_records_retail_writes() {
             if cpu.regs.r[V0] == 0 {
                 continue;
             }
+            learned.borrow_mut().clear();
+            // The battle actor table, pointed at a cleared block: the field
+            // leg writes no battle actor (the mode gates, `0x80040D00`).
+            for m in 0..8u32 {
+                cpu.mem
+                    .wr32(BATTLE_ACTORS + 4 * m, BATTLE_SCRATCH + 0x400 * m);
+            }
+            cpu.mem.load(BATTLE_SCRATCH, &[0u8; 0x2000]);
             let stop = cpu.call(APPLIER, &[u32::from(e.class), u32::from(e.tier), target, 0]);
             assert_eq!(stop, Stop::Returned, "item {id:#04x} class {}", e.class);
+            if cpu.mem.read(BATTLE_SCRATCH, 0x2000).iter().any(|&b| b != 0) {
+                failures.push(format!(
+                    "item {id:#04x} class {} round {round}: the field leg wrote a battle actor",
+                    e.class
+                ));
+            }
             assert_eq!(cpu.call(AGGREGATOR, &[]), Stop::Returned);
 
             let mut party = Party::zeroed(3);
@@ -122,7 +151,23 @@ fn every_field_item_writes_the_records_retail_writes() {
                     }
                 }
             } else {
-                world.use_item(id, target as u8);
+                let outcome = world.use_item(id, target as u8);
+                // The port answers the notification with its outcome.
+                let want: Vec<(u32, u32)> = match outcome {
+                    ItemOutcome::ArtLearned {
+                        character, art_id, ..
+                    } => vec![(u32::from(character), u32::from(art_id))],
+                    _ => Vec::new(),
+                };
+                if *learned.borrow() != want {
+                    failures.push(format!(
+                        "item {id:#04x} class {} tier {} round {round} target {target}: learned retail {:?} port {want:?}",
+                        e.class,
+                        e.tier,
+                        learned.borrow()
+                    ));
+                }
+                notified += want.len();
             }
             world.refresh_party_ability_bits();
             tried += 1;
@@ -141,6 +186,7 @@ fn every_field_item_writes_the_records_retail_writes() {
             }
         }
     }
+    assert!(notified > 50, "{notified} learned notifications");
     for class in [0, 1, 2, 6, 11, 12, 13] {
         assert!(per_class[class] > 20, "class {class}: {}", per_class[class]);
     }

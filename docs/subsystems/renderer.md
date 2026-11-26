@@ -3783,7 +3783,18 @@ PCSX-Redux software GPU, which sums a Gouraud foreground with the background
 in 8 bits before its dither. A flat textured polygon it walks in pixel pairs
 (`getTextureTransColShade32`): mode 0 is then the console's average,
 `(128 * B + t5 * c8) >> 8`, and mode 3 quarters the texel before the
-modulate, `((t5 >> 2) * c8) >> 7`. Its halving `(B >> 1) + (F >> 1)` is the
+modulate, `((t5 >> 2) * c8) >> 7`.
+
+Neither of its textured paths saturates the modulate before the blend: it
+clamps only the sum. A packet colour above `0x80` therefore reaches that
+emulator's blend at up to twice the texel (`m` up to `(31 * 255) >> 4 = 494`,
+`psx_blend::PCSX_MODULATE_MAX`), where the console saturates the foreground at
+`31` first. Viguro's arm-12 ground ring is the case that showed it: a mode-3
+`0x3E` at colour `(8, 246, 8)` over texel `G = 21..28` adds `10..13` levels of
+green in a PCSX-Redux recording's frame, not the `7` a saturated foreground
+allows; a RAM image's ordering table, walked layer by layer over that frame's
+VRAM, reproduces the recorded pixel only unsaturated. The instrument blends
+the raw modulate on both paths. Its halving `(B >> 1) + (F >> 1)` is the
 untextured flat polygon's (`getShadeTransCol`) and the sprite's
 (`getTextureTransColShadeSemi`); the text pass takes it, the 3D and
 screen-primitive passes take the polygon's. Mode 0's background factor

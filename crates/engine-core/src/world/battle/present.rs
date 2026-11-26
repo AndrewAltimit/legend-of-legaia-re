@@ -59,7 +59,8 @@ type Root = [f32; 4];
 type Bone = ([i16; 3], [i16; 3]);
 
 /// A part translation step at least this long, or a rotation step at least
-/// [`SNAP_PART_ANGLE`], draws the part where it landed.
+/// [`SNAP_PART_ANGLE`] (the nearer of its two Euler forms), draws the body
+/// where it landed ([`carry_pose_back`]).
 pub const SNAP_PART_MOVE: i32 = 512;
 /// See [`SNAP_PART_MOVE`].
 pub const SNAP_PART_ANGLE: i32 = 1024;
@@ -461,9 +462,10 @@ impl World {
 
 impl BattlePresent {
     /// Fill [`Self::drawn`] for this tick: each slot's pose stepped `lag` of
-    /// the way back toward the frame before, part by part (a part that moved
-    /// past [`SNAP_PART_MOVE`] or turned past [`SNAP_PART_ANGLE`] draws where
-    /// it landed), `None` where the slot draws its live pose. The buffers are
+    /// the way back toward the frame before, part by part
+    /// ([`carry_pose_back`]: a body with a part that moved past
+    /// [`SNAP_PART_MOVE`] or turned past [`SNAP_PART_ANGLE`] draws where it
+    /// landed), `None` where the slot draws its live pose. The buffers are
     /// kept from tick to tick, so a steady fight allocates nothing here.
     fn fill_drawn_poses(&mut self, actors: &[Actor]) {
         let lag = self.lag();
@@ -489,25 +491,74 @@ impl BattlePresent {
             });
             frame.factor = live.factor;
             frame.finished = live.finished;
-            frame.bone_outputs.clear();
-            let back = |c: i16, d: i32| (f32::from(c) - lag * d as f32).round() as i16;
-            frame.bone_outputs.extend(p.iter().zip(c).map(|(p, c)| {
-                let dt: [i32; 3] = std::array::from_fn(|k| i32::from(c.0[k]) - i32::from(p.0[k]));
-                let dr: [i32; 3] = std::array::from_fn(|k| {
-                    (i32::from(c.1[k]) - i32::from(p.1[k]) + 2048).rem_euclid(4096) - 2048
-                });
-                if dt.iter().any(|d| d.abs() >= SNAP_PART_MOVE)
-                    || dr.iter().any(|d| d.abs() >= SNAP_PART_ANGLE)
-                {
-                    return *c;
-                }
-                (
-                    std::array::from_fn(|k| back(c.0[k], dt[k])),
-                    std::array::from_fn(|k| back(c.1[k], dr[k])),
-                )
-            }));
+            if !carry_pose_back(
+                p,
+                c,
+                lag,
+                (SNAP_PART_MOVE, SNAP_PART_ANGLE),
+                &mut frame.bone_outputs,
+            ) {
+                *out = None;
+            }
         }
     }
+}
+
+/// Part `p`'s rotation trio as the equivalent Euler triple
+/// `(x + 0x800, 0x800 - y, z + 0x800)`: the same `Rz·Ry·Rx` turn, written the
+/// other way. A keyframe stream can hold either form, and the decoder's
+/// Euler-flip retry (`legaia_engine_battle_vm::battle_pose_blend`, the field
+/// blender's twin) crosses from one to the other inside a blend, so two
+/// samples one frame apart can differ by half a turn on two axes while the
+/// part has turned a few degrees.
+fn flip_euler(r: [i16; 3]) -> [i32; 3] {
+    [
+        i32::from(r[0]) + 0x800,
+        0x800 - i32::from(r[1]),
+        i32::from(r[2]) + 0x800,
+    ]
+}
+
+/// Fill `out` with pose `c` carried `lag` of the way back toward `p`, part by
+/// part, for the smooth battle and field draws. A part's rotation steps from
+/// whichever of `p`'s two Euler forms ([`flip_euler`]) lies nearer `c`, so a
+/// form change is not read as a swing. When any part still moved
+/// `snap_move` or turned `snap_angle` (a clip change that jumps the limb) the
+/// body draws its live pose whole: one part landed while the rest of the
+/// body trails would split the body for the frame. Returns `false` for that
+/// case, leaving `out` unspecified.
+pub(in crate::world) fn carry_pose_back(
+    p: &[Bone],
+    c: &[Bone],
+    lag: f32,
+    (snap_move, snap_angle): (i32, i32),
+    out: &mut Vec<Bone>,
+) -> bool {
+    let wrap = |d: i32| (d + 2048).rem_euclid(4096) - 2048;
+    out.clear();
+    for (p, c) in p.iter().zip(c) {
+        let dt: [i32; 3] = std::array::from_fn(|k| i32::from(c.0[k]) - i32::from(p.0[k]));
+        let step = |from: [i32; 3]| -> [i32; 3] {
+            std::array::from_fn(|k| wrap(i32::from(c.1[k]) - from[k]))
+        };
+        let direct = step(p.1.map(i32::from));
+        let flipped = step(flip_euler(p.1));
+        let size = |d: &[i32; 3]| d.iter().map(|v| v.abs()).sum::<i32>();
+        let dr = if size(&flipped) < size(&direct) {
+            flipped
+        } else {
+            direct
+        };
+        if dt.iter().any(|d| d.abs() >= snap_move) || dr.iter().any(|d| d.abs() >= snap_angle) {
+            return false;
+        }
+        let back = |c: i16, d: i32| (f32::from(c) - lag * d as f32).round() as i16;
+        out.push((
+            std::array::from_fn(|k| back(c.0[k], dt[k])),
+            std::array::from_fn(|k| back(c.1[k], dr[k])),
+        ));
+    }
+    true
 }
 
 impl World {
@@ -738,8 +789,7 @@ mod tests {
     }
 
     /// A body's parts step with its root: a part between two frames draws
-    /// part way along, the vsync a frame opens draws the old frame's pose,
-    /// and a part that swung past the snap draws where it landed.
+    /// part way along and the vsync a frame opens draws the old frame's pose.
     #[test]
     fn the_pose_steps_with_the_camera() {
         let pose = |t: i16, r: i16| legaia_anm::PoseFrame {
@@ -750,24 +800,11 @@ mod tests {
         let mut w = battle_world();
         w.actors[0].active = true;
         w.actors[0].pose_frame = Some(pose(0, 4090));
-        w.observe_battle_present();
-        while w.battle_present.phase > 0.0 {
-            vsync(&mut w);
-        }
-        for _ in 0..3 {
-            vsync(&mut w);
-        }
+        open_frame(&mut w);
         w.actors[0].pose_frame = Some(pose(30, 4096 + 26));
-        if let Some(p) = w.actors[0].pose_frame.as_mut() {
-            p.bone_outputs[1].1[0] = 2000;
-        }
         w.observe_battle_present();
         let drawn = w.battle_draw_pose_frame(0).unwrap();
         assert_eq!(drawn.bone_outputs[0], ([0, 0, 0], [0, 4090, 0]));
-        assert_eq!(
-            drawn.bone_outputs[1].1[0], 2000,
-            "a swing past the snap lands"
-        );
         vsync(&mut w);
         let drawn = w.battle_draw_pose_frame(0).unwrap();
         assert_eq!(drawn.bone_outputs[0], ([10, 0, 0], [0, 4101, 0]));
@@ -776,6 +813,70 @@ mod tests {
         assert!(
             w.battle_draw_pose_frame(0).is_none(),
             "the next frame opens on it"
+        );
+    }
+
+    /// Run out the opening frame and open a fresh one on the current pose.
+    fn open_frame(w: &mut World) {
+        w.observe_battle_present();
+        while w.battle_present.phase > 0.0 {
+            vsync(w);
+        }
+        for _ in 0..3 {
+            vsync(w);
+        }
+    }
+
+    /// A limb that swings past the snap lands the whole body: the other
+    /// parts do not trail it for the frame. Before, the swung part drew
+    /// where it landed while its neighbours drew a frame behind.
+    #[test]
+    fn a_limb_past_the_snap_lands_the_whole_body() {
+        let pose = |a: i16, b: i16| legaia_anm::PoseFrame {
+            bone_outputs: vec![([0, 0, 0], [0, a, 0]), ([0, 0, 0], [b, 0, 0])],
+            factor: 0,
+            finished: false,
+        };
+        let mut w = battle_world();
+        w.actors[0].active = true;
+        w.actors[0].pose_frame = Some(pose(0, 0));
+        open_frame(&mut w);
+        w.actors[0].pose_frame = Some(pose(60, 1500));
+        w.observe_battle_present();
+        assert!(
+            w.battle_draw_pose_frame(0).is_none(),
+            "the body draws its live pose whole"
+        );
+    }
+
+    /// A part whose keyframes cross from one Euler form to the other
+    /// (`(x, y, z)` and `(x + 0x800, 0x800 - y, z + 0x800)` are one turn)
+    /// steps from the nearer form: Vahn's flinch writes one part
+    /// `(3189, 2707, 927)` then `(1016, 3945, 3073)`, a few tens of degrees
+    /// apart, which read per axis as a half turn and landed the part alone
+    /// a frame ahead of the body.
+    #[test]
+    fn an_euler_form_change_steps_the_short_way() {
+        let pose = |r: [i16; 3], s: i16| legaia_anm::PoseFrame {
+            bone_outputs: vec![([0, 0, 0], r), ([0, 0, 0], [0, s, 0])],
+            factor: 0,
+            finished: false,
+        };
+        let mut w = battle_world();
+        w.actors[0].active = true;
+        w.actors[0].pose_frame = Some(pose([3189, 2707, 927], 0));
+        open_frame(&mut w);
+        w.actors[0].pose_frame = Some(pose([1016, 3945, 3073], 30));
+        w.observe_battle_present();
+        vsync(&mut w);
+        let drawn = w.battle_draw_pose_frame(0).unwrap();
+        // Two thirds back from the new pose toward the old one's other form
+        // `(3189 + 2048, 2048 - 2707, 927 + 2048) = (1141, 3437, 2975)`.
+        assert_eq!(drawn.bone_outputs[0].1, [1099, 3606, 3008]);
+        assert_eq!(
+            drawn.bone_outputs[1].1,
+            [0, 10, 0],
+            "the body steps with it"
         );
     }
 

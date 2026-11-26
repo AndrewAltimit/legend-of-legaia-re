@@ -190,12 +190,14 @@ pub(super) fn op_4c_n4<H: FieldHost>(
             }
             1 => {
                 // ctx[+0x6A] write or ramp. The input is halved
-                // (s16 arithmetic shift right 1) with a floor of
-                // 1 - see FUN_801DE840 line ~5923:
-                //   `iVar46 = signed_16(operand[0..2]);`
-                //   `uVar31 = iVar46 >> 1;`
-                //   `if (uVar31 == 0) uVar31 = 1;`
-                let halved = (target >> 1).max(1);
+                // (s16 arithmetic shift right 1), and a zero result
+                // becomes 1: `sra s7,v0,0x1` / `bne s7,zero` / `li s7,0x1`
+                // (`0x801E11B4..0x801E11C0`). A negative rate stays
+                // negative - the test is for zero only, not a floor.
+                let halved = match target >> 1 {
+                    0 => 1,
+                    h => h,
+                };
                 if ticks == 0 {
                     ctx.field_6a = halved;
                 } else {

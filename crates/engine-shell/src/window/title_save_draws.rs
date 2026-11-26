@@ -322,7 +322,8 @@ impl PlayWindowApp {
 /// state half of [`PlayWindowApp::title_screen_sprite_draws`].
 ///
 /// Active during both the Title phases and the Continue boot sub-state. The
-/// Continue arm is the retail backdrop, [`TitleBandState::backdrop`]: the
+/// Continue arm is the retail backdrop, [`TitleBandState::backdrop`] at the
+/// screen's ramp (`ContinueScreen::title_backdrop_shade`): the
 /// menu overlay's `FUN_801DD35C` calls the title-strip drawer `FUN_801E0418`
 /// at `0x801E0260` and then the dimmed art `FUN_801E02A4` with one brightness
 /// byte, only while `_DAT_8007BB00` (the came-from-the-title word) is set -
@@ -341,8 +342,8 @@ fn boot_title_band_state(boot_ui: &BootUiState) -> Option<legaia_engine_ui::Titl
         // The screen's own rule (`ContinueScreen::shows_title_backdrop`),
         // the browser play page's too.
         BootUiState::Continue(c) => c
-            .shows_title_backdrop()
-            .then(legaia_engine_ui::TitleBandState::backdrop),
+            .title_backdrop_shade()
+            .map(legaia_engine_ui::TitleBandState::backdrop),
         _ => None,
     }
 }
@@ -360,14 +361,17 @@ mod title_backdrop_tests {
     /// disc).
     #[test]
     fn the_boot_save_select_draws_retails_title_strips() {
-        let screen = legaia_engine_session::ContinueScreen::open([None, None]);
+        let mut screen = legaia_engine_session::ContinueScreen::open([None, None]);
+        // The window's 32-frame dim-in from the title's level.
+        for _ in 0..32 {
+            screen.step(0, [None, None]);
+        }
         let state = boot_title_band_state(&BootUiState::Continue(screen))
             .expect("the save-select keeps the title behind it");
-        assert_eq!(state, legaia_engine_ui::TitleBandState::backdrop());
+        let b = legaia_engine_ui::TITLE_BACKDROP_REST;
+        assert_eq!(state, legaia_engine_ui::TitleBandState::backdrop(b));
         let origin = (7, 11);
         let drawn = legaia_engine_ui::title_band_sprites(state, origin, 3);
-        // Brightness is TITLE_BACKDROP_LUM of the neutral 0x80, CONTINUE lit.
-        let b = (legaia_engine_ui::TITLE_BACKDROP_LUM * 128.0).round() as u8;
         let strips = legaia_engine_ui::title_strip_sprites(true, b, 1.0, origin, 3);
         assert_eq!(
             drawn.len(),

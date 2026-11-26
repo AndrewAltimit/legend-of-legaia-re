@@ -3,13 +3,15 @@
 //! whole actor state the arms write.
 
 use crate::common::{Rng, scus, scus_cpu};
+use legaia_engine_battle::battle_status_clut::CLUT_MARK_BITS;
+use legaia_engine_battle_vm::battle_cue_group::cue_group_for;
 use legaia_engine_battle_vm::status_effects::StatusKind;
 use legaia_engine_core::world::World;
 use legaia_engine_menus::items::ItemCatalog;
 use legaia_game_tables::item_effect::ItemEffectTable;
 use legaia_save::Party;
 use psx_retail_exec::{Cpu, Stop, V0};
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 const APPLIER: u32 = 0x8004_02F4;
@@ -247,13 +249,29 @@ fn every_battle_item_writes_what_retail_writes() {
         stream.set(next);
         r.r[V0] = (next >> 16) & 0x7FFF;
     });
-    cpu.stub(CUE_GROUP, 0);
-    cpu.stub(CLUT_RESTORE, 0);
+    // The cue-group expander and the palette restore, logged: which group
+    // each arm places on which seat, and which seat a cure restores.
+    let cues: Rc<RefCell<Vec<[u32; 4]>>> = Rc::default();
+    let cue_log = cues.clone();
+    cpu.hook(CUE_GROUP, move |r, _| {
+        cue_log.borrow_mut().push([
+            r.r[psx_retail_exec::A0],
+            r.r[psx_retail_exec::A1],
+            r.r[psx_retail_exec::A2],
+            r.r[psx_retail_exec::A3],
+        ])
+    });
+    let restores: Rc<RefCell<Vec<u32>>> = Rc::default();
+    let restore_log = restores.clone();
+    cpu.hook(CLUT_RESTORE, move |r, _| {
+        restore_log.borrow_mut().push(r.r[psx_retail_exec::A0])
+    });
     let table = ItemEffectTable::from_scus(&scus).expect("item effects");
     let mut w = World::new();
     w.set_item_effects(table.clone());
     w.set_item_catalog(ItemCatalog::vanilla());
     let mut rng = Rng(0x4249_5445);
+    let (mut skipped_seats, mut restored) = (0u32, 0u32);
     let mut failures: Vec<String> = Vec::new();
     let mut per_class = [0u32; 256];
     for id in 0..=255u8 {
@@ -275,7 +293,15 @@ fn every_battle_item_writes_what_retail_writes() {
             let target = rng.below(3) as u8;
             let seed = rng.next();
             seed_retail(&mut cpu, &seats, caster);
+            // An empty roster seat now and then: the per-seat cue's gate.
+            let roster: [u8; 3] =
+                std::array::from_fn(|m| if rng.below(5) == 0 { 0 } else { m as u8 + 1 });
+            for (m, &b) in roster.iter().enumerate() {
+                cpu.mem.wr8(SEATS + m as u32, b);
+            }
             state.set(seed);
+            cues.borrow_mut().clear();
+            restores.borrow_mut().clear();
             let stop = cpu.call(
                 APPLIER,
                 &[
@@ -286,6 +312,39 @@ fn every_battle_item_writes_what_retail_writes() {
                 ],
             );
             assert_eq!(stop, Stop::Returned, "item {id:#04x} {seats:?}");
+            // The cue groups the port places for this class and tier
+            // (`cue_group_for`), once per filled party seat for the per-seat
+            // arm, else on the target.
+            let want_cues: Vec<[u32; 4]> = cue_group_for(e.class, e.tier)
+                .map(|site| {
+                    let slots: Vec<u8> = if site.per_target {
+                        (0..3u8).filter(|&m| roster[usize::from(m)] != 0).collect()
+                    } else {
+                        vec![target]
+                    };
+                    slots
+                        .into_iter()
+                        .map(|m| {
+                            [
+                                site.tint,
+                                site.actor_state,
+                                u32::from(m),
+                                u32::from(site.group),
+                            ]
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            if *cues.borrow() != want_cues {
+                failures.push(format!(
+                    "item {id:#04x} class {} tier {} round {round} target {target} roster {roster:?}: cue groups\n retail {:x?}\n port   {want_cues:x?}",
+                    e.class,
+                    e.tier,
+                    cues.borrow()
+                ));
+                break;
+            }
+            skipped_seats += u32::from(roster.contains(&0) && want_cues.len() > 1);
             // No arm pushes a number onto the popup ring (`ctx[+0x262]`
             // cursor, `+0x273` count): a heal shows none, a no-effect use
             // (a leaf on a full seat) no `0` either.
@@ -306,9 +365,20 @@ fn every_battle_item_writes_what_retail_writes() {
             per_class[usize::from(e.class)] += 1;
             for s in 0..5u8 {
                 let mut r = read_retail(&mut cpu, s);
-                // The fade `+0x21C = 2` is `stand_revived_party_member` here.
-                r.render = 0;
                 let p = read_port(&w, s);
+                // The fade `+0x21C = 2` is `stand_revived_party_member` here:
+                // the revive arm raises it on a seat it brought back with HP
+                // (`0x800410C0`), the seat the port stands.
+                let stood = seats[usize::from(s)].hp == 0 && p.hp != 0;
+                if (r.render == 2) != stood {
+                    failures.push(format!(
+                        "item {id:#04x} class {} round {round} seat {s}: fade {} where the port stands {stood}",
+                        e.class, r.render
+                    ));
+                    item_failed = true;
+                    break;
+                }
+                r.render = 0;
                 if r != p {
                     failures.push(format!(
                         "item {id:#04x} class {} tier {} round {round} target {target} seat {s}:\n before {:?}\n retail {r:?}\n port   {p:?}",
@@ -320,6 +390,24 @@ fn every_battle_item_writes_what_retail_writes() {
                     break;
                 }
             }
+            // A cure restores the palette of a seat whose word loses a
+            // Stone or Rot mark (`StatusClutState::sync_word`'s rule).
+            let want_restores: Vec<u32> = (0..3u8)
+                .filter(|&m| {
+                    seats[usize::from(m)].status & CLUT_MARK_BITS & !w.raw_status_word(m) != 0
+                })
+                .map(u32::from)
+                .collect();
+            if !item_failed && *restores.borrow() != want_restores {
+                failures.push(format!(
+                    "item {id:#04x} class {} round {round} target {target}: palette restores retail {:?} port {want_restores:?}\n before {:?}",
+                    e.class,
+                    restores.borrow(),
+                    seats[usize::from(target)]
+                ));
+                item_failed = true;
+            }
+            restored += u32::from(!want_restores.is_empty());
             if !item_failed && state.get() != w.rng_state {
                 failures.push(format!("item {id:#04x} class {}: rand stream", e.class));
                 item_failed = true;
@@ -330,6 +418,10 @@ fn every_battle_item_writes_what_retail_writes() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+    assert!(
+        skipped_seats > 50 && restored > 50,
+        "{skipped_seats} short rosters, {restored} restores"
+    );
     for class in [0, 1, 2, 3, 4, 5, 7, 8] {
         assert!(
             per_class[class] > 100,
@@ -594,8 +686,18 @@ fn a_monster_heal_writes_what_retail_writes() {
         stream.set(next);
         r.r[V0] = (next >> 16) & 0x7FFF;
     });
-    cpu.stub(CUE_GROUP, 0);
+    let cues: Rc<RefCell<Vec<[u32; 4]>>> = Rc::default();
+    let cue_log = cues.clone();
+    cpu.hook(CUE_GROUP, move |r, _| {
+        cue_log.borrow_mut().push([
+            r.r[psx_retail_exec::A0],
+            r.r[psx_retail_exec::A1],
+            r.r[psx_retail_exec::A2],
+            r.r[psx_retail_exec::A3],
+        ])
+    });
     cpu.stub(CLUT_RESTORE, 0);
+    let mut monster_cues = 0;
     let mut w = World::new();
     w.set_item_effects(ItemEffectTable::from_scus(&scus).expect("item effects"));
     w.set_item_catalog(ItemCatalog::vanilla());
@@ -624,6 +726,24 @@ fn a_monster_heal_writes_what_retail_writes() {
         group += u32::from(target == 9);
         let seed = rng.next();
         seed_retail(&mut cpu, &seats, caster);
+        // The roster bytes the per-seat cue reads: `0x8007BD10[slot]` for a
+        // party seat, `0x8007BD09[slot]` for a monster seat (`0x80040D2C`),
+        // now and then empty. Seats 5 and 6 hold nobody.
+        let roster: [u8; 7] = std::array::from_fn(|m| match m {
+            _ if rng.below(5) == 0 => 0,
+            0..=2 => m as u8 + 1,
+            3 | 4 => 4,
+            _ => 0,
+        });
+        for (m, &b) in roster.iter().enumerate() {
+            let at = if m < 3 {
+                SEATS + m as u32
+            } else {
+                SEATS - 7 + m as u32
+            };
+            cpu.mem.wr8(at, b);
+        }
+        cues.borrow_mut().clear();
         state.set(seed);
         let stop = cpu.call(
             APPLIER,
@@ -643,8 +763,14 @@ fn a_monster_heal_writes_what_retail_writes() {
         w.fold_battle_item_action(class, tier, target);
         for s in 0..5u8 {
             let mut r = read_retail(&mut cpu, s);
-            r.render = 0;
             let p = read_port(&w, s);
+            let stood = seats[usize::from(s)].hp == 0 && p.hp != 0;
+            assert_eq!(
+                r.render == 2,
+                stood,
+                "class {class} tier {tier} round {round} seat {s}: the revive fade"
+            );
+            r.render = 0;
             assert_eq!(
                 r,
                 p,
@@ -652,9 +778,36 @@ fn a_monster_heal_writes_what_retail_writes() {
                 seats[usize::from(s)]
             );
         }
+        let want_cues: Vec<[u32; 4]> = cue_group_for(class, tier)
+            .map(|site| {
+                let slots: Vec<u8> = match (site.per_target, target) {
+                    (true, 9) => (3..7u8).filter(|&m| roster[usize::from(m)] != 0).collect(),
+                    (true, _) => (0..3u8).filter(|&m| roster[usize::from(m)] != 0).collect(),
+                    (false, t) => vec![t],
+                };
+                slots
+                    .into_iter()
+                    .map(|m| {
+                        [
+                            site.tint,
+                            site.actor_state,
+                            u32::from(m),
+                            u32::from(site.group),
+                        ]
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        assert_eq!(
+            *cues.borrow(),
+            want_cues,
+            "class {class} tier {tier} target {target} round {round} roster {roster:?}: cue groups"
+        );
+        monster_cues += usize::from(target == 9 && !want_cues.is_empty());
         // Nothing past the four monster seats: the summon seat keeps its
         // readout.
         assert_eq!(cpu.mem.rd32(actor(7) + 0x10), 0, "round {round}");
     }
     assert!(group > 300, "{group} group heals");
+    assert!(monster_cues > 300, "{monster_cues} monster-row cues");
 }

@@ -2596,6 +2596,25 @@ falls (sustained error `1.46` to `1.88` px, Tri-Somersault `7.2` to `12.0`), who
 line's frames still run a vsync under retail's `9`. Grade `capture` for the timings,
 `disassembly` for the sequencer.
 
+**An arts shout over the census.** By default (the toggle off) a shout's polled frames are
+priced over the census's own work of the pass, and that work reads under retail's: what is
+left of a polled frame between its CD interrupt spans carries the exception exits too, so
+`2.78` over it, the ratio the capture-band lines read on retail's own work, ran the arts'
+polled frames a vsync short. Each polled frame of four `--cd-trace` recordings (Flying Knee,
+Tri-Somersault, Gala's Chain, Sonic Javelin) over the engine's census work on the paired tick
+reads `3.06` to `3.38` by film, and `3.2` puts the frame's span on retail's vsync count for
+`35` of the `73` frames where `2.78` puts `21`. Port: `ARTS_SHOUT_CENSUS_RATIO_MILLI`
+(`arts_shout_census_cost`), on PCSX-Redux's timing only. The fit holds arts shouts alone, so
+every other line keeps `2.78`. Grade `capture`.
+
+A polled frame's end also runs under the polls: over the `80` fully polled frames of five
+recordings (the four above and Vahn's Chain late) the recorded cost reads the frame's vsync
+count right on `79` for any frame end from `28` to `40` hblanks, and on `76` at the unloaded
+frame's `20` (`FRAME_END_HBLANKS`). Priced at `34` on the arts shouts' polled frames, the arts
+films move by `.0004` on the mean and none gains (Tornado Flame `.924` to `.917`): the port's
+voiced frames already land on retail's lengths through the census ratio, so the end stays `20`.
+Grade `capture`.
+
 **Port.** `WorldToggles::battle_cd_timing` (`CdTiming`) picks the machine. `PcsxRedux`, the
 engine's default and every harness's, keeps the recordings' tables, the clamp `1063` and the
 overrun. `Console` is what players run: both play hosts seat `PLAY_BATTLE_CD_TIMING`
@@ -3501,8 +3520,17 @@ lead to. The battle draw therefore runs **one battle frame behind**:
   ease-out's opening steps run under about `450` angle units, and the cast
   modules' cuts from `512` up. A body moved `1024` units or turned `1024`
   in a frame was placed, not moved, and lands too, pose and all; so does a
-  part that moved `512` units or turned `1024`. The first frames of a battle
-  draw live.
+  body with any part that moved `512` units or turned `1024`, whole, so no
+  limb lands ahead of the rest. The first frames of a battle draw live.
+- A part's turn is measured from the nearer of the frame before's two Euler
+  forms (`present::carry_pose_back`). `(x, y, z)` and `(x + 0x800, 0x800 - y,
+  z + 0x800)` are the same `Rz·Ry·Rx` turn, and the pose decoder's Euler-flip
+  retry (`FUN_8004998C`, `battle_pose_blend`) crosses from one form to the
+  other inside a blend, so a part can read half a turn on two axes between two
+  frames while it has turned a few degrees. Read per axis, Vahn's flinch
+  (clip `2`) crossed the snap on one part every keyframe: that part drew its
+  landing for a vsync while the body trailed a frame behind, a jerk of
+  up to `67` degrees in one vsync followed by a hold.
 - It is presentation-only. The draw-side reads are `World::battle_draw_pose`,
   `battle_draw_root`, `battle_draw_shift`, `battle_draw_root_i16`,
   `battle_draw_pose_frame`, `battle_fx_shift`, `battle_sprite_shift` and

@@ -1333,7 +1333,7 @@ Three tests, not one predicate:
 - `0x801d6e14`, `== 2` - **warp**: the saved transition coords `_DAT_80084568` / `_DAT_8008456C` overwrite the stack anchor pair `sp+0x20` / `sp+0x22`, and the sub-tile remainders (`saved % 0x80 - 0x40` per axis) are computed into `$s7` / `$fp` (`0x801d6e1c..0x801d6e78`).
 - `0x801d6fb0`, `!= 0` - skip the ambient-emitter spawn.
 
-**The player's seat** is written on both arms from the stack anchor, at `0x801d6f64` (`+0x14`) and `0x801d6f7c` (`+0x18`), with `+0x16` zeroed between them. `FUN_8003AEB0` fills that anchor from `_DAT_80073EF4` / `_DAT_80073EF8` (`0x8003b7b0..0x8003b7d4`) - the **destination entry coordinates** the field VM's `0x3F` scene change writes ([`script-vm.md`](script-vm.md)), which the new-game data init seeds for `town01` at `0x80034ad4`.
+**The player's seat** is written on both arms from the stack anchor, at `0x801d6f64` (`+0x14`) and `0x801d6f7c` (`+0x18`), with `+0x16` zeroed between them. `FUN_8003AEB0` fills that anchor from `_DAT_80073EF4` / `_DAT_80073EF8` (`0x8003b7b0..0x8003b7d4`) - the **destination entry coordinates** the field VM's `0x3F` scene change writes ([`script-vm.md`](script-vm.md)), which the new-game data init seeds for `town01` at `0x80034ad4`. Each of the op's two entry bytes stores `(b & 0x7F) << 7` plus `0x40`, plus another `0x40` when bit 7 asks for the tile's far half (`0x801DEB20..0x801DEB7C`, `dispatch_leaves::warp_entry_coord`); 25 shipped scene changes set that bit.
 
 A cold entry lands on the door's operand; a warp lands where the party left. The New Game seat is `_DAT_80073EF4/EF8 = 0xE40 / 0x2DC0`, taken by the prologue scene `opdeene` ([`new-game-table.md`](../formats/new-game-table.md)).
 

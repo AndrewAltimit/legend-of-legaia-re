@@ -335,6 +335,10 @@ pub struct RetailObs {
     /// run, turned by the headless seed and by the image child
     /// (`LEGAIA_SEAT_HEADINGS`) where the engine stands them on retail's seat.
     pub scripted_headings: Vec<WalkerSeed>,
+    /// The scenario's `kept_bgm`: the track a door kept sounding into the
+    /// scene under its own word, which the seed starts before the card-load
+    /// entry with the keep raised (`seed_and_settle`).
+    pub kept_bgm: Option<u16>,
     /// The live image-panel widget ([`retail_panel`]), handed to the image
     /// child as `LEGAIA_SEAT_PANEL`; the texels it shows ride the
     /// `LEGAIA_SEAT_VRAM_RECTS` file beside the scroller rects.
@@ -616,6 +620,7 @@ impl RetailObs {
             },
             scripted_seats: Vec::new(),
             scripted_headings: Vec::new(),
+            kept_bgm: None,
             movie: (class == StateClass::Cutscene)
                 .then(|| super::movie_run::RetailMovie::from_ram(ram)),
             walkers: if matches!(class, StateClass::Field) {
@@ -1465,6 +1470,7 @@ pub fn read_retail(entry: &CorpusEntry, scus: &[u8]) -> Result<RetailObs> {
                 .scratch_ram()
                 .ok()
                 .and_then(|s| retail_frame_table(ram, s));
+            obs.kept_bgm = entry.kept_bgm;
             Ok(obs)
         }
         _ => {
@@ -1484,6 +1490,7 @@ pub fn read_retail(entry: &CorpusEntry, scus: &[u8]) -> Result<RetailObs> {
             obs.frame_table = st
                 .scratchpad()
                 .and_then(|s| retail_frame_table(st.main_ram(), s));
+            obs.kept_bgm = entry.kept_bgm;
             Ok(obs)
         }
     }

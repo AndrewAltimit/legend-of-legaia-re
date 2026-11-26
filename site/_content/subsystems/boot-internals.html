@@ -119,6 +119,7 @@
   </table>
   </div>
   <p>The countdown store is <code>sw v0, -0xe94(a0)</code> at <code>0x801DDCCC</code>, in the delay slot of a <code>bgez</code> that keeps the attract loop running while the counter is non-negative; the per-frame scalar it subtracts is the byte at <code>_DAT_1F800393</code>. That store is where a write watchpoint on the countdown fires.</p>
+  <p>The launch is black from the confirm to the opening. <code>LaunchFade</code> waits <code>0x5A</code> frames (a face button or L1 / L2 skips the wait), ramps for 18 more, hands to <code>LaunchGame</code>, and master mode 2 then streams the field overlay and <code>opdeene</code>: a retail film presses on vsync 20, reads mode 2 from 132 and the field from 512. The engine runs the launch after its New Game rules screen in every mode, and the mode-2 load hold only with loading pauses on.</p>
   <h3 id="title-state">The extended state block</h3>
   <div class="table-wrap">
   <table class="data-table">

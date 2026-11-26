@@ -1059,8 +1059,14 @@ impl World {
             mono: self.toggles.retail_options.sound != 0,
             scale: (0x80, 0x80),
             // Retail's mode word leaves `3` at the encounter's `8` / `9`; the
-            // scene mode here stays Field across the intro.
-            field_mode: GameMode::for_scene_mode(self.mode) == Some(GameMode::MainMode)
+            // scene mode here stays Field across the intro. The overworld
+            // walks in mode `3` too (`map01` / `map02` / `map03` states all
+            // hold it); only its map display is mode `0x0D`. `map01` `P2[31]`
+            // seats the Genesis Tree's revival emitters on the overworld, and
+            // retail keys four of their voices on the field bank.
+            field_mode: (GameMode::for_scene_mode(self.mode) == Some(GameMode::MainMode)
+                || (self.mode == legaia_engine_mode::mode::SceneMode::WorldMap
+                    && self.world_map.map_display.is_none()))
                 && self.battle.intro.is_none(),
             stream_settled: self.audio.sound_stream.is_settled(),
             release_all: false,
@@ -1722,5 +1728,22 @@ mod tests {
         };
         crate::options::apply_to_world(&opts, &mut w);
         assert!(w.sfx_emitter_listener().mono);
+    }
+
+    /// The overworld walks in game mode `3`, the mode the emitter arm keys
+    /// in; only its map display (`0x0D`) is another.
+    #[test]
+    fn the_overworld_keys_emitters_and_its_map_display_does_not() {
+        use legaia_engine_mode::mode::SceneMode;
+        let mut w = World::new();
+        w.mode = SceneMode::Field;
+        assert!(w.sfx_emitter_listener().field_mode);
+        w.mode = SceneMode::WorldMap;
+        assert!(w.sfx_emitter_listener().field_mode, "overworld walk");
+        w.world_map.map_display = Some(legaia_engine_field::map_display::MapDisplay::enter());
+        assert!(!w.sfx_emitter_listener().field_mode, "map display");
+        w.mode = SceneMode::Battle;
+        w.world_map.map_display = None;
+        assert!(!w.sfx_emitter_listener().field_mode);
     }
 }

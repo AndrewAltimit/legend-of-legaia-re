@@ -928,6 +928,16 @@ fn run(cmd: Cmd) -> Result<()> {
         fatal: None,
         goto: Default::default(),
         base_title: String::new(),
+        font: browser::find_font(
+            &std::env::args_os()
+                .skip(1)
+                .map(PathBuf::from)
+                .filter(|p| p.exists())
+                .chain([PathBuf::from("extracted")])
+                .collect::<Vec<_>>(),
+        ),
+        font_atlas: None,
+        help: true,
     };
     event_loop.run_app(&mut app).context("run event loop")?;
     match app.fatal {

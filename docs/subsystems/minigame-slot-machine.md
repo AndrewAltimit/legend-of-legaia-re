@@ -300,7 +300,7 @@ The evaluator keeps the **highest-value matching line**: `DAT_801d3d34` = winnin
 Details:
 
 - The payout byte scales with symbol rarity. The table is exactly **10 bytes** at `DAT_801d3598` (PROT 0975 file offset `0x4D80`), bounded by zero padding and an overlay string at `+0x10`. Its values are **Inferred** as disc data and not reproduced. Parser `legaia_minigame_formats::slot_payout`.
-- A jackpot match also starts a celebratory actor (`func_0x800653c8`).
+- A jackpot match also sounds a fanfare, not an actor: it releases voice `0x11` (`FUN_800653C8`, the libsnd voice key-off) and keys voice `0x12` (VAB `2`, program `0`, tone `3`, note `0x3F`) and voice `0x11` (program `1`, tone `4`, note `0x40`), both at fine `0x40` and the voice-volume word `_DAT_80084580` halved (`0x801D190C..0x801D1A74`). Port `slot_machine::bonus_fanfare`, raised on the machine's voice queues; `whole_sessions_play_out_as_retail_plays_them` holds every direct voice call against them.
 - During an active feature (`DAT_801d3d30 != 0`) the product is computed **unconditionally**: no all-equal check and no payout-table lookup. The rows read are `display[reel][((pos >> 8) + 0x10) % 0x14]`, the winning line is forced to the centre (`DAT_801d3c8c = 1`, so the middle lamp lights), and the round counter decrements. When it hits zero the feature ends and `DAT_801d3798` latches so the next spin runs long enough to rotate the symbols back on.
 - In feature mode 3 a `rand % 0x96 == 0` roll can spontaneously clear the feature.
 

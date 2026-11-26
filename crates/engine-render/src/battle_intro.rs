@@ -25,7 +25,8 @@ use legaia_render_kernels::battle_intro::*;
 /// landed via [`BattleIntro::land_capture_rgba`]; every frame after that,
 /// [`BattleIntro::refresh_captured_page`] advances the curtain's CPU two-pass
 /// composition. Returns `Some(page)` on any frame whose contents changed -
-/// the capture frame for every style, and every frame for the curtain.
+/// the capture frame for every style, and every frame for the curtain and
+/// the two particle styles, whose display models move every frame.
 ///
 /// `on_capture` sees the readback on the one frame it is taken (the
 /// `LEGAIA_DIAG_INTRO_CAPTURE` dump hangs off it).

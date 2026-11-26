@@ -881,6 +881,12 @@ fn the_battle_intro_sm_runs_through_the_transition_phase() {
         (0x10..=0x17).collect::<Vec<u8>>(),
         "and every cue voice"
     );
+    assert!(
+        world
+            .take_sfx_ring_ops()
+            .contains(&legaia_engine_system::sound_state::SfxRingOp::ReleaseSustained),
+        "the init's mode init tears down a held sustained run (0x8001DDA8)"
+    );
 
     // Leaving the phase drops the entity. The transition's length is retail's
     // `DAT_801D2458` (`battle_intro_styles::INTRO_DURATION_FRAMES`), so the

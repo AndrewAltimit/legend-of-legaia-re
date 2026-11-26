@@ -468,6 +468,33 @@ def state_guard_seats(sstate: str) -> str | None:
     return ",".join(seats)
 
 
+def recording_xa_left(out: Path) -> int | None:
+    """The vsyncs a voice line's polls still run from the recording's first row,
+    when the recording opens inside them (`LEGAIA_SEAT_XA_LEFT`): the loaded
+    frames from the state on, each six vsyncs or longer where an unloaded battle
+    frame runs its step plus one at most, to the first frame that is not. `None`
+    for a recording whose opening frames are not loaded. The state's own RAM
+    holds no field of the drive's position, so the line's remaining span is read
+    off the frames retail ran. A harness seat."""
+    try:
+        with open(out / "retail" / "meta.csv", newline="") as f:
+            rows = list(csv.DictReader(f))
+    except OSError:
+        return None
+    starts = [int(r["vsync"]) for i, r in enumerate(rows) if i == 0 or r["frame"] != rows[i - 1]["frame"]]
+    frames = [(a, b - a) for a, b in zip(starts, starts[1:])]
+    # Inside the line from the first row: the frame the state was saved in
+    # already runs past its step, and the one after it is loaded too. A line
+    # cued after the state opens on an unloaded frame (Tornado Flame's cue
+    # pass is the recording's second frame).
+    if len(frames) < 3 or frames[0][1] <= int(rows[0]["step"]) or frames[1][1] < 6:
+        return None
+    for start, n in frames:
+        if n < 6 and start > frames[0][0]:
+            return start - 1
+    return None
+
+
 def state_cost_ring(out: Path) -> str | None:
     """The recording state's frame-cost ring (`0x80084098`, sixteen entries,
     cursor `0x8007B758`) as `e0,..,e15;cursor`, for a film no gate seeds a ring
@@ -1345,6 +1372,11 @@ def record_engine(a, out: Path, keep_pin: bool) -> tuple[bool, int, bool]:
         env["LEGAIA_FILM_COST_RING"] = ring
     elif "LEGAIA_BATTLE_COST_RING" in env and (seated := ring_with_inflight_push(out, env["LEGAIA_BATTLE_COST_RING"])):
         env["LEGAIA_BATTLE_COST_RING"] = seated
+    # A party member's arts shout only: a monster's mid-cast film opens inside
+    # its module's line, whose frames the arm tables and the line's own
+    # retail count already span.
+    if a.physical and caster < 3 and (xa_left := recording_xa_left(out)) is not None:
+        env.setdefault("LEGAIA_SEAT_XA_LEFT", str(xa_left))
     cyclers = state_stage_cyclers(out)
     if cyclers:
         env["LEGAIA_SEAT_STAGE_CYCLERS"] = cyclers

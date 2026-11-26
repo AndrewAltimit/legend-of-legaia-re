@@ -118,6 +118,7 @@ fn rig(rand: Rc<Cell<u32>>, cue: Rc<Cell<u32>>) -> Option<Cpu> {
     // The creak's cue slot write is the sound ring's; the key-on beside it
     // is the cue that marks it.
     cpu.hook(0x8006_5034, move |_, _| cue.set(cue.get() + 1));
+
     for f in [
         0x8001_A068,
         0x8005_67A8,
@@ -127,7 +128,6 @@ fn rig(rand: Rc<Cell<u32>>, cue: Rc<Cell<u32>>) -> Option<Cpu> {
         0x8003_D2C4,
         0x8004_2310,
         0x8005_FB84,
-        0x8006_53C8,
         // The rod actor's matrix, model and draw calls.
         0x8003_D1A4,
         0x8003_D344,
@@ -178,6 +178,15 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
     };
+    // The whirr's key-off `FUN_800653C8(0x13)`, counted.
+    let key_offs = Rc::new(Cell::new(0u32));
+    {
+        let key_offs = key_offs.clone();
+        cpu.hook(0x8006_53C8, move |r, _| {
+            assert_eq!(r.r[A0], 0x13, "the reel whirr's key-off");
+            key_offs.set(key_offs.get() + 1);
+        });
+    }
     let overlay = disc()
         .unwrap()
         .read_entry(fs::FISHING_OVERLAY_PROT_INDEX)
@@ -216,6 +225,7 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
     let mut lift_capped = 0u32;
     let mut camera_frames = 0u32;
     let mut swapped = 0u32;
+    let mut whirrs = 0u64;
     let installs = Rc::new(Cell::new(None::<(u32, u32)>));
     {
         let installs = installs.clone();
@@ -255,6 +265,7 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
         }
         let fs = 1 + rng.below(3) as i32;
         let real = rng.below(2) == 0;
+        let strike_seeded = scenario % 3 == 1;
         let (facing, anchor) = if real {
             let lead =
                 legaia_engine_minigame_scenes::fishing_venue::party_placements(venue as usize)[0];
@@ -398,8 +409,12 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
             // (32 vsyncs) could fire, which the machine folds into the edge.
             // A waiting line is mostly left alone, so a fish bites; a fight
             // is reeled hard, so it ends one way or the other.
+            // A strike-seeded cast holds the reel through its wait, so the
+            // strike roll (`0x801D3270..0x801D3300`) and the hook it lands
+            // run on most of its waiting frames.
             let busy = match port.phase() {
                 PondPhase::Hooked => 8,
+                PondPhase::Waiting if strike_seeded => 9,
                 _ => 2,
             };
             let mut next = match rng.below(10) {
@@ -425,8 +440,12 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
             let edge = next & !held;
             held = next;
             let creaks_before = cues.get();
+            let offs_before = key_offs.get();
             port.tick(input(held, edge, false), fs, CAST_POWER_STEP);
             let creaks = port.take_rod_creaks();
+            let voice = port.take_reel_voice();
+            let port_ons = voice.iter().filter(|&&on| on).count() as u32;
+            let port_offs = voice.len() as u32 - port_ons;
             port.take_spent_lures();
             let hooked_now = port
                 .take_events()
@@ -504,6 +523,19 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
             // The landing hands over to the machine's state `0x19`, whose
             // entry resets the band check and the cadence ring.
             if state_before == 1 && cpu.mem.rd16(LURE + 0x22) == 2 {
+                // A strike-seeded cast lands with a long band hold, the
+                // strike credit's base, on both sides.
+                if strike_seeded {
+                    port.seat_band_countdown(
+                        [0x4, 0x8, 0x10, 0x20, 0x40, 0x100][rng.below(6) as usize],
+                    );
+                    // Band 0 half the time, the band a cadence match seats,
+                    // so the band-4 kit's gate (`0x801D34EC..0x801D35CC`)
+                    // meets the band it upgrades.
+                    if rng.below(2) == 0 {
+                        port.seat_band(0);
+                    }
+                }
                 cpu.mem.wr32(BAND, port.band());
                 cpu.mem.wr32(COUNTDOWN, port.band_countdown() as u32);
                 for a in CADENCE {
@@ -550,7 +582,17 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
             );
             // The creak is cue `0x201` in the ring's slot 1 (`0x801D2BD0`);
             // the key-on hook counts the reel sound (`0x801D2EB8`) beside it.
-            let _ = cues.get() - creaks_before;
+            want(
+                "whirr key-on",
+                i64::from(cues.get() - creaks_before),
+                i64::from(port_ons),
+            );
+            want(
+                "whirr key-off",
+                i64::from(key_offs.get() - offs_before),
+                i64::from(port_offs),
+            );
+            whirrs += u64::from(port_ons);
             want(
                 "creak",
                 i64::from(cpu.mem.rd16(CUE_SLOT) == 0x201),
@@ -686,8 +728,13 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
          classed water {on_water} drift {drifted}"
     );
     assert!(
-        on_water > 0 && drifted > 0 && lift_capped > 0 && swapped > 5 && camera_frames > 1000,
-        "water {on_water} drift {drifted} lift capped {lift_capped} swaps {swapped} camera {camera_frames}"
+        on_water > 0
+            && drifted > 0
+            && lift_capped > 0
+            && swapped > 5
+            && camera_frames > 1000
+            && whirrs > 100,
+        "water {on_water} drift {drifted} lift capped {lift_capped} swaps {swapped} camera {camera_frames} whirrs {whirrs}"
     );
     // A strike wants a held reel against a credit that mostly comes from a
     // recognised gesture (`0x801D31F4`), which a random pad seldom makes:

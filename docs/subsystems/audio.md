@@ -133,8 +133,9 @@ clamped `0x3F80` (`scale` the per-row pair at `0x80091658 + row * 0x10`,
 the voices (`FUN_800657D0`), so the register a capture reads is the law, not
 the key-on chain, and the write goes out in the score's flush, ahead of its key-ons
 ([an emitter's level rides the score's flush](#an-emitters-level-rides-the-scores-flush)); leaving the box, or the side-band request going unsettled,
-releases them (`FUN_800250D4`). The arm keys only in the field mode and
-behind the settled side-band pair. Port: `engine-vm::sfx_emitter`, ticked from
+releases them (`FUN_800250D4`). The arm keys only in game mode `3` and
+behind the settled side-band pair. The overworld walks in mode `3` as well (only its map display is
+`0x0D`), so `map01`'s Genesis Tree revival keys its emitter, cue `0x22B` on voices `16` / `17`. Port: `engine-vm::sfx_emitter`, ticked from
 `World::tick_ambient_fx` with the focus the camera stored
 (`frame_step::camera_before_world_tick`), its voices driven by
 `AudioDirector::drive_sfx_emitters` on both hosts.
@@ -1009,6 +1010,8 @@ The spin is therefore the cue alone, for over two seconds, and the theme arrives
 the fight. Phase 2 only reads the bundle: its `FUN_800567A8` is the debug print of
 `battle bgm %d`. Port: `World::silence_field_audio_for_intro` keys off the track
 (sub-op `3`, set `0` only) and voices `0x10..0x17` on the transition's first tick, and
+queues the sustained teardown of the init's own mode init `FUN_8001DCF8(0xA)`
+(`jal` at `0x801CE974`, ahead of the voice loop), and
 `World::enter_battle_from_formation` attaches, both hosts through
 `route_bgm_events`. A set above `0` leaves the field track alone until the attach, and
 `-1` plays it through.
@@ -2684,7 +2687,7 @@ Its callers:
 
 | Caller | Site | When |
 |---|---|---|
-| mode init `FUN_8001DCF8` | `0x8001DDA8` | every mode entry - a battle's start and the field init after it |
+| mode init `FUN_8001DCF8` | `0x8001DDA8` | every mode entry - the battle intro's init (`0x801CE974`), a battle's start and the field init after it |
 | battle anim commit `FUN_8004AD80` | `0x8004AE68` | any actor's commit whose staged clip `+0x1DA` differs from its latched clip `+0x1DB` (`0x8004AE54..0x8004AE60`); a re-commit of the same clip leaves the run sounding |
 | battle tint pass `FUN_80050120` | `0x8005040C` | a monster seat (`3..=6`) in its fade arm, while the low 24 bits of its render node's `+0x74` word are non-zero |
 | debug sound test | `overlay_debug_menu` | "stop all" |
@@ -2694,7 +2697,7 @@ So a monster's looping attack sound - the `bse.dat` row a clip's cue track rings
 Port: `SfxBank::release_sustained` is the teardown over the live voices; the
 anim commit raises `SfxRingOp::ReleaseSustained` in call order with the ring
 writes, `AudioDirector::apply_sfx_ring_ops` runs it ahead of the frame's drain,
-`route_world_sfx` runs it on the edge into or out of a battle, a scene load
+`route_world_sfx` runs it on the edge into or out of a battle, the battle intro's first tick queues it (the intro init's own mode init), a scene load
 queues it (`World::release_sustained_sfx`), and the defeat-fade pass
 (`World::tick_battle_defeat_sink`) queues it for every fading monster seat
 ahead of the sink's absorb / capture gates, as the tint pass's call sits. Measured on the same harness: the `map03` fight keys
@@ -3829,10 +3832,12 @@ activation arm (`36 00 80 30 00`), and the engine's seed sounds the same cue
 `vozz_ozma_hatching_hover` sounds `map01`'s `2000` under the word `2035`. Its arrival names
 `map01`'s `P2[31]` and the flag `0x2C3` that `vozz`'s `P2[17]` cleared before the capture, so
 the engine keeps `2000` too ([the overworld's story cutscenes](#the-overworlds-story-cutscenes-are-door-records-too)).
-`map01_tree_revival_cutscene` reads `track` `0`: it sounds `2035`, kept by `vozz` `P1[7]`, and
-the card-load seed has no arrival through a partition-1 beat. Its `ambient` `0` is the same
-history: the cue voices are the revival's own, scene cue `0x22A` pushed by `P2[31]`
-(`36 00 80 2A 02` at `+0x152` and `+0x1AF`) ahead of the PC the seed resumes the record on.
+`map01_tree_revival_cutscene` sounds `2035`, kept by `vozz` `P1[7]`, under `map01`'s word
+`2000`. A card-load seed has no arrival through a partition-1 beat, so the scenario names that
+history (`kept_bgm = 2035`). The seed starts the kept track after the entry's first slice and
+latches the scene's word onto it once it sounds. Its `ambient` row is the revival's own cues:
+scene cue `0x22A` pushed by `P2[31]` (`36 00 80 2A 02` at `+0x152` and `+0x1AF`) ahead of the PC
+the seed resumes the record on, beside the emitter on `0x22B`.
 Neither is a card load's music: a save cannot be made inside either record, and across the
 library's walkable states (the retail card boots among them) the seeded engine sounds
 retail's track on every other row.
@@ -4161,6 +4166,16 @@ twice names none). `zenoir_summon_mid_cast` stands at `195`, which the engine pa
 cast fits `5.5` vsyncs from the gate, past any frame step, and reads `0.836` to `0.998`. Its gate is a
 black frame, which holds still for many vsyncs, so the image corpus cannot place it closer.
 
+**The duck's candidate reaches a frame step.** The duck names a vsync, and the cast's instant can stand
+a frame step off it, as off the gate. Fitted second by second against both of its retail recordings (the
+full one less the track, and `.castcore`), `zenoir_summon_mid_cast`'s cast body lands `-5500` samples
+(`7.5` vsyncs) from the gate in seconds `2..12`, where the duck names tick `6`. A one-vsync reach about the
+duck stopped at `-5157`, and the fit fell back on the gate's step reach, which locks the closing reaction
+cues (seconds `13..14`, best at `-2170`) and misplaces the body: `0.881`. The duck candidate now reaches the
+state's frame step, and the channel reads `0.997`, level `-0.08` dB. Harness-only. What it leaves is the
+closing cues: they fit `4.5` vsyncs later in retail than the body predicts, the ring cues of arm `11`'s
+splash keying ahead of retail's ([a ring cue keys at its frame's end](#a-ring-cue-keys-at-its-frames-end)).
+
 <a id="the-monaural-states"></a>
 **Five summon states were saved in Monaural.** `theeder`, `zenoir`, `nighto`, `orb` and
 `swordie_summon_mid_cast` carry the options screen's Sound word `0x800846BC = 1` and libsnd's mono
@@ -4198,6 +4213,15 @@ level tracks a frame-stepped retail one within `8` units across the ramp.
 | `zora_glare_petrify_pre` | `0.947` | `-0.01` dB | | Glare from inside the capture band's seek ([seated](#the-capture-bands-seek)); the voice `XA23` channel `7` |
 | `cort_evil_seru_magic_mid_cast` | `0.996` | `+0.04` dB | | Evil Seru Magic from inside the same seek; the voice `XA22` channel `6` |
 | `cort_mystic_circle_mid_cast` | `0.962` | `-0.03` dB | | not split window by window |
+
+The channel also scores the rest of the Seru the library holds mid-cast, and Evil Medallion's Rage.
+Five of them first read `0.14..0.33` with their level envelopes matching retail only `0.62..1.35` s
+apart. Frame-stepped against the engine's band log (`<wav>.band`), four were the port keying the
+voice at the wrong time ([a gate after the poll](#a-head-cue-behind-a-gate-the-detector-missed)) and
+one was the replay's hold ([the hold ends at the gate](#the-side-band-hold-ends-at-the-gate)). Rage
+read `0.42` because the replay's delegated fill drew two arts where retail's drew five
+([a delegated seat's stream](../tooling/retail-compare.md#a-delegated-seats-stream)); on retail's
+stream its envelope lines up within `8` vsyncs and the waveform reads `0.38`.
 
 <a id="the-casts-step-is-pcsx-reduxs"></a>
 **The cast's step is PCSX-Redux's.** The battle frame step carries each pass's cost into the next
@@ -4379,8 +4403,8 @@ A state inside that seek seeds with an idle drive, so the engine's band ran the 
 vsyncs ahead of the recording and every sound of the cast with it: the two rows read `0.60` and `0.37`.
 The cast channel now seats what the seek has left off the state's own CD controller (`PSRCounter`
 while `DriveStatus` is `2`, plus the logical seek; `LEGAIA_SEAT_CAPTURE_SEEK_LEFT`, a harness seat), and the
-rows read `0.947` and `0.996`. The same controller holds the summon module seeks the
-[table below](#a-state-inside-a-drive-hold) names, which the seat does not reach yet.
+rows read `0.947` and `0.996`. The summon rows that read as whole-cast shifts were not seeks
+([below](#a-head-cue-behind-a-gate-the-detector-missed)).
 
 <a id="the-cast-channels-seek-window"></a>
 **The cast channel's seek window.** The drive's seek time is not one number: it varies across drives and
@@ -4436,25 +4460,34 @@ each the modelled seek less the `2`. The poll arm's `CdSync(1)` does wait the ta
 `30` vsyncs on Orb are unchanged. Voices moved `2..3` vsyncs earlier against mednafen; the ring's cues do not
 depend on the seek.
 
-<a id="a-state-inside-a-drive-hold"></a>
-**A state that stands inside a drive hold reads as a whole-cast shift.** Run over every mid-cast
-mednafen state rather than the ten the driver lists, most casts read as above, with the voice
-`+7` to `+18` vsyncs late against a residual fitted window by window. A few read very low
-because the whole cast sits one rigid distance from retail's, which no fit within a frame step can
-reach, and the distance is a property of where the state stands, not of the sound:
+<a id="a-head-cue-behind-a-gate-the-detector-missed"></a>
+**A head cue behind a gate the detector missed.** Mule, Iota, Puera and Slippery read as whole-cast
+shifts, and frame-stepping says why: their CD-XA voice keyed early in the port. Each module's cue
+arm returns busy on a gate of its own as well as the drive poll, and
+`head_cue_waits_arm_gate` read only Gilium's shape (a branch to the busy return ahead of the poll).
+Mule's PROT 0929 arm 2 tests its band word after the poll (`lh v0,0x6d8(s3)` / `bne v0,zero` at
+`0x801F6E24..0x801F6E2C`) before `0x170`. Iota's 0921 drains a countdown and leaves on a `j` to the
+busy return, with a `blez` over it to the poll. Puera's 0922 and Slippery's 0920 leave one word ahead
+of the busy return, on a copy of the poll branch's delay slot. Retail keys
+`mule_summon_mid_cast`'s voice `171` vsyncs from the state, on the pass `0x35` hands to `0x36`; the
+port keyed it at `+103`, `1.1` s early, and now keys it at `+178`. A `j` counts only with the branch
+over it to the poll, so a previous arm's closing jump to the shared busy return is not read as a
+gate (Theeder, Zenoir and Aluru test their band word on the arm ahead of the poll's).
 
-| State | Whole-cast shift (engine against retail) | Where the state stands (frame-stepped) |
-|---|---|---|
-| `vera_summon_mid_cast` | `-24.5` vsyncs | arm 3, `29` vsyncs ahead of arm 4 behind the `XA7` seek; the seed's drive is idle, so the port skips the hold |
-| `iota_summon_mid_cast`, `puera_summon_mid_cast` | `-24` vsyncs | the same hold |
-| `mule_summon_mid_cast` | `-60.5` vsyncs | arm 0 with the side-band stage `4`, its drop `55` vsyncs on |
-| `jedo_summon_mid_cast` | `+82` vsyncs | arm 2 with the stage `8`, its drop `33` vsyncs on |
+<a id="the-side-band-hold-ends-at-the-gate"></a>
+**The side-band hold ends at the gate.** A replay whose state stands on a side-band wait arm holds
+that arm busy until the band's other clocks reach the frame (`PhaseGate::steer`). The hold ran on for
+as long as the engine stood on the arm, so a child that plays on past its gate never ran the arm on
+the engine's own stage: `jedo_summon_mid_cast`'s arm 2 held until `0x35` ended, `76` vsyncs past
+retail's exit, and the voice keyed `1.3` s late. The hold now ends on the gated frame
+(`PhaseGate::release`). Harness-only.
 
-The seed stands the engine on the state's arm with an idle drive and a full side-band token
-(`World::tick_sideband_token` restarts its count): neither the seek in flight nor the part of the read
-already done is in RAM as a time the seed can place. These rows score the seed's instant, so a low number there
-is not a defect of the cast's sound. A rigid shift of the residual against the engine's recording
-(a window-by-window correlation scan) separates the two readings: a true sound difference has no single shift.
+**The recording opens on the band word.** The gate places a summon band's state at its arm's entry;
+the band word `ctx[+0x6D8]` places it inside the arm, and the recording opens there
+(`LEGAIA_DIAG_AUDIO_WAV_ARM`, the step track's `band_instant`). `slippery_summon_mid_cast` stands `8`
+vsyncs into arm 2. While the module's own seek is still ahead or in flight, the seek places the
+voice (the seek window fits it), and the recording opens at the gate. A recording that opens inside the Done band stops past the band's exit, so
+`zora_glare_petrify_post` (`0x51`) records the cast's tail. Harness-only.
 
 **A call behind its arm's own gate.** Gilium's PROT 0923 arm 2 drains a countdown (`0x801FA4F8`,
 `bgtz a1,0x801F8B5C` at `0x801F6CAC`) before it polls the drive and calls `0x16E`; the port raised the cue

@@ -584,9 +584,11 @@ fn psx_blend_term_gpu(f5: vec3<f32>, mode: u32) -> vec3<f32> {
 // The PCSX-Redux software GPU's term for an 8-bit foreground `m8` that it
 // blends before its dither (`getShadeTransColDither`,
 // `getTextureTransColShadeXDither`): `d` is its offset `0..7` at the pixel
-// (`7 - s_dithertable`). Twin of `psx_blend::pcsx_dithered_term`.
+// (`7 - s_dithertable`). Twin of `psx_blend::pcsx_dithered_term`. The
+// foreground is the raw modulate, up to `(31 * 255) >> 4 = 494`: that
+// emulator saturates only the sum (`psx_blend::PCSX_MODULATE_MAX`).
 fn psx_blend_term_pcsx_dithered(m8: vec3<f32>, d: f32, mode: u32) -> vec3<f32> {
-    let m = floor(clamp(m8, vec3<f32>(0.0), vec3<f32>(255.0)) + 0.001);
+    let m = floor(clamp(m8, vec3<f32>(0.0), vec3<f32>(494.0)) + 0.001);
     if mode == 0u {
         return 4.0 * floor((floor(m / 2.0) + d) / 4.0) / 255.0;
     }

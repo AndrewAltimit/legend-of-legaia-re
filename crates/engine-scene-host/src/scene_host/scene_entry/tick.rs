@@ -130,6 +130,21 @@ impl SceneHost {
         })
     }
 
+    /// Reload the scene-entry system script `P1[0]` over the resident field,
+    /// as retail's MAIN INIT re-entry after a battle or a minigame does, with
+    /// the field init's BGM window open for the starts it issues.
+    fn rerun_scene_entry_script(&mut self, why: &str) {
+        let entry_script = self
+            .scene
+            .as_ref()
+            .and_then(|scene| scene.field_man_entry_script(&self.index).ok().flatten());
+        if let Some((bytecode, pc0)) = entry_script {
+            self.world.load_field_script_at(bytecode, pc0);
+            self.world.open_battle_return_field_init();
+            log::info!("field: {why} return re-ran the scene-entry script");
+        }
+    }
+
     /// Arm the field MAIN INIT hold of a battle's return to the field, in the
     /// retail-faithful mode only: the scene's block is read again, and the
     /// hold follows its size
@@ -225,6 +240,21 @@ impl SceneHost {
     /// boot/transition path seeds the overworld the same way the explicit
     /// `--world-map` entry does.
     pub fn tick(&mut self) -> Result<SceneTickEvent> {
+        // A New Game's title `LaunchFade` / `LaunchGame` frames, then its
+        // field MAIN INIT: black, with nothing of the opening running.
+        // REF: FUN_801DD35C (LaunchFade arm 0x801DF8D0)
+        if let Some(fade) = self.world.launch_fade.as_mut() {
+            let input = &self.world.input;
+            let edge = legaia_engine_system::pad::retail_packed(input.pad() & !input.pad_prev());
+            if fade.step(1, edge) {
+                self.world.launch_fade = None;
+                self.world.field_init_hold =
+                    legaia_engine_system::mode_entry_init::new_game_field_init_hold_vsyncs(
+                        self.world.toggles.skip_load_holds,
+                    );
+            }
+            return Ok(SceneTickEvent::Stepped);
+        }
         // A field MAIN INIT hold under the credits latch: the scene is loaded
         // and none of it runs until the load retail spends in mode `0x02` is
         // over. The audio keeps time on its own clock, as the console's
@@ -275,15 +305,24 @@ impl SceneHost {
         // entry script here.
         // REF: FUN_8003ab2c (system-script rebuild on field entry)
         if was_battle && matches!(self.world.mode, legaia_engine_mode::mode::SceneMode::Field) {
-            let entry_script = self
-                .scene
-                .as_ref()
-                .and_then(|scene| scene.field_man_entry_script(&self.index).ok().flatten());
-            if let Some((bytecode, pc0)) = entry_script {
-                self.world.load_field_script_at(bytecode, pc0);
-                self.world.open_battle_return_field_init();
-                log::info!("field: post-battle return re-ran the scene-entry script");
-            }
+            self.rerun_scene_entry_script("post-battle");
+        }
+        // The minigame door-warp's return is the same re-entry: the return
+        // warp `FUN_80026018` latches mode 2 (MAIN INIT) with the field-entry
+        // word at 2, the warp arm a battle's return takes. `koin3`'s entry
+        // tests the dance markers `0x59B` / `0x59C` / `0x59D` the lesson and
+        // the contest raise before their warps and spawns the Disco King's
+        // verdict (`P2[8]`) and the judging (`P2[9]`); without the re-run the
+        // field came back with the marker up and no verdict.
+        // An overworld departure (the fishing doors on `map02` / `map03`)
+        // keeps its entity scripts as they were: the overworld's re-entry is
+        // not this field re-run.
+        // REF: FUN_80026018, FUN_8003ab2c
+        if std::mem::take(&mut self.world.minigames.entry_rerun_pending)
+            && matches!(self.world.mode, legaia_engine_mode::mode::SceneMode::Field)
+            && !legaia_engine_scene::scene::is_world_map_scene(&self.world.active_scene_label)
+        {
+            self.rerun_scene_entry_script("minigame");
         }
         if was_battle
             && matches!(

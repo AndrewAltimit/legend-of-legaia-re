@@ -180,6 +180,10 @@ impl<'a> FieldActorHost for FieldHostImpl<'a> {
         Self::move_to(self, ctx, world_x, world_z, is_player)
     }
 
+    fn is_player_context(&self, ctx: &FieldCtx) -> bool {
+        self.ctx_is_player(ctx)
+    }
+
     fn exec_move(&mut self, ctx: &mut FieldCtx, move_id: u8) {
         Self::exec_move(self, ctx, move_id)
     }

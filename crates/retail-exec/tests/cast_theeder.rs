@@ -1532,7 +1532,7 @@ mod walk {
                             }
                         }
                         if entry == 904 && phase == 12 && after != 12 {
-                            // The port's tested words (`0x40 + 0x100 * k`) are
+                            // The port's tested words (`0x100 * k` on step 4) are
                             // among this walk's (`0x40 * k`) and the cone is the
                             // same, so every seat the port struck retail struck;
                             // retail may strike more.

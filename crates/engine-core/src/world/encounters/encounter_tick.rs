@@ -502,8 +502,14 @@ impl World {
     /// keyed off when the sound set is `0`. A set above `0` leaves the track to
     /// the completion arm's attach, and `-1` plays it through the fight.
     ///
-    /// PORT: FUN_801CE8CC (0x801CE990..0x801CE9A8, 0x801CEB58..0x801CEB70)
+    /// The init's mode-init call `FUN_8001DCF8(0xA)` (`jal` at `0x801CE974`)
+    /// comes first, and its unconditional `jal 0x80017910` (`0x8001DDA8`)
+    /// tears down a held sustained run (voices `7 ..`) here, on the intro's
+    /// first tick, not at the battle's own mode init a spin later.
+    ///
+    /// PORT: FUN_801CE8CC (0x801CE974, 0x801CE990..0x801CE9A8, 0x801CEB58..0x801CEB70)
     fn silence_field_audio_for_intro(&mut self) {
+        self.release_sustained_sfx();
         self.audio.sfx_voice_stops.extend(0x10..=0x17);
         // A looping emitter's voices just went off under it: its latch drops,
         // so the first field tick after the fight keys it again.

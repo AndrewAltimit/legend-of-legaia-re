@@ -1378,6 +1378,10 @@ pub struct BattleState {
     /// as the retail per-frame call does. Hosts draw it through
     /// `legaia_render_kernels::streak_pass::clip_ribbon_quads`.
     pub clip_ribbon: Option<ClipRibbon>,
+    /// The packets this pass's tag-`0x67` ribbon call built
+    /// (`World::deal_clip_ribbon`, on the game's stream through the battle
+    /// view), drawn as built. `None` on a pass without the call.
+    pub clip_ribbon_quads: Option<Vec<legaia_render_kernels::afterimage::AfterimageQuad>>,
     /// This tick's streak ribbons from a cast module arm
     /// (`legaia_engine_cast::cast_module_camera::CaptureCamArm::ribbons`,
     /// PROT 0962 `0xA3`'s arm-4 ring): retail calls `FUN_801E1D98` once per
@@ -1389,6 +1393,14 @@ pub struct BattleState {
     /// (`World::deal_cast_ribbon_rands`): the draw replays each ribbon from
     /// its word. `None` while no pass has dealt the ring.
     pub cast_ribbon_seeds: Option<[u32; 16]>,
+    /// The packets [`Self::cast_ribbons`]' calls built on that pass, one
+    /// quad list per point: retail builds each ribbon's packets inside the
+    /// call, through the GTE view and off the point the pass holds then, and
+    /// the frame shows those packets. The draw shows these rather than
+    /// re-running the call on the drawn camera and points, whose
+    /// sub-pixel change moves every `rand() % (span + 1)` operand and so
+    /// draws another ribbon on the same words.
+    pub cast_ribbon_quads: Option<Vec<Vec<legaia_render_kernels::afterimage::AfterimageQuad>>>,
     /// This pass's streak ribbons from a landed move projectile: on every
     /// pass a phase-`3` homing slot's counter runs, `FUN_801E09F8` calls
     /// `FUN_801E1D98(&ctx[+0x1144 + slot * 8], record[+0x0B])` once per
@@ -1401,6 +1413,14 @@ pub struct BattleState {
     /// on the pass that made them (`World::deal_flight_ribbon_rands`), as
     /// [`Self::cast_ribbon_seeds`] is for a module arm's ring.
     pub flight_ribbon_seeds: Option<[u32; 16]>,
+    /// The packets [`Self::flight_ribbons`]' calls built, as
+    /// [`Self::cast_ribbon_quads`] is for a module arm's ring.
+    pub flight_ribbon_quads: Option<Vec<Vec<legaia_render_kernels::afterimage::AfterimageQuad>>>,
+    /// The packets this pass's move-FX streak emitter built
+    /// (`FUN_801E09F8` phase 1: one afterimage, or four chained ribbons, on
+    /// the game's stream), dealt by `World::deal_move_fx_streak` and drawn as
+    /// built. `None` on a pass the emitter did not run.
+    pub move_fx_streak_quads: Option<Vec<legaia_render_kernels::afterimage::AfterimageQuad>>,
     /// The part-emit accumulator `ctx[+0x328]`: the frame driver keeps its
     /// low nibble and adds `DAT_1F800393 << 3` every battle frame
     /// (`FUN_80046A20`, `0x8004713C..0x80047160`), and every body the anim
@@ -1945,10 +1965,14 @@ impl BattleState {
             return_mode: SceneMode::Field,
             field_camera_reseat: false,
             clip_ribbon: None,
+            clip_ribbon_quads: None,
             cast_ribbons: None,
             cast_ribbon_seeds: None,
+            cast_ribbon_quads: None,
             flight_ribbons: None,
             flight_ribbon_seeds: None,
+            flight_ribbon_quads: None,
+            move_fx_streak_quads: None,
             burn_emit_accum: 0,
             ambient_stored: legaia_engine_battle_vm::battle_ground_grid::GRID_FAR_BASE_NEUTRAL,
             backdrop_cue: 0,

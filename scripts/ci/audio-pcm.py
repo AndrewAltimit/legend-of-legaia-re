@@ -150,8 +150,31 @@ CAST_STATES = [
     "battle_gimard_tail_fire_a",
     "battle_gimard_tail_fire_b",
     "zora_glare_petrify_pre",
+    "zora_glare_petrify_post",
     "cort_evil_seru_magic_mid_cast",
     "cort_mystic_circle_mid_cast",
+    "evil_medallion_rage_battle",
+    # The rest of the Seru the library holds mid-cast.
+    "vera_summon_mid_cast",
+    "gizam_summon_mid_cast",
+    "viguro_summon_mid_cast",
+    "freed_summon_mid_cast",
+    "nova_summon_mid_cast",
+    "gola_gola_summon_mid_cast",
+    "mushura_summon_mid_cast",
+    "barra_summon_mid_cast",
+    "aluru_summon_mid_cast",
+    "slippery_summon_mid_cast",
+    "iota_summon_mid_cast",
+    "puera_summon_mid_cast",
+    "juggernaut_summon_mid_cast",
+    "meta_summon_mid_cast",
+    "terra_summon_mid_cast",
+    "ozma_summon_mid_cast",
+    "palma_summon_mid_cast",
+    "mule_summon_mid_cast",
+    "horn_summon_mid_cast",
+    "jedo_summon_mid_cast",
 ]
 # Cast states whose recording carries its own frame steps (`<label>.steps`) for
 # the `cast_steps` channel, and how many mednafen frames the stepping logs: a
@@ -453,6 +476,11 @@ def engine_cast_wav(exe: Path, label: str, eng: Path, library: Path, disc: Path,
         if (st := state_file(label, library, manifest)) and (at := band_instant(st)):
             env["LEGAIA_DIAG_CAST_STEP_ARM"] = at
     manifest = tomllib.loads((REPO / "scripts" / "scenarios.toml").read_text())
+    # The gate places a summon band's state at its arm's entry; the band word
+    # places it inside the arm (`slippery_summon_mid_cast` stands `8` vsyncs into
+    # arm 2), so the recording opens there.
+    if (st := state_file(label, library, manifest)) and (at := band_instant(st)):
+        env["LEGAIA_DIAG_AUDIO_WAV_ARM"] = at
     if (st := state_file(label, library, manifest)) and (left := capture_read_left(st)):
         env["LEGAIA_SEAT_CAPTURE_SEEK_LEFT"] = str(int(left))
     env.update({

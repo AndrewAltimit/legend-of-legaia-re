@@ -312,3 +312,26 @@ fn flag_0x370_writer_is_the_doman_p1_15_usha_latch() {
         );
     }
 }
+
+/// `koin3`'s entry picks `2055` or `2018` on its box test and both arms meet
+/// at `+0x16C`, ahead of the `0x59B` test that spawns `P2[8]` (`44 56`), the
+/// Disco King's verdict after the lesson. The `2018` start sits within the
+/// arm window of that spawn but on one arm only, so it does not score it.
+#[test]
+fn koin3_p2_8_is_not_scored_across_the_box_test_join() {
+    use legaia_engine_field::man_field_scripts::walk_spawn_scores;
+    let Some(index) = open_index() else { return };
+    let scene = Scene::load(&index, "koin3").expect("load koin3");
+    let man = scene
+        .field_man_payload(&index)
+        .expect("payload")
+        .expect("koin3 MAN resolves");
+    let mf = legaia_scene_formats::man_section::parse(&man).expect("parse");
+    let scores = walk_spawn_scores(&mf, &man);
+    assert!(
+        !scores.iter().any(|s| s.global_index == 0x56),
+        "P2[8] takes the entry's own track: {scores:?}"
+    );
+    // The lone `0x59C` / `0x59D` arms still score their own spawns.
+    assert!(scores.iter().any(|s| s.global_index == 0x57));
+}

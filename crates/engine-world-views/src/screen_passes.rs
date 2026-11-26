@@ -441,14 +441,10 @@ pub fn move_fx_streak_prims(
     by_link: bool,
 ) -> Vec<ScreenPrim> {
     use legaia_render_kernels::screen_prim::CornerDepth;
-    use legaia_render_kernels::streak_pass::{
-        AFTERIMAGE_COUNTER_MIN, StreakSource, clip_ribbon_quads, streak_quads_scheduled,
-    };
     let anchor = |p: [f32; 3]| {
         let clip = *mvp * glam::Vec4::new(p[0], p[1], p[2], 1.0);
         (by_link && clip.w > 1e-4).then(|| CornerDepth::new([clip.z / clip.w; 4]))
     };
-    let frame = world.clock.display_frames as u32;
     let mut out = Vec::new();
     let mut push = |quads: Vec<legaia_render_kernels::afterimage::AfterimageQuad>,
                     depth: Option<CornerDepth>| {
@@ -460,34 +456,26 @@ pub fn move_fx_streak_prims(
             prim
         }));
     };
-    if let Some(trail) = world.active_move_fx_trail_texpage() {
-        let block = world.move_fx_streak();
-        if let Some(src) = StreakSource::from_block(block.launch, block.half_width(), Some(trail)) {
-            let party = world
-                .battle_seat_map()
-                .is_party(world.battle_ctx.active_actor);
-            // The single afterimage projects the launch point pushed down
-            // `+0x120`; the ribbon anchors on the point itself
-            // (`streak_pass::project_streak_corners_mvp` /
-            // `project_ribbon_corners_mvp`).
-            let lift = if party && block.counter_word >= AFTERIMAGE_COUNTER_MIN {
-                f32::from(legaia_render_kernels::afterimage::SCREEN_Y_OFFSET)
-            } else {
-                0.0
-            };
-            let depth = anchor([src.launch[0], src.launch[1] + lift, src.launch[2]]);
-            push(
-                streak_quads_scheduled(&src, mvp, frame, block.counter_word, party),
-                depth,
-            );
-        }
+    // The pass's streak emitter built its packets on the game's stream
+    // (`World::deal_move_fx_streak`, `BattleState::move_fx_streak_quads`):
+    // drawn as built, at the launch point's depth (lifted `+0x120` for the
+    // single afterimage, which is the only one-packet case).
+    if let Some(quads) = world.battle.move_fx_streak_quads.as_ref()
+        && let Some(launch) = world.move_fx_streak().launch
+    {
+        let lift = if quads.len() == 1 {
+            f32::from(legaia_render_kernels::afterimage::SCREEN_Y_OFFSET)
+        } else {
+            0.0
+        };
+        let at = [launch.0 as f32, launch.1 as f32 + lift, launch.2 as f32];
+        push(quads.clone(), anchor(at));
     }
-    if let Some(c) = world.battle.clip_ribbon {
-        let seat = c.seat.map(f32::from);
-        push(
-            clip_ribbon_quads(seat, c.trail_id, mvp, frame),
-            anchor(seat),
-        );
+    if let (Some(c), Some(quads)) = (
+        world.battle.clip_ribbon,
+        world.battle.clip_ribbon_quads.as_ref(),
+    ) {
+        push(quads.clone(), anchor(c.seat.map(f32::from)));
     }
     out
 }
@@ -496,48 +484,21 @@ pub fn move_fx_streak_prims(
 /// stage quads through `mvp` (the host's battle model-view-projection at the
 /// stage's 4:3).
 ///
-/// The streak is the pass retail runs once per move-FX frame
-/// (`FUN_801E09F8`'s schedule over the ported `FUN_801E1AB0` packet): the
-/// launch point the action effect script's terminator staged, fanned out at
-/// the staged half-width. It is gated on the move-FX scene being live - the
-/// trail texpage is scene-scoped, so the streak lasts exactly as long as the
-/// effect it trails. The clip-tag ribbon (`FUN_8004CE2C` tag `0x67` ->
-/// `FUN_801E1D98(&target[+0x3C], 0xC)`) rides a physical art's clip instead
-/// and draws with or without a move-FX scene. Both clock on the world's
-/// display-frame counter.
-pub fn move_fx_streak_quads(world: &World, mvp: &glam::Mat4) -> Vec<AfterimageQuad> {
-    use legaia_render_kernels::streak_pass::{
-        StreakSource, clip_ribbon_quads, streak_quads_scheduled,
-    };
-    let frame = world.clock.display_frames as u32;
-    let mut out = Vec::new();
-    if let Some(trail) = world.active_move_fx_trail_texpage() {
-        let block = world.move_fx_streak();
-        if let Some(src) = StreakSource::from_block(block.launch, block.half_width(), Some(trail)) {
-            // The schedule keys on the counter word and the acting side:
-            // party = afterimage shrinking toward the ribbon, monster =
-            // ribbon throughout. `ctx[+0x13] < 3` is a pool-slot test
-            // (`0x801E0C78`): a small party's first monster sits below
-            // engine slot `3`.
-            let party = world
-                .battle_seat_map()
-                .is_party(world.battle_ctx.active_actor);
-            out.extend(streak_quads_scheduled(
-                &src,
-                mvp,
-                frame,
-                block.counter_word,
-                party,
-            ));
-        }
-    }
-    if let Some(c) = world.battle.clip_ribbon {
-        out.extend(clip_ribbon_quads(
-            c.seat.map(f32::from),
-            c.trail_id,
-            mvp,
-            frame,
-        ));
+/// The streak is the packets the pass's emitter built
+/// (`BattleState::move_fx_streak_quads`, dealt by `World::deal_move_fx_streak`
+/// on `FUN_801E09F8`'s gates: slot `0` in phase `1`, the counter running and
+/// the record's `+0x0E` list byte `0xFF`), drawn as built, then the packets
+/// of Gala's clip-tag ribbon (`FUN_8004CE2C` tag `0x67` ->
+/// `FUN_801E1D98(&target[+0x3C], 0xC)`, `BattleState::clip_ribbon_quads`),
+/// which rides Heaven's Drop's clip rather than a move-FX scene.
+pub fn move_fx_streak_quads(world: &World, _mvp: &glam::Mat4) -> Vec<AfterimageQuad> {
+    let mut out = world
+        .battle
+        .move_fx_streak_quads
+        .clone()
+        .unwrap_or_default();
+    if let Some(quads) = world.battle.clip_ribbon_quads.as_ref() {
+        out.extend(quads.iter().copied());
     }
     out
 }
@@ -573,7 +534,6 @@ fn cast_ribbon_prims_at(
     drawn: bool,
 ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
     use legaia_render_kernels::screen_prim::{CornerDepth, ScreenPrim};
-    use legaia_render_kernels::streak_pass::clip_ribbon_quads;
     let frame = world.clock.display_frames as u32;
     let pose = if drawn {
         world.battle_draw_pose()
@@ -586,28 +546,45 @@ fn cast_ribbon_prims_at(
     // same call on the slot's position, numbered on after the arm's points.
     // Each ring replays the words its pass dealt it
     // (`World::deal_cast_ribbon_rands`, `World::deal_flight_ribbon_rands`).
+    //
+    // The packets the dealing pass built are what retail's frame shows
+    // (`BattleState::cast_ribbon_quads`): built once, through the view and off
+    // the point the pass held, and drawn as built. Re-running the call here
+    // on the drawn camera and point moves the spans every jitter draw is
+    // taken modulo, so the same words draw another ribbon - PROT 0909's arm
+    // 12 ring drew sixteen other bolts a frame that way.
     let rings = [
         (
             false,
             world.battle.cast_ribbons,
             world.battle.cast_ribbon_seeds,
+            world.battle.cast_ribbon_quads.as_deref(),
         ),
         (
             true,
             world.battle.flight_ribbons,
             world.battle.flight_ribbon_seeds,
+            world.battle.flight_ribbon_quads.as_deref(),
         ),
     ];
-    let points = rings.iter().flat_map(|(flight, ring, seeds)| {
+    let points = rings.iter().flat_map(|(flight, ring, seeds, built)| {
         ring.iter().flat_map(move |ring| {
             ring.points
                 .iter()
                 .take(usize::from(ring.count))
                 .enumerate()
-                .map(move |(k, p)| ((*flight, k), *p, ring.trail_id, seeds.map(|s| s[k])))
+                .map(move |(k, p)| {
+                    (
+                        (*flight, k),
+                        *p,
+                        ring.trail_id,
+                        seeds.map(|s| s[k]),
+                        built.and_then(|b| b.get(k)),
+                    )
+                })
         })
     });
-    for (i, ((flight, k), mut p, trail_id, seed)) in points.enumerate() {
+    for (i, ((flight, k), mut p, trail_id, seed, built)) in points.enumerate() {
         // On the drawn frame each point stands where the drawn phase puts
         // it (`World::battle_ribbon_point_shift`), so a ribbon riding a body
         // or a projectile stays on it; the live point otherwise.
@@ -623,11 +600,12 @@ fn cast_ribbon_prims_at(
         let at = [f32::from(p[0]), -f32::from(p[1]), f32::from(p[2])];
         let clip = *mvp * glam::Vec4::new(at[0], at[1], at[2], 1.0);
         let depth = (clip.w > 1e-4).then(|| CornerDepth::new([clip.z / clip.w; 4]));
-        let quads = match seed {
-            Some(seed) => {
+        let quads = match (built, seed) {
+            (Some(built), _) => built.clone(),
+            (None, Some(seed)) => {
                 legaia_render_kernels::streak_pass::ribbon_quads_seeded(&view, p, trail_id, seed).0
             }
-            None => clip_ribbon_quads(
+            (None, None) => legaia_render_kernels::streak_pass::clip_ribbon_quads(
                 at,
                 trail_id,
                 mvp,
@@ -654,6 +632,38 @@ mod tests {
     #[test]
     fn the_fallback_focus_is_the_box_centre() {
         assert_eq!(scene_centre(AABB), [2000.0, 1000.0]);
+    }
+
+    /// A module ring's ribbons draw the packets the dealing pass built, not a
+    /// rebuild on the drawn camera: the jitter spans come off the projected
+    /// box, so a rebuild a unit off draws another bolt on the same words.
+    #[test]
+    fn a_dealt_ribbon_draws_the_packets_its_call_built() {
+        use legaia_render_kernels::afterimage::AfterimageQuad;
+        use legaia_render_kernels::screen_prim::ScreenPrim;
+        let built = AfterimageQuad {
+            xy: [(11, 22), (33, 22), (11, 99), (33, 99)],
+            uv: [(0, 0), (0x1F, 0), (0, 0x3F), (0x1F, 0x3F)],
+            clut: 0x7705,
+            tpage: 0x27,
+            color: 0x2E80_8080,
+            semi_transparent: true,
+        };
+        let mut world = World::default();
+        let mut ring = world.battle.cast_ribbons.unwrap_or_default();
+        ring.points[0] = [0, 0, 0x800];
+        ring.trail_id = 5;
+        ring.count = 1;
+        world.battle.cast_ribbons = Some(ring);
+        world.battle.cast_ribbon_seeds = Some([0x1234_5678; 16]);
+        world.battle.cast_ribbon_quads = Some(vec![vec![built]]);
+        let prims = cast_ribbon_prims(&world, &glam::Mat4::IDENTITY, 7);
+        assert_eq!(prims.len(), 1);
+        let ScreenPrim::Textured(q) = &prims[0] else {
+            panic!("a ribbon packet is a textured quad");
+        };
+        assert_eq!(q.xy, built.xy);
+        assert_eq!((q.clut, q.tpage), (built.clut, built.tpage));
     }
 
     #[test]

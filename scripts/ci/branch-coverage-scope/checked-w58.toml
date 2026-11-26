@@ -19,13 +19,6 @@ verdict = "unported"
 reason = "The mode-entry init frees the previous scene heap block _DAT_8007BAF0 through FUN_8001763C when it is set, then clears the word; the engine allocates no PSX heap, so the port has no free to make"
 
 [[arm]]
-entry = "0x801DD35C"
-image = "4612e100f59ba766"
-range = "0x801E01D8..0x801E0254"
-verdict = "unported"
-reason = "The title tail's attract fade: under the entry word 0x8007BB00 and a page offset 0x801EF194 short of 0x1000, it scales the attract countdown 0x801EF16C (capped at 16) into a 0..0xFF shade and draws it through the overlay's own quad builders 0x801E02A4 / 0x801E0418; no Rust names those builders or the shade, so title_menu compares the sub-mode step only (port gap)"
-
-[[arm]]
 entry = "0x801DEA50"
 image = "0dcde6a277f4b4aa"
 range = "0x801DEA90..0x801DEAD4"
@@ -50,3 +43,16 @@ entry = "0x80029DD8"
 range = "0x8002A4E4..0x8002A4E4"
 verdict = "unported"
 reason = "The shatter primitive's OT link window (AVSZ3's OTZ in 0xA1..0x3FFF, sltiu at 0x8002A4E0): render_kernels::shatter returns vertices only and nothing in the port applies this window to a shattered triangle, so it has no counterpart (port gap)"
+
+[[arm]]
+entry = "0x801CF388"
+image = "5a2d3981829b20ae"
+range = "0x801CF42C..0x801CF42C"
+verdict = "unported"
+reason = "The cabinet's debug trace: under the developer menu's mode word DAT_801DBF94 the frame prints the state and the round timer through the printf FUN_8001A068 (0x801CF434..0x801CF460). The port keeps the mode word (dev_mode) and prints nothing, by decision"
+
+[[arm]]
+entry = "0x80047430"
+range = "0x8004765C..0x8004765C"
+verdict = "unported"
+reason = "The inert-actor arm's record mirror: a party seat (slot < 3) copies its status word +0x16E into the display record's +0x6F6 (char record +0x12E, 0x80047664..0x80047680). The port keeps the word on the actor and its tracker and stores no record mirror (status_effects::display_flags names the bits), so no Rust makes this store"

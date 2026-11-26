@@ -1439,6 +1439,19 @@ Read off the GP0 draw list of the running load screen:
   per-frame ramp clamped to `0..=0xFF` and passes it to both this and
   `FUN_801E0418`, so the dim is the fade, done as RGB modulation. Port
   `backdrop_dim_sprites`.
+- **The ramp** (`0x801E01D0..0x801E026C`): drawn only while `_DAT_8007BB00`
+  is set and alpha channel B `0x801EF194` is short of `0x1000`, at
+  `clamp(countdown, 0, 16) * 8 * (0x1000 - preroll / 2 - B) / 0x1000`,
+  rounded toward zero and clamped to a byte, with the countdown
+  `0x801EF16C` and the pre-roll `0x801EF120`. It reads `0x80` with both at
+  rest and falls to black as B ramps up on a confirmed slot. The tick model
+  holds it as `TitleTickState::backdrop_shade` (`TitleTickEffect::Backdrop`),
+  which `title_menu` compares with both drawers' `a0`. Both play hosts draw
+  the backdrop at this ramp (`ContinueScreen::title_backdrop_shade`): the
+  Load window's mode `0x18` runs the pre-roll up `0x80` a frame, so the art
+  dims from `0x80` to its rest level `0x40` over 32 frames (the
+  `save_select_idle` state holds pre-roll `0x1000`, B `0`), and a confirmed
+  slot runs B up `0x100` a frame, black after 16.
 - **Sprite records** (`FUN_801E3FF0`): stamps one record of the table at
   `0x801E5048` as a `0x2C` quad at a pen with an RGB word. Port
   `save_ui_record_quad`.
