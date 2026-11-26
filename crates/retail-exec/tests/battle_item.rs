@@ -365,9 +365,20 @@ fn every_battle_item_writes_what_retail_writes() {
             per_class[usize::from(e.class)] += 1;
             for s in 0..5u8 {
                 let mut r = read_retail(&mut cpu, s);
-                // The fade `+0x21C = 2` is `stand_revived_party_member` here.
-                r.render = 0;
                 let p = read_port(&w, s);
+                // The fade `+0x21C = 2` is `stand_revived_party_member` here:
+                // the revive arm raises it on a seat it brought back with HP
+                // (`0x800410C0`), the seat the port stands.
+                let stood = seats[usize::from(s)].hp == 0 && p.hp != 0;
+                if (r.render == 2) != stood {
+                    failures.push(format!(
+                        "item {id:#04x} class {} round {round} seat {s}: fade {} where the port stands {stood}",
+                        e.class, r.render
+                    ));
+                    item_failed = true;
+                    break;
+                }
+                r.render = 0;
                 if r != p {
                     failures.push(format!(
                         "item {id:#04x} class {} tier {} round {round} target {target} seat {s}:\n before {:?}\n retail {r:?}\n port   {p:?}",
@@ -752,8 +763,14 @@ fn a_monster_heal_writes_what_retail_writes() {
         w.fold_battle_item_action(class, tier, target);
         for s in 0..5u8 {
             let mut r = read_retail(&mut cpu, s);
-            r.render = 0;
             let p = read_port(&w, s);
+            let stood = seats[usize::from(s)].hp == 0 && p.hp != 0;
+            assert_eq!(
+                r.render == 2,
+                stood,
+                "class {class} tier {tier} round {round} seat {s}: the revive fade"
+            );
+            r.render = 0;
             assert_eq!(
                 r,
                 p,
