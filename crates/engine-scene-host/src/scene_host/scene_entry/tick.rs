@@ -240,6 +240,21 @@ impl SceneHost {
     /// boot/transition path seeds the overworld the same way the explicit
     /// `--world-map` entry does.
     pub fn tick(&mut self) -> Result<SceneTickEvent> {
+        // A New Game's title `LaunchFade` / `LaunchGame` frames, then its
+        // field MAIN INIT: black, with nothing of the opening running.
+        // REF: FUN_801DD35C (LaunchFade arm 0x801DF8D0)
+        if let Some(fade) = self.world.launch_fade.as_mut() {
+            let input = &self.world.input;
+            let edge = legaia_engine_system::pad::retail_packed(input.pad() & !input.pad_prev());
+            if fade.step(1, edge) {
+                self.world.launch_fade = None;
+                self.world.field_init_hold =
+                    legaia_engine_system::mode_entry_init::new_game_field_init_hold_vsyncs(
+                        self.world.toggles.skip_load_holds,
+                    );
+            }
+            return Ok(SceneTickEvent::Stepped);
+        }
         // A field MAIN INIT hold under the credits latch: the scene is loaded
         // and none of it runs until the load retail spends in mode `0x02` is
         // over. The audio keeps time on its own clock, as the console's

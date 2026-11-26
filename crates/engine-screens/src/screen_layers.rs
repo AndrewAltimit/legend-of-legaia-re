@@ -297,8 +297,9 @@ pub fn compose_screen_prims(
         over.extend(pause_curtain(level));
     }
     // A field MAIN INIT hold (`World::field_init_hold`): retail is in mode
-    // `0x02`, drawing nothing over the black the departure left.
-    if world.field_init_hold > 0 {
+    // `0x02`, drawing nothing over the black the departure left. A New Game's
+    // `LaunchFade` before it (`World::launch_fade`) washes the screen black.
+    if world.field_init_hold > 0 || world.launch_fade.is_some() {
         over.push(level_fade(0xFF));
     }
     // The field overlay's screen-effect washes (op `0x34` sub-0 ->

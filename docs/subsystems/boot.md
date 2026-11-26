@@ -429,6 +429,25 @@ takes the pair; `GameMode::for_scene_mode` is its deliberately lossy inverse.
    `0x801DFAFC`.
 3. **Mode-2 init.** `FUN_80025B64` loads the field overlay (`FUN_8003EBE4(2)`)
    and calls `FUN_801D6704`.
+
+**The black before the opening.** `LaunchFade` (`0x801DF8D0`) adds the frame
+step to a wait each frame, and once the wait passes `0x5A` it climbs a ramp by
+the step shifted left 8 until `0x1200`, then hands to `LaunchGame`; every frame
+it washes the screen black (`FUN_80024EE4(1, 2, 0xFFFFFF)`). A newly pressed
+face button or L1 / L2 under the `0x5A` mark adds `0x5A`, so a press skips the
+wait. Unpressed that is 108 frames plus `LaunchGame`'s. Master mode 2 then
+holds while the field overlay and `opdeene` stream: a per-vsync PCSX-Redux film
+of a New Game confirmed on `title_attract` presses on vsync 20, is black by 24,
+reads mode `2` from 132 and mode `3` at 512. The opening record halts at
+`+0x7C` for two frames, as it does on the port, and reaches its first crawl at
+519.
+
+The port runs the same span after the New Game rules screen
+(`mode_entry_init::LaunchFade` on `World::launch_fade`, then
+`World::field_init_hold`): the launch in every mode, and the mode-2 hold of
+`NEW_GAME_FIELD_INIT_HOLD_VSYNCS` in the retail-faithful mode only, since the
+port's loads are instant otherwise
+(`engine-session/tests/new_game_launch_hold_disc.rs`).
 4. **Field scene init.** `FUN_801D6704` reads the resident scene name, loads
    geometry + MAN + camera + fog + BGM, allocates the game-mode work buffer and
    writes `_DAT_8007B83C = 3`. It is generic field entry, used for every scene

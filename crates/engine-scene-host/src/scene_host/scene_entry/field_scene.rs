@@ -155,6 +155,10 @@ impl SceneHost {
         // to (Rim Elm). The per-actor channels are timeline-scoped and drop
         // with it.
         self.world.cutscene.timeline = None;
+        // A New Game's launch belongs to the opening scene it was armed
+        // over; a scene entered behind it (a picker, a test's direct entry)
+        // starts without it.
+        self.world.launch_fade = None;
         // Concurrent spawned-record contexts (and any not-yet-drained op-0x44
         // requests) are scene-scoped like the timeline: their bytecode slices
         // came from the previous scene's MAN.
