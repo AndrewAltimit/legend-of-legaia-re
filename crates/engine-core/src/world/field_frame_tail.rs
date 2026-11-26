@@ -270,7 +270,28 @@ impl World {
             .collect::<Vec<_>>()
             .into_iter()
             .map(|(slot, base_id, r)| {
+                let was = self
+                    .npcs
+                    .clip_cursors
+                    .get(&slot)
+                    .map(|c| (c.anim_id, c.frames));
                 self.bind_npc_clip_cursor(slot, base_id, &r.player);
+                let now = self
+                    .npcs
+                    .clip_cursors
+                    .get(&slot)
+                    .map(|c| (c.anim_id, c.frames));
+                // The re-target binds and steps in one consumer call
+                // (`FUN_800204F8`, which the field-actor driver runs after
+                // the actor's stream on the same frame), before the draw: the
+                // frame's anim tick already ran on the old clip, so the new
+                // one takes this frame's step here. A PCSX-Redux walk film of
+                // `town01_npc16_dialogue_first_page` draws each villager's
+                // stand / walk switch from cursor `8` on its bind frame.
+                let grid = self.clock.script_frame_delta();
+                if was != now && grid > 0 && self.field_npc_clips_advance() {
+                    self.tick_npc_clip_slot(slot, grid);
+                }
                 r
             })
             .collect()
@@ -596,34 +617,39 @@ impl World {
         }
         let slots: Vec<u8> = self.npcs.clip_cursors.keys().copied().collect();
         for slot in slots {
-            self.adopt_live_clip_rate(slot);
-            let flags = self.npc_channel_local_flags(slot);
-            let live_rate = self
-                .npcs
-                .clip_rate_live
-                .contains(&slot)
-                .then(|| self.npc_channel_clip_rate(slot))
-                .flatten();
-            let Some(c) = self.npcs.clip_cursors.get_mut(&slot) else {
-                continue;
-            };
-            if let Some(f) = flags {
-                c.flags = f;
-            }
-            if let Some(rate) = live_rate {
-                c.rate = rate;
-            }
-            c.tick_scaled(scale);
-            let out = c.flags;
-            if flags.is_some()
-                && let Some(ch) = self
-                    .field_vm
-                    .channels
-                    .iter_mut()
-                    .find(|ch| !ch.object_bind && ch.placement_index == usize::from(slot))
-            {
-                ch.ctx.local_flags = out;
-            }
+            self.tick_npc_clip_slot(slot, scale);
+        }
+    }
+
+    /// One anim tick of NPC `slot`'s clip cursor ([`Self::tick_npc_clips_scaled`]).
+    fn tick_npc_clip_slot(&mut self, slot: u8, scale: u16) {
+        self.adopt_live_clip_rate(slot);
+        let flags = self.npc_channel_local_flags(slot);
+        let live_rate = self
+            .npcs
+            .clip_rate_live
+            .contains(&slot)
+            .then(|| self.npc_channel_clip_rate(slot))
+            .flatten();
+        let Some(c) = self.npcs.clip_cursors.get_mut(&slot) else {
+            return;
+        };
+        if let Some(f) = flags {
+            c.flags = f;
+        }
+        if let Some(rate) = live_rate {
+            c.rate = rate;
+        }
+        c.tick_scaled(scale);
+        let out = c.flags;
+        if flags.is_some()
+            && let Some(ch) = self
+                .field_vm
+                .channels
+                .iter_mut()
+                .find(|ch| !ch.object_bind && ch.placement_index == usize::from(slot))
+        {
+            ch.ctx.local_flags = out;
         }
     }
 
@@ -963,6 +989,31 @@ mod tests {
         w.npcs.anim_cues.insert(3, (1, 5, Vec::new()));
         let out = w.drain_field_anim_cues(Some(&scene), Some(&loco), |_| Some(true));
         assert_eq!(out[0].player.frame_count(), 7, "bit down: the scene bank");
+    }
+
+    /// A re-target the frame tail binds takes the frame's step there, as
+    /// retail's consumer binds and steps in one call before the draw; a
+    /// vsync between two game frames binds it unstepped.
+    #[test]
+    fn an_npc_retarget_steps_on_the_frame_it_binds() {
+        let loco = legaia_engine_field::field_anim::synth_anm_bundle(&[(10, 4); 3]);
+        let mut w = World::new();
+        w.mode = SceneMode::Field;
+        w.clock.game_tick_live = true;
+        w.clock.frame_step = 2;
+        let party = legaia_engine_field::field_player_clip::PARTY_BANK_FLAG;
+        w.field_vm.channels.push(party_channel(3, party));
+        w.clock.game_tick_fired = true;
+        w.npcs.anim_cues.insert(3, (1, 2, Vec::new()));
+        let _ = w.drain_field_anim_cues(None, Some(&loco), |_| Some(true));
+        let c = w.npcs.clip_cursors[&3];
+        assert_eq!(c.anim_id, 2);
+        assert!(c.cursor > 0, "stepped on the bind frame: {}", c.cursor);
+        w.clock.game_tick_fired = false;
+        w.npcs.anim_cues.insert(3, (1, 3, Vec::new()));
+        let _ = w.drain_field_anim_cues(None, Some(&loco), |_| Some(true));
+        let c = w.npcs.clip_cursors[&3];
+        assert_eq!((c.anim_id, c.cursor), (3, 0), "between frames: unstepped");
     }
 
     /// A clip for another skeleton never replaces a bound one: the hosts cut

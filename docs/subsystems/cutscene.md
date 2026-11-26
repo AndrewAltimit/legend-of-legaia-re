@@ -2373,6 +2373,21 @@ frame's step when it lands (`World::drain_field_anim_cues`). Emitted before its 
 record 45's frame `0`, the hand at Vahn's side, for one vsync between the hand on his head and
 the hand coming down (disc-gated `opening_hand_on_head`), and every pose a vsync behind retail.
 
+An NPC re-target follows the same call. An ambient walker's stream requests its walk or its
+standing move, and the field-actor driver runs `FUN_800204F8` after the stream on the same frame,
+so the new clip draws one step in on the frame it binds (a walk film of
+`town01_npc16_dialogue_first_page`: cursor `8` on each villager's switch). The port binds the
+request in the frame tail's cue drain, after the frame's anim tick, and steps it there. A
+cross-context poke takes a second step when the target's own tick runs later in the same walk
+(`World::bind_npc_scene_clip`).
+
+The opening's beat lengths still differ: retail holds the hand-raise `38` vsyncs and the
+hand-lowering `36`, the port `40` and `40`. Retail's player actor sits on the first actor list
+(`0x8007C34C`, tick `FUN_801D1344`) ahead of the placements' list, so its anim tick raises a
+one-shot's end latch before the script that spins on it runs in the same frame (record 46's last
+step and the bind of record 47 land on one frame, vsync `1558`). The port steps the field scripts
+before the player's locomotion and anim tick, so the spin sees the latch a frame later.
+
 A helper record's shot frames through the follow arm (`camera_view::field_follow_view`), which
 for a follow shot folds a negative eye depth into its magnitude. Under a scripted shot it keeps
 the sign, as GTE `TR` does: the same window shot glides the depth through zero, the lens passing
