@@ -133,6 +133,13 @@ impl BakaCabinet {
                 // Every match starts at round `0` (`0x801CFDB0`), so a secret
                 // rung's first round is the one its intro pose waits for.
                 self.round = 0;
+                // A secret rung fights under a screen wash, its colour the
+                // rung's (`0x801CFD0C..0x801CFD88`); any other rung clears it.
+                (self.wash_gate, self.wash_rgb) = match self.secret {
+                    SecretOpponent::None => (0, self.wash_rgb),
+                    SecretOpponent::First => (1, 0x0008_1010),
+                    SecretOpponent::Second => (1, 0x0010_1008),
+                };
                 let (roster, mesh) = rung_fold(self.stage, self.secret);
                 f.install_opponent = Some((roster, mesh));
                 self.match_phase = 2;
@@ -164,6 +171,10 @@ impl BakaCabinet {
             // passes a full turn, so the HUD (drawn from `0x36` on, the
             // epilogue's `s7` test at `0x801D218C`) waits for the camera.
             ST_ROUND_BANNER_C => {
+                // The wash and the challenger latch drop with the scene
+                // suppress (`0x801D0334`, `0x801D0348`).
+                self.wash_gate = 0;
+                self.wash_latch = 0;
                 self.suppress_scene = false;
                 f.round_banner = Some(self.scene_timer);
                 self.scene_timer += step;
@@ -248,8 +259,19 @@ impl BakaCabinet {
                 // The arm's first frame seeds the word at `1`, then tests it
                 // and steps it, the hand-off frame included
                 // (`0x801D1094..0x801D1168`).
+                // From `0x29` the challenger's announcement raises a wash once
+                // (`0x801D1008..0x801D105C`), and `0x79` drops it
+                // (`0x801D1110..0x801D1120`).
+                if self.state_timer >= 0x29 && self.wash_latch == 0 {
+                    self.wash_latch = 1;
+                    self.wash_gate = 1;
+                    self.wash_rgb = 0x0008_0808;
+                }
                 if self.state_timer == 0 {
                     self.state_timer = 1;
+                }
+                if self.state_timer >= 0x79 {
+                    self.wash_gate = 0;
                 }
                 if self.state_timer >= 0xB5 {
                     self.match_phase = 1;
@@ -477,6 +499,10 @@ impl BakaCabinet {
         if self.suppress_scene {
             f.draw_arena = false;
             f.draw_hud = false;
+        }
+        // The epilogue's last call (`0x801D21AC..0x801D21C8`).
+        if self.wash_gate != 0 {
+            f.wash = Some(self.wash_rgb as u32);
         }
         f.state = self.state;
         f

@@ -88,6 +88,13 @@ pub struct CabinetFrame {
     ///
     /// REF: FUN_80024EE4
     pub exit_fade: Option<u8>,
+    /// The screen wash the epilogue armed (`FUN_8004695C(DAT_801DBEA8)` under
+    /// `DAT_801DBEAC`, `0x801D21AC..0x801D21C8`): a secret rung's fight and
+    /// the challenger's announcement. The wash subtracts the colour at the
+    /// farthest ordering-table bucket, behind everything the frame draws.
+    ///
+    /// REF: FUN_8004695C
+    pub wash: Option<u32>,
 }
 
 /// Per-frame inputs the cabinet reads out of shared globals.
@@ -227,6 +234,13 @@ pub struct BakaCabinet {
     pub(super) suppress_scene: bool,
     /// `DAT_801DBEC0` - the screen-shake amplitude.
     pub(super) shake: i32,
+    /// `DAT_801DBEAC` - the screen wash's gate: the epilogue arms the wash
+    /// `FUN_8004695C(DAT_801DBEA8)` on every frame it is non-zero.
+    pub(super) wash_gate: i32,
+    /// `DAT_801DBEA8` - the screen wash's colour (packed RGB).
+    pub(super) wash_rgb: i32,
+    /// `DAT_801DC120` - the challenger announcement's one-shot latch.
+    pub(super) wash_latch: i32,
     /// `_DAT_80084440` - the casino prize accumulator the run banks into.
     pub(super) pot: u32,
     /// `DAT_801DBF58` / `DAT_801DBEC8` - the HUD's max-streak latch.
@@ -278,6 +292,9 @@ impl BakaCabinet {
             match_phase: 0,
             suppress_scene: false,
             shake: 0,
+            wash_gate: 0,
+            wash_rgb: 0,
+            wash_latch: 0,
             pot: 0,
             max_streak: 0,
             perfect_matches: 0,
@@ -446,7 +463,7 @@ impl BakaCabinet {
     /// Every scalar the cabinet keeps, beside the overlay word it mirrors
     /// (all words but the secret override, a halfword): the view the retail
     /// kernel differential reads the machine through.
-    pub fn retail_words(&self) -> [(u32, i32); 28] {
+    pub fn retail_words(&self) -> [(u32, i32); 31] {
         [
             (0x801D_BF44, self.state as i32),
             (0x801D_C128, self.scene_timer),
@@ -476,6 +493,9 @@ impl BakaCabinet {
             (0x801D_BF58, self.max_streak),
             (0x801D_BF28, self.perfect_matches),
             (0x8008_4440, self.pot as i32),
+            (0x801D_BEAC, self.wash_gate),
+            (0x801D_BEA8, self.wash_rgb),
+            (0x801D_C120, self.wash_latch),
         ]
     }
 }

@@ -71,6 +71,7 @@ const TITLE_CARD: u32 = 0x801D_59D4;
 const ROUND_BANNER: u32 = 0x801D_5C7C;
 const ANNOUNCER: u32 = 0x8003_D53C;
 const SCREEN_FADE: u32 = 0x8002_4EE4;
+const WASH: u32 = 0x8004_695C;
 /// The arena pass's first wall (`0x801D20AC`) and the HUD pass (`0x801D21A4`).
 const ARENA: u32 = 0x801D_6BB8;
 const HUD: u32 = 0x801D_2AFC;
@@ -134,9 +135,18 @@ fn the_cabinet_runs_sessions_as_retail_does() {
     let mut widget_frames = 0usize;
     // The other draws and cues the arms call out for, by callee: the title
     // card, the round banner, the announcer line, the full-screen fade, the
-    // arena pass and the HUD pass, each with its first three arguments.
+    // screen wash, the arena pass and the HUD pass, each with its first
+    // three arguments.
     let calls: std::rc::Rc<std::cell::RefCell<CallLog>> = Default::default();
-    for callee in [TITLE_CARD, ROUND_BANNER, ANNOUNCER, SCREEN_FADE, ARENA, HUD] {
+    for callee in [
+        TITLE_CARD,
+        ROUND_BANNER,
+        ANNOUNCER,
+        SCREEN_FADE,
+        WASH,
+        ARENA,
+        HUD,
+    ] {
         let calls = calls.clone();
         cpu.hook(callee, move |r, _| {
             use psx_retail_exec::{A0, A1, A2};
@@ -425,6 +435,11 @@ fn the_cabinet_runs_sessions_as_retail_does() {
                 .chain(f.exit_fade.map(|l| [0, 2, u32::from(l) * 0x01_0101]))
                 .collect();
             assert_eq!(args(SCREEN_FADE), fades, "screen fade, {at}");
+            assert_eq!(
+                args(WASH).iter().map(|a| a[0]).collect::<Vec<_>>(),
+                f.wash.into_iter().collect::<Vec<_>>(),
+                "screen wash, {at}"
+            );
             assert_eq!(!args(ARENA).is_empty(), f.draw_arena, "arena pass, {at}");
             assert_eq!(
                 args(HUD).len(),
