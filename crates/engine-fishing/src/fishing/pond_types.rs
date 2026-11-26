@@ -300,9 +300,9 @@ pub struct PondSession {
     pub(super) creak_timer: i32,
     /// Creak cues raised since the last [`Self::take_rod_creaks`].
     pub(super) rod_creaks: u32,
-    /// The reel whirr's key-ons and key-offs since the last
+    /// The reel whirr's key-ons (`true`) and key-offs since the last
     /// [`Self::take_reel_voice`].
-    pub(super) reel_voice: (u32, u32),
+    pub(super) reel_voice: Vec<bool>,
     /// Lure items the line breaks consumed since the last
     /// [`Self::take_spent_lures`] (`FUN_80042310(lure + 0x9D, 1)` at
     /// `0x801D3C20`), one item id per break.

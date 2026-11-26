@@ -559,6 +559,9 @@ impl LegaiaMinigames {
         // and, on the arm that bumps the cast counter, the lure landing
         // `0x204` into slot 2 (`0x801D2950`).
         let mut ring = vec![SfxRingOp::WriteSlot(1, 0x201); p.take_rod_creaks() as usize];
+        // The reel's whirr on its own voice, as `World::tick_fishing` routes it.
+        let (whirr_stop, whirr_key) =
+            legaia_engine_fishing::fishing_actors::reel_voice_ops(&p.take_reel_voice());
         if p.persist().casts != casts {
             ring.push(SfxRingOp::WriteSlot(2, 0x204));
         }
@@ -616,7 +619,23 @@ impl LegaiaMinigames {
         for cue in hub_cue.into_iter().chain(cues) {
             self.minigame_sfx_cue(cue);
         }
-        self.audio_frame(&ring, &[], Vec::new());
+        let stops: &[u8] = if whirr_stop {
+            &[legaia_engine_fishing::fishing_actors::REEL_WHIRR_VOICE]
+        } else {
+            &[]
+        };
+        let keys = if whirr_key {
+            use legaia_engine_fishing::fishing_actors::{REEL_WHIRR_ATTR, REEL_WHIRR_VOICE};
+            vec![legaia_engine_minigames::other_game_overlay::VoiceAttrCue {
+                voice: u32::from(REEL_WHIRR_VOICE),
+                vab_program_tone: REEL_WHIRR_ATTR.0,
+                note_and_fine: REEL_WHIRR_ATTR.1,
+                volume: REEL_WHIRR_ATTR.2,
+            }]
+        } else {
+            Vec::new()
+        };
+        self.audio_frame(&ring, stops, keys);
         for e in &events {
             match *e {
                 PondEvent::Splash => {

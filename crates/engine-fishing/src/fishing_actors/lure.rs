@@ -59,6 +59,31 @@ pub struct ReelVoice {
     pub key_off: bool,
 }
 
+/// The reel whirr's voice slot: `FUN_80065034(0x13, ..)` keys it and
+/// `FUN_800653C8(0x13)` releases it (`0x801D2EB8`, `0x801D2F30`).
+pub const REEL_WHIRR_VOICE: u8 = 0x13;
+
+/// `(vab, program, tone)`, `(note, fine)`, `(vol_l, vol_r)` - the grouping
+/// the hosts' voice-attr cue carries.
+pub type ReelWhirrAttr = ((i32, i32, i32), (i32, i32), (i32, i32));
+
+/// The whirr's key-on arguments after the voice, as `0x801D2E94..0x801D2EBC`
+/// loads them: VAB `2`, program `0`, tone `0`, note `0x3C`, fine `0x40`,
+/// volume `0x28` / `0x28`.
+pub const REEL_WHIRR_ATTR: ReelWhirrAttr = ((2, 0, 0), (0x3C, 0x40), (0x28, 0x28));
+
+/// What a frame's whirr events (`true` key-on, `false` key-off, in call
+/// order) leave a host to do, for a host that releases its stopped voices
+/// ahead of its key-ons: `(stop, key)`. The last event decides; a key-on
+/// after a key-off is a stop then a key.
+pub fn reel_voice_ops(events: &[bool]) -> (bool, bool) {
+    match events.last() {
+        None => (false, false),
+        Some(false) => (true, false),
+        Some(true) => (events.contains(&false), true),
+    }
+}
+
 /// The cast lure as an advancing object.
 ///
 /// Retail spawns it in the cast arm of the fishing SM (`FUN_801CF3BC` case

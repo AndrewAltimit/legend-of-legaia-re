@@ -691,3 +691,25 @@ fn the_sink_arms_follow_the_equipped_lure() {
     l.sink_step(0x12C, 2, 1);
     assert_eq!(l.y_fixed, 0, "never negative");
 }
+
+/// The whirr's frame events reduce to the host's release-then-key order: the
+/// last event decides, and a key-on after a key-off is a stop then a key.
+#[test]
+fn the_reel_whirr_reduces_to_a_stop_and_a_key() {
+    assert_eq!(reel_voice_ops(&[]), (false, false));
+    assert_eq!(reel_voice_ops(&[true]), (false, true));
+    assert_eq!(reel_voice_ops(&[false]), (true, false));
+    assert_eq!(reel_voice_ops(&[true, false]), (true, false));
+    assert_eq!(reel_voice_ops(&[false, true]), (true, true));
+    // A press keys it, the spent pull with nothing held releases it.
+    let mut lure = LureActor::default();
+    let v = lure.pull_step(0x40, 0x40, 1);
+    assert!(v.key_on && !v.key_off);
+    for _ in 0..16 {
+        lure.pull_step(0, 0, 1);
+    }
+    assert!(
+        !lure.reel_voice,
+        "a spent pull with no button held keys the whirr off"
+    );
+}

@@ -443,7 +443,9 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
             let offs_before = key_offs.get();
             port.tick(input(held, edge, false), fs, CAST_POWER_STEP);
             let creaks = port.take_rod_creaks();
-            let (port_ons, port_offs) = port.take_reel_voice();
+            let voice = port.take_reel_voice();
+            let port_ons = voice.iter().filter(|&&on| on).count() as u32;
+            let port_offs = voice.len() as u32 - port_ons;
             port.take_spent_lures();
             let hooked_now = port
                 .take_events()
