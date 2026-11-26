@@ -313,14 +313,23 @@ An unchecked direction falls in one of these, read from the disassembly:
   the disc does not hold (a spell-0 guard ahead of a test of spell 0's
   description byte, which is zero).
 - **Equivalent under the harness.** The arms differ only in a call the test
-  stubs or hooks alike (two file loaders answered by one hook).
+  stubs or hooks alike (two file loaders answered by one hook). The field
+  VM's cross-context arms are the common case: the stub world's actor
+  resolver answers with the running context, so an arm that skips the
+  resolve when the header names the running context, or that parks the
+  caller as well when the target is the player, writes one context either
+  way. Telling them apart takes a host with a second context, the World's
+  own field host, as `a_tile_warp_lands_on_the_context_it_names` runs it.
 - **Comparison gap.** The arm writes something the test does not compare: a
   global the field VM writes beside the context the test holds, a mode word a
   battle exit sets beside the seats it checks. This is what the measurement is
   for; the fix is to widen the comparison.
 - **Weak inputs.** The arm is compared, but no generated input makes its two
   directions differ (arms that part only for an operand the generator never
-  makes negative, or never takes past a cap).
+  makes negative, or never takes past a cap), or makes them differ too
+  seldom: the fishing lure tick's strike arms (the bite divisor by line
+  record, the rare-band kit gate) decide the hooked fish only on the few
+  frames a random pad lands a strike.
 - **Unported effect.** The arm's write has no counterpart in the port: the
   dialog border's tile rows where the port keeps only the footprint, a heap
   free in an engine with no PSX heap. The arm belongs in a scope row,
