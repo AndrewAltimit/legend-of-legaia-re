@@ -84,6 +84,7 @@ DIAG_GATES: list[dict[str, object]] = [
     {"env": "LEGAIA_DIAG_BLOCKS", "additive": False, "note": "print each strike's block-roll inputs and verdict, the engine half of the probe's blocks.csv; draws nothing"},
     {"env": "LEGAIA_DIAG_CAST_SEQ_TAIL", "additive": False, "note": "LEGAIA_DIAG_CAST_SEQ ticks past the Done band; draws nothing"},
     {"env": "LEGAIA_DIAG_AUDIO_WAV", "additive": False, "note": "record the capture child's mix from its gate on to a WAV for the real-PCM cast channel (and the applied audio level beside it); draws nothing"},
+    {"env": "LEGAIA_DIAG_AUDIO_WAV_ARM", "additive": False, "note": "LEGAIA_DIAG_AUDIO_WAV: `state,phase,word` the summon band instant the recording opens on; draws nothing"},
     {"env": "LEGAIA_DIAG_AUDIO_WAV_BUS", "additive": False, "note": "LEGAIA_DIAG_AUDIO_WAV: `all` keeps the music bus (default silent); draws nothing"},
     {"env": "LEGAIA_DIAG_AUDIO_WAV_DONE_TAIL", "additive": False, "note": "LEGAIA_DIAG_AUDIO_WAV ticks past the Done band before it stops; draws nothing"},
     {"env": "LEGAIA_DIAG_AUDIO_WAV_SECONDS", "additive": False, "note": "LEGAIA_DIAG_AUDIO_WAV length cap; draws nothing"},
