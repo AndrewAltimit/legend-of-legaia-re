@@ -2755,10 +2755,16 @@ div.play-vis-head { cursor: default; }
      * entered, and its encounter hint was that scene's. Follow the game, but
      * only over a running-scene line, never over an error or a prompt, and
      * not on a pack map, whose name the line carries instead. */
-    if (st.scene && statusScene && st.scene !== statusScene && !activePackMap
-        && /^(Running |Named the hero )/.test(statusEl.textContent)) {
-      statusScene = st.scene;
-      statusEl.textContent = runningStatus(st.scene);
+    /* A fight is a scene of its own for this line: the walking hint is
+     * wrong there, so it names the battle's keys and goes back to the
+     * scene's line when the fight ends. */
+    const where = st.mode === 'Battle' ? `${st.scene}|battle` : st.scene;
+    if (st.scene && statusScene && where !== statusScene && !activePackMap
+        && /^(Running |Named the hero |In a battle )/.test(statusEl.textContent)) {
+      statusScene = where;
+      statusEl.textContent = st.mode === 'Battle'
+        ? `In a battle on ${st.scene}. The arrow keys pick a command, Z confirms, X backs out.`
+        : runningStatus(st.scene);
     }
     setText(hud.mode, st.mode);
     setText(hud.fps, fps);
