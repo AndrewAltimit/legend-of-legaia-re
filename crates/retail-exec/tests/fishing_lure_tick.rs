@@ -118,6 +118,7 @@ fn rig(rand: Rc<Cell<u32>>, cue: Rc<Cell<u32>>) -> Option<Cpu> {
     // The creak's cue slot write is the sound ring's; the key-on beside it
     // is the cue that marks it.
     cpu.hook(0x8006_5034, move |_, _| cue.set(cue.get() + 1));
+
     for f in [
         0x8001_A068,
         0x8005_67A8,
@@ -127,7 +128,6 @@ fn rig(rand: Rc<Cell<u32>>, cue: Rc<Cell<u32>>) -> Option<Cpu> {
         0x8003_D2C4,
         0x8004_2310,
         0x8005_FB84,
-        0x8006_53C8,
         // The rod actor's matrix, model and draw calls.
         0x8003_D1A4,
         0x8003_D344,
@@ -178,6 +178,15 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
     };
+    // The whirr's key-off `FUN_800653C8(0x13)`, counted.
+    let key_offs = Rc::new(Cell::new(0u32));
+    {
+        let key_offs = key_offs.clone();
+        cpu.hook(0x8006_53C8, move |r, _| {
+            assert_eq!(r.r[A0], 0x13, "the reel whirr's key-off");
+            key_offs.set(key_offs.get() + 1);
+        });
+    }
     let overlay = disc()
         .unwrap()
         .read_entry(fs::FISHING_OVERLAY_PROT_INDEX)
@@ -216,6 +225,7 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
     let mut lift_capped = 0u32;
     let mut camera_frames = 0u32;
     let mut swapped = 0u32;
+    let mut whirrs = 0u64;
     let installs = Rc::new(Cell::new(None::<(u32, u32)>));
     {
         let installs = installs.clone();
@@ -425,8 +435,10 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
             let edge = next & !held;
             held = next;
             let creaks_before = cues.get();
+            let offs_before = key_offs.get();
             port.tick(input(held, edge, false), fs, CAST_POWER_STEP);
             let creaks = port.take_rod_creaks();
+            let (port_ons, port_offs) = port.take_reel_voice();
             port.take_spent_lures();
             let hooked_now = port
                 .take_events()
@@ -550,7 +562,17 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
             );
             // The creak is cue `0x201` in the ring's slot 1 (`0x801D2BD0`);
             // the key-on hook counts the reel sound (`0x801D2EB8`) beside it.
-            let _ = cues.get() - creaks_before;
+            want(
+                "whirr key-on",
+                i64::from(cues.get() - creaks_before),
+                i64::from(port_ons),
+            );
+            want(
+                "whirr key-off",
+                i64::from(key_offs.get() - offs_before),
+                i64::from(port_offs),
+            );
+            whirrs += u64::from(port_ons);
             want(
                 "creak",
                 i64::from(cpu.mem.rd16(CUE_SLOT) == 0x201),
@@ -686,8 +708,13 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
          classed water {on_water} drift {drifted}"
     );
     assert!(
-        on_water > 0 && drifted > 0 && lift_capped > 0 && swapped > 5 && camera_frames > 1000,
-        "water {on_water} drift {drifted} lift capped {lift_capped} swaps {swapped} camera {camera_frames}"
+        on_water > 0
+            && drifted > 0
+            && lift_capped > 0
+            && swapped > 5
+            && camera_frames > 1000
+            && whirrs > 100,
+        "water {on_water} drift {drifted} lift capped {lift_capped} swaps {swapped} camera {camera_frames} whirrs {whirrs}"
     );
     // A strike wants a held reel against a credit that mostly comes from a
     // recognised gesture (`0x801D31F4`), which a random pad seldom makes:

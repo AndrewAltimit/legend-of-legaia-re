@@ -51,6 +51,14 @@ pub struct LureProbe {
     pub drift: i32,
 }
 
+/// What one frame of [`LureActor::pull_step`] asked of the reel's whirr,
+/// sound `0x13`: a key-on (`FUN_80065034`) and a key-off (`FUN_800653C8`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ReelVoice {
+    pub key_on: bool,
+    pub key_off: bool,
+}
+
 /// The cast lure as an advancing object.
 ///
 /// Retail spawns it in the cast arm of the fishing SM (`FUN_801CF3BC` case
@@ -81,6 +89,8 @@ pub struct LureActor {
     pub spawn: (i16, i16),
     /// The cast power `0x801D9274`, spent as the lure flies.
     pub power: i32,
+    /// `0x801D90C8` - the reel's whirr is sounding ([`Self::pull_step`]).
+    pub reel_voice: bool,
     /// The lure actor's `+0x3E`: the fall speed, `0x40` at the release.
     pub fall: i16,
     /// The reel pull `0x801D9148`.
@@ -140,6 +150,7 @@ impl LureActor {
             fall: 0x40,
             pull: 0,
             sway: (0, 0),
+            reel_voice: false,
         })
     }
 
@@ -216,15 +227,31 @@ impl LureActor {
     /// `0xC00` (Square, or both); it falls `0x80` a frame-step and drops to
     /// nothing under `0x600`, so line comes in by the press.
     ///
+    /// The reel's whirr rides on it: the press that starts an idle reel keys
+    /// sound `0x13` on unless the voice word `0x801D90C8` says it is already
+    /// sounding (`0x801D2E84..0x801D2EC4`), and every frame the pull is spent
+    /// with neither reel button held keys it off and clears the word
+    /// (`0x801D2F1C..0x801D2F3C`). `held` is `_DAT_8007B850`.
+    ///
     /// PORT: FUN_801d26cc (`0x801D2E60..0x801D2F40`)
-    pub fn pull_step(&mut self, edge: u32, fs: i32) {
+    pub fn pull_step(&mut self, edge: u32, held: u32, fs: i32) -> ReelVoice {
+        let mut voice = ReelVoice::default();
         if edge & 0xC0 != 0 && self.pull == 0 {
+            if !self.reel_voice {
+                voice.key_on = true;
+                self.reel_voice = true;
+            }
             self.pull = if edge & 0x80 != 0 { 0xC00 } else { 0xA00 };
         }
         self.pull -= fs << 7;
         if self.pull < 0x600 {
+            if held & 0xC0 == 0 {
+                voice.key_off = true;
+                self.reel_voice = false;
+            }
             self.pull = 0;
         }
+        voice
     }
 
     /// The lure's sink, after the reel pull: close in the height is capped by

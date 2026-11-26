@@ -77,6 +77,7 @@ impl PondSession {
             line_fish_prev: None,
             creak_timer: 0,
             rod_creaks: 0,
+            reel_voice: (0, 0),
             spent_lures: Vec::new(),
         }
     }
@@ -362,6 +363,12 @@ impl PondSession {
         std::mem::take(&mut self.rod_creaks)
     }
 
+    /// The reel whirr's key-ons and key-offs since the last call
+    /// ([`crate::fishing_actors::LureActor::pull_step`]).
+    pub fn take_reel_voice(&mut self) -> (u32, u32) {
+        std::mem::take(&mut self.reel_voice)
+    }
+
     /// Lure item ids the line breaks consumed since the last call - one
     /// `lure + 0x9D` per break (`FUN_80042310(_DAT_80084450 + 0x9D, 1)` at
     /// `0x801D3C14..0x801D3C24`). The session holds no bag, so a host debits
@@ -426,6 +433,9 @@ impl PondSession {
             self.catch_banner = 1;
             self.events.push(PondEvent::Landed(award));
             self.phase = PondPhase::Landed;
+            // The reel-in arm keys the whirr off (`0x801D3C98`), leaving
+            // the voice word as it was.
+            self.reel_voice.1 += 1;
             // So does the reel-in arm (`0x801D3CB4`).
             if let Some(rod) = self.rod_actor.as_mut() {
                 rod.recover();
@@ -476,6 +486,8 @@ impl PondSession {
     ///
     /// PORT: FUN_801d26cc (the line-break arm, `0x801D3C0C..0x801D3C64`)
     fn break_line(&mut self) {
+        // The whirr's key-off (`0x801D3C0C`), the voice word left as it was.
+        self.reel_voice.1 += 1;
         self.events.push(PondEvent::Snapped);
         self.phase = PondPhase::Snapped;
         self.break_banner = 1;
@@ -848,7 +860,9 @@ impl PondSession {
                     _ => Default::default(),
                 };
                 if let Some(lure) = self.lure_actor.as_mut() {
-                    lure.pull_step(reel_edge, fs);
+                    let v = lure.pull_step(reel_edge, input.reel_mask, fs);
+                    self.reel_voice.0 += u32::from(v.key_on);
+                    self.reel_voice.1 += u32::from(v.key_off);
                     lure.sink_step(self.line_record, self.lure, fs);
                 }
                 let struck = self.band.tick(
@@ -936,7 +950,9 @@ impl PondSession {
                     self.lure_probe.drift = lure.drift(&venue.map, self.casts, fs);
                 }
                 if let Some(lure) = self.lure_actor.as_mut() {
-                    lure.pull_step(reel_edge, fs);
+                    let v = lure.pull_step(reel_edge, input.reel_mask, fs);
+                    self.reel_voice.0 += u32::from(v.key_on);
+                    self.reel_voice.1 += u32::from(v.key_off);
                     lure.sink_step(self.line_record, self.lure, fs);
                 }
                 // The band segment runs on a hooked frame too: the hooked
