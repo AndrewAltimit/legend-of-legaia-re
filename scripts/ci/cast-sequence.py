@@ -1178,6 +1178,19 @@ def run_engine(a, out: Path) -> bool:
     gate without it read a mean `.978` without and `.917` with), so it is the
     fallback and not the rule. `engine-pin.txt` remembers a film that needed
     it, so a re-run goes there first."""
+    spare = out / "engine-spare.txt"
+    a.spare_party = spare.exists()
+    ok = record_engine_pinned(a, out)
+    if ok and a.physical and not a.spare_party and target_struck_down(out):
+        print("[engine] the party art's target fell in the lead-in; replaying with the other members on Spirit")
+        a.spare_party = True
+        ok = record_engine_pinned(a, out)
+        if ok:
+            spare.write_text("spare\n")
+    return ok
+
+
+def record_engine_pinned(a, out: Path) -> bool:
     marker = out / "engine-pin.txt"
     order = [True, False] if marker.exists() else [False, True]
     for n, keep_pin in enumerate(order):
@@ -1192,6 +1205,29 @@ def run_engine(a, out: Path) -> bool:
               + ("on the still's pin to the default step; replaying on the party's step" if keep_pin
                  else "on the party's step; replaying on the still's pin to the default step"))
     return False
+
+
+def target_struck_down(out: Path) -> bool:
+    """Whether a party film's engine side opened on another target than the
+    recording's: the replay's lead-in plays the capture's rounds on plain
+    Attacks, and where retail's members sat rounds out on Spirit (a harvest's
+    opening rounds) the replay's swings can kill the monster the capture
+    holds standing, so the acting seat's art lands on the next one
+    (`jou_gala_heavens_drop_strike_h6`: Gala on slot 4, retail's on slot 3).
+    Read on the two sides' first body rows: the target's live pair more
+    than a body's width apart."""
+    try:
+        with open(out / "retail" / "body.csv", newline="") as f:
+            r = next(csv.DictReader(f), None)
+        with open(out / "engine" / "body.csv", newline="") as f:
+            e = next(csv.DictReader(f), None)
+        if not r or not e or int(r["acting"]) >= 3:
+            return False
+        dx = int(r["tlx"]) - int(e["tlx"])
+        dz = int(r["tlz"]) - int(e["tlz"])
+        return dx * dx + dz * dz > 128 * 128
+    except (OSError, KeyError, ValueError):
+        return False
 
 
 def recording_first_state(out: Path) -> int | None:
@@ -1290,6 +1326,13 @@ def record_engine(a, out: Path, keep_pin: bool) -> tuple[bool, int, bool]:
             and not clip_gated and not a.played_queue
             and (q := state_strike_queue(out))):
         env["LEGAIA_BATTLE_DRIVE"] = f"{drive},q{q}"
+    # A party art whose target the replay's lead-in struck down
+    # ([`run_engine`]): the other members commit Spirit (the drive's `spare`),
+    # so the monster the capture holds standing still stands at the gate.
+    if getattr(a, "spare_party", False) and len(f) > 5 and f[0] == "action" and f[1].isdigit() \
+            and int(f[1]) < 3:
+        f[5] = "1"
+        env["LEGAIA_BATTLE_DRIVE"] = ",".join(f)
     # The backdrop's slot-1 angle at the cast begin, off the recording's RAM
     # image there: the child holds the state's until the cast begins, and a
     # recording that played rounds to its pick met the cast on another

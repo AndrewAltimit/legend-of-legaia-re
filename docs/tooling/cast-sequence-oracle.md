@@ -546,6 +546,17 @@ second clip and every melee roll are
 a draw, so a strike film wants `--strike-deal`, or it scores another hand: Thermo's
 strike lands clip `7` twice on the engine's stream where retail's second is `8`.
 
+A party art's film can also open on another target. The replay plays the capture's
+earlier rounds on plain Attacks, and a harvest's opening rounds sat out on Spirit, so
+the replay's swings can kill the monster the capture holds standing, and the acting
+seat's art lands on the next one: `jou_gala_heavens_drop_strike_h6`'s Gala struck slot
+`4` where retail's strikes slot `3`, the camera stood some `950` units of yaw off, and the
+film read `.764`. The driver reads the two sides' first body rows, and when the target's
+live pair parts by more than a body's width on a party film it records the engine side
+again with the other members on Spirit (the drive's `spare`); `engine-spare.txt` in the
+film directory remembers it. Re-recorded, the film reads `.946` and its camera is retail's
+through the strike states. A harness seat.
+
 Two more seats stand the gate on the state's own instant rather than on the
 still's. The capture's clip seeds (`LEGAIA_SEAT_BATTLE_CLIPS`) put each body on
 the displayed frame, two passes older than the RAM, which is right for the still
