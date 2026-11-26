@@ -2139,11 +2139,17 @@ The HUD is fed by `World` events:
   push nothing, as retail's applier `FUN_800402F4` and those modules push
   nothing onto the ring, and the HP figure rolls up on the readout word alone
   ([battle round loop](battle-round-loop.md)). The port throws the
-  heal-coloured `push_heal` numeral for every one of them under the **heal
-  numerals** enhancement (`WorldToggles::heal_numerals`, on by default; off
-  under `pin_retail`, `--retail` and the page's Retail-faithful), through the
+  `push_heal` numeral for every one of them under the **heal numerals**
+  enhancement (`WorldToggles::heal_numerals`, on by default; off under
+  `pin_retail`, `--retail` and the page's Retail-faithful), through the
   one gate `World::push_heal_numeral`, which the spell-catalog fold
-  (`World::fold_spell_outcome`) takes too. The fatal-decision full heal is
+  (`World::fold_spell_outcome`) takes too. The figure is the damage sheet's
+  own digits under a green modulation word
+  (`engine-ui::battle_numerals::HEAL_READOUT_COLOUR`; the font fallback's
+  `HEAL_READOUT_FALLBACK_COLOR`), so it does not read as a hit: the layout
+  flags a run as a heal only while the enhancement is on
+  (`engine-screens::battle_value_readout::ValueRun`), so with it off every
+  numeral keeps the sheet's colours. The fatal-decision full heal is
   retail's own push (`FUN_801F44A0` at `0x801F8084`) and throws its numeral
   either way.
 - the round-open Venom / Toxic tick → its damage numeral over the poisoned
@@ -2221,6 +2227,13 @@ ramp `FUN_80047430` so damage drains over frames:
   The readout pair `FUN_800349EC` / `FUN_80035EA8` (`hp_bar_color_index` /
   `mp_bar_color_index`) has no battle caller; it tints the menus and the field
   party HUD, where a status folds into the caution tier instead.
+- **A restore counts up from the figure it found.** The applier's seed is an
+  assignment of `-delta` to `+0x10` with `+0x172` untouched, and `+0x172` is
+  seeded at battle load, so the ramp climbs from the pre-restore figure: a
+  retail capture of a Healing Leaf on Gala at `300` reads `350`, `388`,
+  `416`, `437`, `453`, `465`, `474`, `481` .. `500`. The port's readout is an
+  `Option` armed by the first hit, so `BattleActor::assign_hp_bar` arms an
+  unarmed one at live HP less the restore before seeding it.
 - **The tier is the frame's opening value's.** The frame driver stores it before the
   actor walk's ramp step moves `+0x172`, so a heal's digits count up a frame in the old
   tier: the `0x83` film's retail frame shows `138 / 221` in the caution tier, the first

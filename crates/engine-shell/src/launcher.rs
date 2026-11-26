@@ -1799,8 +1799,8 @@ impl OptionRow {
                  and drops stay as they are."
             }
             Self::HealNumerals => {
-                "Show the amount over a character healed in battle. The original only \
-                 counts the HP figure up."
+                "Show the amount, in green, over a character healed in battle. The \
+                 original only counts the HP figure up."
             }
             Self::StoneScaleFix => {
                 "After Iota's attack, a monster turned to stone stands back at full size. \
