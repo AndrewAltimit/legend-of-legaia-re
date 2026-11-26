@@ -4218,7 +4218,10 @@ The channel also scores the rest of the Seru the library holds mid-cast, and Evi
 Five of them first read `0.14..0.33` with their level envelopes matching retail only `0.62..1.35` s
 apart. Frame-stepped against the engine's band log (`<wav>.band`), four were the port keying the
 voice at the wrong time ([a gate after the poll](#a-head-cue-behind-a-gate-the-detector-missed)) and
-one was the replay's hold ([the hold ends at the gate](#the-side-band-hold-ends-at-the-gate)).
+one was the replay's hold ([the hold ends at the gate](#the-side-band-hold-ends-at-the-gate)). Rage
+read `0.42` because the replay's delegated fill drew two arts where retail's drew five
+([a delegated seat's stream](../tooling/retail-compare.md#a-delegated-seats-stream)); on retail's
+stream its envelope lines up within `8` vsyncs and the waveform reads `0.38`.
 
 <a id="the-casts-step-is-pcsx-reduxs"></a>
 **The cast's step is PCSX-Redux's.** The battle frame step carries each pass's cost into the next

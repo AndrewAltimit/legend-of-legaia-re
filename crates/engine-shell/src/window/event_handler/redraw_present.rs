@@ -431,7 +431,7 @@ struct AudioWavRecorder {
     /// channel aligns the voice after within the seek window.
     drive: Vec<u8>,
     /// The band each recorded tick stood in, written beside the WAV as
-    /// `<path>.band`: `action_state phase stage read_left xa_busy`, the action SM's
+    /// `<path>.band`: `action_state phase stage read_left xa_busy seat current queued cursor params`, the action SM's
     /// state, the module phase, the side-band stage `ctx[+0x276]`, the stand-in's read time left
     /// and the CD-XA one-shot word, for lining the engine's cast up against a
     /// frame-stepped retail timeline (`scripts/mednafen/drive-timeline.py`).
@@ -579,13 +579,22 @@ impl PlayWindowApp {
             rec.drive
                 .push(u8::from(self.session.host.world.cast_drive_waiting()));
             let w = &self.session.host.world;
+            let actor = w
+                .actors
+                .get(usize::from(w.battle_ctx.active_actor))
+                .map(|a| &a.battle);
             rec.band.push(format!(
-                "{} {} {} {} {}",
+                "{} {} {} {} {} {} {:02x} {:02x} {} {:02x?}",
                 w.battle_ctx.action_state,
                 w.casting.module_phase,
                 w.battle_ctx.menu_open,
                 w.casting.sideband_read_left.map_or(-1, i32::from),
-                w.audio.battle_xa_busy_frames
+                w.audio.battle_xa_busy_frames,
+                w.battle_ctx.active_actor,
+                actor.map_or(0, |a| a.current_anim),
+                actor.map_or(0, |a| a.queued_anim),
+                actor.map_or(0, |a| a.strike_index),
+                actor.map(|a| a.params.iter().take(6).copied().collect::<Vec<u8>>()),
             ));
         }
         let pcm = &mut rec.pcm;

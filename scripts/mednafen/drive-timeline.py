@@ -37,6 +37,7 @@ REPO = Path(__file__).resolve().parents[2]
 VCOUNT = 0x7A894  # libetc's VSync(-1) counter, main-RAM offset
 DRIVE_STATE = 0x7BC20  # _DAT_8007BC20
 CTX_PTR = 0x7BD24  # gp+0xA0C, the battle context pointer
+ACTOR_TABLE = 0x1C9370  # 0x801C9370, the battle actor pointers by seat
 DUCK_CELL = 0x7B910  # _DAT_8007B910, the audio level the action SM steps
 RING_IDS = 0x7B6D8  # DAT_8007B6D8[4], the cue ring's ids (i16)
 RING_TIMERS = 0x7C338  # DAT_8007C338[4], their countdowns (u32)
@@ -90,9 +91,14 @@ def row(path: Path) -> list | None:
         [struct.unpack_from("<I", ram, RING_TIMERS + 4 * n)[0] for n in range(4)]
     sp = b.find(b"ScratchRAM.data8")
     step = b[sp + 16 + 4 + FRAME_STEP] if sp >= 0 else -1
+    # The acting seat's anim bytes `+0x1D9` current, `+0x1DA` queued, `+0x1DC`
+    # flags, and the strike cursor `ctx[+0x15]`: a strike loop's pacing.
+    seat = ram[ctx + 0x13] & 7
+    actor = struct.unpack_from("<I", ram, ACTOR_TABLE + 4 * seat)[0] & 0x1FFFFF
+    anims = [seat] + [ram[actor + o] if actor else -1 for o in (0x1D9, 0x1DA, 0x1DC)] + [ram[ctx + 0x15]]
     return [struct.unpack_from("<I", ram, VCOUNT)[0], ram[ctx + 0x279], ram[ctx + 0x276],
             struct.unpack_from("<I", ram, DRIVE_STATE)[0], ram[ctx + 7],
-            struct.unpack_from("<i", ram, DUCK_CELL)[0]] + [var(b, v, max(cdc, 0)) for v in CDC_VARS] + \
+            struct.unpack_from("<i", ram, DUCK_CELL)[0]] + anims + [var(b, v, max(cdc, 0)) for v in CDC_VARS] + \
         [moved, step, struct.unpack_from("<I", ram, FRAME_COUNT)[0]] + ring + \
         [struct.unpack_from("<I", ram, SILENT_INDEX)[0]]
 
@@ -141,7 +147,8 @@ def main() -> int:
     if state is None:
         print(f"no mednafen library state {a.state}")
         return 1
-    rows = [["vsync", "phase", "sideband", "drive_word", "action_state", "duck"] + CDC_VARS + ["ram_words_moved", "step", "frame"] + \
+    rows = [["vsync", "phase", "sideband", "drive_word", "action_state", "duck",
+             "seat", "anim_current", "anim_queued", "anim_flags", "strike_cursor"] + CDC_VARS + ["ram_words_moved", "step", "frame"] + \
         [f"id{n}" for n in range(4)] + [f"timer{n}" for n in range(4)] + ["silent_index"]]
     with tempfile.TemporaryDirectory(prefix="drive-timeline-") as t:
         tmp = Path(t)

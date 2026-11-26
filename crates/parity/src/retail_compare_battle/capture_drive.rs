@@ -200,6 +200,23 @@ impl RetailBattle {
         self.active_actor >= 3 && self.queued_category == 2 && self.caster_latch != 0
     }
 
+    /// Whether the capture's acting party seat is a delegated one (its status
+    /// word in the `0x380` delegation group, the auto-fill leg's seat), on
+    /// Attack with a resolved stream: the stream the drive stands it on
+    /// ([`legaia_engine_capture::battle_drive::ActionSteer::queue`]).
+    pub fn delegated_stream(&self) -> bool {
+        matches!(self.seed_plan(), SeedPlan::Action { seat, .. }
+            if seat < 3
+                && self
+                    .status
+                    .get(usize::from(seat))
+                    .copied()
+                    .flatten()
+                    .is_some_and(|w| w & 0x380 != 0))
+            && self.queued_category == 3
+            && self.committed_queue.first().is_some_and(|&b| b != 0)
+    }
+
     /// Whether the capture is a monster strike gated on a swing clip
     /// (`0x1E` on a clip's accumulator, a swing clip committed), whose
     /// strike stream the drive can stand on the capture's
@@ -2163,6 +2180,7 @@ impl RetailBattle {
                         ))
                     .then(|| self.target_code - 3),
                     queue: ((seat < 3 && self.queued_category == 3 && self.arts_queue)
+                        || self.delegated_stream()
                         || (self.strike_stream_steer && self.strike_stream_steerable())
                         // A monster cast's clip bytes (`+0x1E0`, the Spirit
                         // band's `+0x1E7`): the picker stored them under its

@@ -6967,6 +6967,20 @@ which the Guardian's corrected cast clip
 ([above](#monster-casts-the-drive-relies-on)) took away; it reaches on the
 fallback.
 
+<a id="a-delegated-seats-stream"></a>
+**A delegated seat's stream.** A party seat the auto-fill leg of `FUN_801F0450` takes (record
+`+0xF8 & 0x2000`, status in the `0x380` delegation group: the Evil Medallion's Rage) has its
+`+0x1DF..` stream rebuilt at the round's state `0x00` from `rand()` draws the replay does not
+share. `evil_medallion_rage_battle` resolved `22 26 25 22 21`, five arts, and the replay's fill
+drew `1F 23`, so its strike loop left `0x1E` after two swings and reached the Done band at `+361`
+vsyncs where retail's takes `+640`. Frame-stepped, retail's loop paces each byte as the port's
+does: stage, commit on clip `0x11`, stage the next. So the action machine was right and the stream
+was the replay's. The drive now stands the delegated seat on the capture's stream from the round's
+fill to the strike loop (`RetailBattle::delegated_stream`, `ActionSteer::queue` on a party seat
+whose bit is in `BattleActionCtx::delegated_seats`). Harness-only. With it the engine's band follows
+retail's state for state, `6..11` vsyncs early: the seed's `0x0A` lasts `3` vsyncs where retail's
+lasts `9`, waiting on the previous action's clips.
+
 <a id="a-swing-staged-behind-the-capture"></a>
 A capture whose first swing is staged but not committed (`RetailBattle::strike_swing_pending`: `+0x1D9 <= 1`, the queue running on past the cursor) takes the same fallback. The strike loop tests the terminator at the new cursor on the pass that stages (`0x801E3998..0x801E39AC`), so a replay that rolled one byte leaves `0x1E` on its first pass where retail's two bytes hold it. The search treats that exit as a miss rather than re-running the state on its last tick, which stood ahead of the first case-7 arm.
 
