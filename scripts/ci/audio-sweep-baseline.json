@@ -862,6 +862,9 @@
     "battle_rikuroa_party_vahn_chain_open": {
       "battle_track": 1.0
     },
+    "battle_rikuroa_party_vahn_seru_absorb_strike": {
+      "battle_track": 1.0
+    },
     "battle_rikuroa_pump_bat_windcutter_mid_cast": {
       "battle_track": 1.0
     },
@@ -1215,7 +1218,71 @@
       "tempo": 1.0,
       "track": 1.0
     },
+    "conc3_ceremony_gala_box": {
+      "ambient": 0.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "conc3_ceremony_lab": {
+      "ambient": 0.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "conc3_ceremony_mist_monsters": {
+      "ambient": 0.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "conc3_ceremony_mist_pillar": {
+      "ambient": 0.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "conc3_ceremony_nebular_box": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "conc3_ceremony_noa_box": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "conc3_ceremony_pedestal": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "conc3_ceremony_plaza": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "conc3_ceremony_zeto_box": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
     "conc3_field_inn_night": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "conc3_mist_night_free": {
       "playing": 1.0,
       "seq_vol": 1.0,
       "tempo": 1.0,
@@ -1256,6 +1323,82 @@
     },
     "cort_evolved_card_pre_doomsday": {
       "battle_track": 1.0
+    },
+    "credits_edbubu_fullscreen_pcsx": {
+      "playing": 0.0,
+      "tempo": 1.0,
+      "track": 0.0
+    },
+    "credits_edbylon_fullscreen_pcsx": {
+      "playing": 0.0,
+      "tempo": 1.0,
+      "track": 0.0
+    },
+    "credits_edbylon_panel_pcsx": {
+      "playing": 0.0,
+      "tempo": 1.0,
+      "track": 0.0
+    },
+    "credits_eddoman_fullscreen_pcsx": {
+      "playing": 0.0,
+      "tempo": 1.0,
+      "track": 0.0
+    },
+    "credits_edkorout_panel_pcsx": {
+      "playing": 0.0,
+      "tempo": 1.0,
+      "track": 0.0
+    },
+    "credits_edkorout_window_pcsx": {
+      "playing": 0.0,
+      "tempo": 1.0,
+      "track": 0.0
+    },
+    "credits_edlast_casting_pcsx": {
+      "playing": 0.0,
+      "tempo": 1.0,
+      "track": 0.0
+    },
+    "credits_edretoin_fullscreen_pcsx": {
+      "playing": 0.0,
+      "tempo": 1.0,
+      "track": 0.0
+    },
+    "credits_edretoin_panel_pcsx": {
+      "playing": 0.0,
+      "tempo": 1.0,
+      "track": 0.0
+    },
+    "credits_edson_fullscreen_pcsx": {
+      "playing": 0.0,
+      "tempo": 1.0,
+      "track": 0.0
+    },
+    "credits_edson_panel_pcsx": {
+      "playing": 0.0,
+      "tempo": 1.0,
+      "track": 0.0
+    },
+    "credits_edstati3_fullscreen_pcsx": {
+      "playing": 0.0,
+      "tempo": 1.0,
+      "track": 0.0
+    },
+    "credits_edstati3_panel_pcsx": {
+      "playing": 0.0,
+      "tempo": 1.0,
+      "track": 0.0
+    },
+    "credits_edteien_panel_pcsx": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "credits_rimelm_walkaway_pcsx": {
+      "playing": 0.0,
+      "tempo": 1.0,
+      "track": 0.0
     },
     "deene_field_card_walk": {
       "playing": 1.0,
@@ -1306,6 +1449,26 @@
       "tempo": 1.0,
       "track": 1.0
     },
+    "doman_inn_wake_hud": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "doman_mrs_usha_quiz_picker_open": {
+      "ambient": 0.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "doman_mrs_usha_quiz_picker_slide": {
+      "ambient": 0.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
     "door_warp_rim_elm_to_mei_house": {
       "playing": 1.0,
       "seq_vol": 1.0,
@@ -1313,6 +1476,42 @@
       "track": 1.0
     },
     "door_warp_town01_to_map01": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "dream_noa_dark": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "dream_noa_desperate_dialog": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "dream_noa_lights": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "dream_noa_name_dialog": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "dream_noa_purple": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "dream_noa_small": {
       "playing": 1.0,
       "seq_vol": 1.0,
       "tempo": 1.0,
@@ -1357,6 +1556,12 @@
     "evolved_0x91_midcast": {
       "battle_track": 1.0
     },
+    "field_kor_incense_notice_retail": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
     "field_walled_collision_pin": {
       "playing": 1.0,
       "seq_vol": 1.0,
@@ -1394,6 +1599,11 @@
       "playing": 1.0,
       "seq_vol": 1.0,
       "tempo": 1.0,
+      "track": 1.0
+    },
+    "garmel_zeto_defeat_pre_line": {
+      "ambient": 0.0,
+      "playing": 0.0,
       "track": 1.0
     },
     "garmel_zeto_pre_big_wave": {
@@ -1434,6 +1644,20 @@
     },
     "iota_summon_mid_cast": {
       "battle_track": 1.0
+    },
+    "izumi_arrival_revisit": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "izumi_hunters_field": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
     },
     "jagaroom_field_door_hop": {
       "playing": 1.0,
@@ -1497,6 +1721,36 @@
     "juggernaut_summon_mid_cast": {
       "battle_track": 1.0
     },
+    "juui1_vortex_entry": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "track": 1.0
+    },
+    "juui1_vortex_exit_flash": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "track": 1.0
+    },
+    "juui1_vortex_gala_box": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "track": 1.0
+    },
+    "juui1_vortex_noa_close": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "track": 1.0
+    },
+    "juui1_vortex_party_flying": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "track": 1.0
+    },
+    "juui1_vortex_tunnel": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "track": 1.0
+    },
     "karisto_overworld_resident": {
       "playing": 1.0,
       "seq_vol": 1.0,
@@ -1539,6 +1793,19 @@
       "tempo": 1.0,
       "track": 1.0
     },
+    "koin3_disco_king_points_box": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "koin3_disco_king_talk_open": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
     "koin3_gold_card_guard_talk": {
       "playing": 1.0,
       "seq_vol": 1.0,
@@ -1574,6 +1841,10 @@
       "seq_vol": 1.0,
       "tempo": 1.0,
       "track": 1.0
+    },
+    "kor5_p2_5_pre_raise": {
+      "playing": 0.0,
+      "track": 0.0
     },
     "kor5_post_436_organic": {
       "playing": 1.0,
@@ -1645,8 +1916,9 @@
     "map01_tree_revival_cutscene": {
       "ambient": 0.0,
       "playing": 1.0,
+      "seq_vol": 1.0,
       "tempo": 1.0,
-      "track": 0.0
+      "track": 1.0
     },
     "map02_field_door_hop": {
       "playing": 1.0,
@@ -1929,6 +2201,12 @@
     "rim_elm_gimard_victory": {
       "battle_track": 1.0
     },
+    "rim_elm_gimard_victory_load_window": {
+      "battle_track": 1.0
+    },
+    "rim_elm_gimard_victory_load_window_late": {
+      "battle_track": 1.0
+    },
     "rim_elm_queen_bee_battle": {
       "ambient": 1.0,
       "playing": 1.0,
@@ -1937,6 +2215,11 @@
       "track": 1.0
     },
     "rim_elm_zoom_intro": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "track": 1.0
+    },
+    "rim_elm_zoom_intro_pcsx": {
       "ambient": 1.0,
       "playing": 1.0,
       "track": 1.0
@@ -1990,6 +2273,12 @@
       "battle_track": 1.0
     },
     "rugi_field_card_boot": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "rugi_p2_72_flyin_crossing": {
       "playing": 1.0,
       "seq_vol": 1.0,
       "tempo": 1.0,
@@ -2135,7 +2424,16 @@
     "terra_summon_mid_cast": {
       "battle_track": 1.0
     },
+    "theeder_pre_cast_vs_gobu_gobu": {
+      "battle_track": 1.0
+    },
     "theeder_summon_mid_cast": {
+      "battle_track": 1.0
+    },
+    "theeder_summon_value_rows_parked": {
+      "battle_track": 1.0
+    },
+    "theeder_summon_value_rows_rising": {
       "battle_track": 1.0
     },
     "tower_field_walk": {
@@ -2171,6 +2469,64 @@
       "tempo": 1.0,
       "track": 1.0
     },
+    "town0d_arrival_narration": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "tempo": 1.0,
+      "track": 0.0
+    },
+    "town0d_house_free": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "town0d_house_interior": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "town0d_mei_closeup": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "town0e_epilogue_mei_closeup": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "town0e_epilogue_narration": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "town0e_epilogue_tree": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "town0e_epilogue_usha_box": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "town0e_epilogue_vahn_alone": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
     "tunnela_field_door_hop": {
       "playing": 1.0,
       "seq_vol": 1.0,
@@ -2200,6 +2556,104 @@
       "track": 1.0
     },
     "uru_field_run": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "urudre1_house_cutscene": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "urudre1_house_free": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "urudre2_dark_floor": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "urudre2_jette_dialog": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "urudre2_king_nebular_dialog": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "urudre2_palace_family": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "urudre2_palace_walk": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "urudre2_rampart_flyer": {
+      "ambient": 0.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "urudre3_dojo_floor": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "urudre3_dojo_pair": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "urudre3_dojo_walk": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "urudre3_jigul_dialog": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "urudre3_songi_dialog_black": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "urudre3_songi_room": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "urudre3_zopu_box_black": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "urudre3_zopu_hall": {
       "playing": 1.0,
       "seq_vol": 1.0,
       "tempo": 1.0,
@@ -2291,7 +2745,42 @@
       "tempo": 1.0,
       "track": 1.0
     },
+    "vozz_tree_burst": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "vozz_tree_closeup_noa_vahn": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "vozz_tree_grown": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
     "vozz_tree_revival_return": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "vozz_tree_rings": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "vozz_tree_vahn_touch_box": {
+      "ambient": 1.0,
       "playing": 1.0,
       "seq_vol": 1.0,
       "tempo": 1.0,

@@ -1994,3 +1994,58 @@ changes = [
   ["counts/bundle/gzip_bytes", 7400158, 7426399],
   ["counts/bundle/play_gzip_bytes", 5249137, 5276608],
 ]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "The play bundle carries the title launch fade and the crawl's clip window, the Sound button's mute export, the ribbon, move-FX streak and Heaven's Drop clip-ribbon packets dealt at deal time, the scatter intro's display model and the smooth draw's pose carry: 3859 bytes gzip (0.07%) on the 5.28 MB play bundle."
+changes = [
+  ["counts/bundle/play_gzip_bytes", 5276608, 5280467],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Theeder's arm 12 tests its sweep on multiples of step * 0x40 (0x801F7AC8..0x801F7AF0); the wave-54 rule 0x40 + 0x100k was fitted to a Mednafen step-2 recording and struck 28 ticks early on the console clock. With the retail rule the s82 cue film goes 0.200 -> 1.000 and value_rows_rising .842 -> .912, while value_rows_parked reads .916 -> .908."
+changes = [
+  ["states/theeder_summon_value_rows_parked/image", 0.916, 0.908],
+]
+
+[[loosening]]
+file = "scripts/replays/full_game_baseline.toml"
+reason = "Measured on the integration tree. touch_far 1 -> 2 on every walked stream: the seat-reach rework refuses balden's lift at (97, 9), so the far lift at (29, 19) is placed twice. box_face 1 -> 2: the Seru voice now keys behind its arm's own hold, as in retail, and the later key re-paces the side-band applier (default run 31 noaru_valley -> bio_castle, seeds 11, 14 and 15 measured; the other walked ceilings raised to the same row). The examine_far / restore_xz rises on default and seeds 13 and 14 and the placed seed 6-9 rows: those streams reloaded and replayed a stretch's placements. Walked shortcuts per run fell from 153 to about 113 and reloads from 5 to 2."
+changes = [
+  ["shortcuts/placed/seed_7/examine_face", 125, 127],
+  ["shortcuts/placed/seed_7/examine_seat", 174, 177],
+  ["shortcuts/placed/seed_7/restore_xz", 152, 154],
+  ["shortcuts/walked/default/box_face", 1, 2],
+  ["shortcuts/walked/default/examine_far", 29, 31],
+  ["shortcuts/walked/default/touch_far", 1, 2],
+  ["shortcuts/walked/seed_10/box_face", 1, 2],
+  ["shortcuts/walked/seed_10/touch_far", 1, 2],
+  ["shortcuts/walked/seed_11/box_face", 1, 2],
+  ["shortcuts/walked/seed_11/touch_far", 1, 2],
+  ["shortcuts/walked/seed_12/box_face", 1, 2],
+  ["shortcuts/walked/seed_12/touch_far", 1, 2],
+  ["shortcuts/walked/seed_13/examine_far", 29, 30],
+  ["shortcuts/walked/seed_13/touch_far", 1, 2],
+  ["shortcuts/walked/seed_14/box_face", 1, 2],
+  ["shortcuts/walked/seed_14/examine_far", 29, 30],
+  ["shortcuts/walked/seed_14/touch_far", 1, 2],
+  ["shortcuts/walked/seed_15/box_face", 1, 2],
+  ["shortcuts/walked/seed_15/touch_far", 1, 2],
+  ["shortcuts/walked/seed_16/box_face", 1, 2],
+  ["shortcuts/walked/seed_16/touch_far", 1, 2],
+  ["shortcuts/walked/seed_3/box_face", 1, 2],
+  ["shortcuts/walked/seed_3/touch_far", 1, 2],
+  ["shortcuts/walked/seed_4/box_face", 1, 2],
+  ["shortcuts/walked/seed_4/touch_far", 1, 2],
+  ["shortcuts/walked/seed_5/box_face", 1, 2],
+  ["shortcuts/walked/seed_5/touch_far", 1, 2],
+  ["shortcuts/walked/seed_6/box_face", 1, 2],
+  ["shortcuts/walked/seed_6/touch_far", 1, 2],
+  ["shortcuts/walked/seed_7/box_face", 1, 2],
+  ["shortcuts/walked/seed_7/touch_far", 1, 2],
+  ["shortcuts/walked/seed_8/box_face", 1, 2],
+  ["shortcuts/walked/seed_8/touch_far", 1, 2],
+  ["shortcuts/walked/seed_9/box_face", 1, 2],
+  ["shortcuts/walked/seed_9/touch_far", 1, 2],
+]

@@ -107,7 +107,7 @@ touch_far = 2
 touch_seat = 9
 
 [shortcuts.walked.seed_3]
-box_face = 1
+box_face = 2
 examine_face = 24
 examine_far = 28
 examine_seat = 4
@@ -116,7 +116,7 @@ touch_far = 2
 touch_seat = 9
 
 [shortcuts.walked.seed_4]
-box_face = 1
+box_face = 2
 examine_face = 24
 examine_far = 28
 examine_seat = 4
@@ -125,7 +125,7 @@ touch_far = 2
 touch_seat = 9
 
 [shortcuts.walked.seed_5]
-box_face = 1
+box_face = 2
 examine_face = 24
 examine_far = 28
 examine_seat = 4
@@ -134,7 +134,7 @@ touch_far = 2
 touch_seat = 9
 
 [shortcuts.walked.seed_6]
-box_face = 1
+box_face = 2
 examine_face = 24
 examine_far = 28
 examine_seat = 4
@@ -143,7 +143,7 @@ touch_far = 2
 touch_seat = 9
 
 [shortcuts.walked.seed_7]
-box_face = 1
+box_face = 2
 examine_face = 25
 examine_far = 28
 examine_seat = 5
@@ -152,7 +152,7 @@ touch_far = 2
 touch_seat = 9
 
 [shortcuts.walked.seed_8]
-box_face = 1
+box_face = 2
 examine_face = 24
 examine_far = 28
 examine_seat = 4
@@ -161,7 +161,7 @@ touch_far = 2
 touch_seat = 9
 
 [shortcuts.walked.seed_9]
-box_face = 1
+box_face = 2
 examine_face = 24
 examine_far = 28
 examine_seat = 4
@@ -170,7 +170,7 @@ touch_far = 2
 touch_seat = 9
 
 [shortcuts.walked.seed_10]
-box_face = 1
+box_face = 2
 examine_face = 24
 examine_far = 28
 examine_seat = 4
@@ -188,7 +188,7 @@ touch_far = 2
 touch_seat = 9
 
 [shortcuts.walked.seed_12]
-box_face = 1
+box_face = 2
 examine_face = 24
 examine_far = 28
 examine_seat = 4
@@ -206,16 +206,16 @@ touch_far = 2
 touch_seat = 9
 
 [shortcuts.walked.seed_14]
-box_face = 1
-examine_face = 24
-examine_far = 28
+box_face = 2
+examine_face = 26
+examine_far = 30
 examine_seat = 4
-restore_xz = 45
+restore_xz = 47
 touch_far = 2
 touch_seat = 9
 
 [shortcuts.walked.seed_15]
-box_face = 1
+box_face = 2
 examine_face = 24
 examine_far = 28
 examine_seat = 4
@@ -224,7 +224,7 @@ touch_far = 2
 touch_seat = 9
 
 [shortcuts.walked.seed_16]
-box_face = 1
+box_face = 2
 examine_face = 24
 examine_far = 28
 examine_seat = 4
