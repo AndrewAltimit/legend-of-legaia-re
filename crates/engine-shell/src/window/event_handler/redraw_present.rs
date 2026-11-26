@@ -430,6 +430,12 @@ struct AudioWavRecorder {
     /// `<path>.drive`: where the cast's seek wait sits, which the PCM cast
     /// channel aligns the voice after within the seek window.
     drive: Vec<u8>,
+    /// The band each recorded tick stood in, written beside the WAV as
+    /// `<path>.band`: `action_state phase stage read_left xa_busy`, the action SM's
+    /// state, the module phase `ctx[+0x279]`, the side-band stage `ctx[+0x276]`, the stand-in's read time left
+    /// and the CD-XA one-shot word, for lining the engine's cast up against a
+    /// frame-stepped retail timeline (`scripts/mednafen/drive-timeline.py`).
+    band: Vec<String>,
     /// The last tick pulled, so a redraw that ran no tick pulls nothing.
     last_tick: Option<u64>,
     /// Fractional output frames carried between ticks.
@@ -494,6 +500,7 @@ impl PlayWindowApp {
                 pcm: Vec::new(),
                 duck: Vec::new(),
                 drive: Vec::new(),
+                band: Vec::new(),
                 last_tick: None,
                 carry: 0.0,
                 start: None,
@@ -515,7 +522,14 @@ impl PlayWindowApp {
         let ticks = rec.last_tick.map_or(1, |t| tick.saturating_sub(t).max(1));
         rec.last_tick = Some(tick);
         if rec.start.is_none() && self.capture_gate_met() {
-            eprintln!("audio wav: the capture's gate at tick {tick}");
+            let w = &self.session.host.world;
+            eprintln!(
+                "audio wav: the capture's gate at tick {tick} (action {:#04x}, side-band stage {}, read left {:?}, drive waiting {})",
+                w.battle_ctx.action_state,
+                w.battle_ctx.menu_open,
+                w.casting.sideband_read_left,
+                w.cast_drive_waiting()
+            );
             rec.start = Some(tick);
         }
         let want = ticks as f64 * legaia_parity::pcm_retail::RETAIL_VSYNC_SAMPLES + rec.carry;
@@ -526,6 +540,15 @@ impl PlayWindowApp {
             rec.duck.push(director.duck_applied());
             rec.drive
                 .push(u8::from(self.session.host.world.cast_drive_waiting()));
+            let w = &self.session.host.world;
+            rec.band.push(format!(
+                "{} {} {} {} {}",
+                w.battle_ctx.action_state,
+                w.battle_ctx.summon_staging_b,
+                w.battle_ctx.menu_open,
+                w.casting.sideband_read_left.map_or(-1, i32::from),
+                w.audio.battle_xa_busy_frames
+            ));
         }
         let pcm = &mut rec.pcm;
         director.audio().with_core(|core| {
@@ -556,6 +579,8 @@ impl PlayWindowApp {
             let _ = std::fs::write(rec.path.with_extension("duck"), duck);
             let drive: String = rec.drive.iter().map(|d| format!("{d}\n")).collect();
             let _ = std::fs::write(rec.path.with_extension("drive"), drive);
+            let band: String = rec.band.iter().map(|b| format!("{b}\n")).collect();
+            let _ = std::fs::write(rec.path.with_extension("band"), band);
             match legaia_parity::pcm_oracle::write_wav(&rec.path, &rec.pcm) {
                 Ok(()) => {
                     println!(
