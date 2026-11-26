@@ -96,7 +96,10 @@ impl BattleIntro {
         // ([`Self::update_spinup_display`]).
         if matches!(
             self.style,
-            IntroStyle::Curtain | IntroStyle::SpinUpParticles | IntroStyle::ScatterParticles
+            IntroStyle::Curtain
+                | IntroStyle::SpinUpParticles
+                | IntroStyle::ScatterParticles
+                | IntroStyle::Swirl
         ) {
             self.curtain_trail_prims(&mut out.prims);
         }
@@ -197,13 +200,26 @@ impl BattleIntro {
                 let tick = swirl::tick_swirl(mesh, &mut self.clock, frame_step, prev_clock);
                 if tick.late_wash {
                     out.prims.push(wash_prim(swirl::LATE_WASH_RGB));
+                    self.pending_wash_5 = self
+                        .pending_wash_5
+                        .saturating_add(SCATTER_DISPLAY_DECAY_5 * u16::from(frame_step));
                 }
+                let bands_from = out.prims.len();
                 if emit {
                     for d in &tick.draws {
                         let band = d.first_vertex / swirl::VERTS_PER_BAND;
                         out.style_drawn |= emit_swirl_band(mesh, zs[band], d, &mut out.prims);
                     }
                 }
+                // The swirl draws over the never-cleared display too: its
+                // bands cover it early, and once they thin out (the late
+                // wash's phase) what they no longer redraw fades by the same
+                // drain the scatter's wash takes, leaving the init's
+                // expanding discs their trails.
+                self.pending_display_frames = self.pending_display_frames.saturating_add(1);
+                self.pending_particles.clear();
+                self.pending_particles
+                    .extend_from_slice(&out.prims[bands_from..]);
             }
         }
 
@@ -218,9 +234,12 @@ impl BattleIntro {
                 let from = out.prims.len();
                 parts.emit(&mut out.prims);
                 out.style_drawn |= out.prims.len() > from;
-                if let WorkingSet::Particles { style, .. } = &self.set
-                    && (style.spin_up || style.stamp_field_16)
-                {
+                let modelled = match &self.set {
+                    WorkingSet::Particles { style, .. } => style.spin_up || style.stamp_field_16,
+                    WorkingSet::Swirl { .. } => true,
+                    _ => false,
+                };
+                if modelled {
                     self.pending_particles.extend_from_slice(&out.prims[from..]);
                 }
             }

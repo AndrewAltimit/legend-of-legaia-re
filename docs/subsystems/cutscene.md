@@ -2981,6 +2981,15 @@ without the window; about three of those are the frame retail's double-buffered 
 draw after the tick that built it, and the starburst's halo, larger and brighter in the engine at
 the same transition clock, accounts for most of the rest of the profile fit.
 
+The swirl draws over the same never-cleared display. Its bands cover it early; past
+`LATE_PHASE_FRAME` they thin out, the tick arms the same `0x101010` wash, and the init's five
+expanding discs (`0x801D222C`) leave filled trails that whiten the centre. The port runs the swirl
+on the particle styles' display model too, washed by the scatter's drain in its late phase. A
+retail film of the style (the `retona` exit state with slot-0 monster `0xB5` poked into the
+selector input) scores `.641` against the engine's at its best pairing, `.636` composed from
+scratch; the rest is the late-phase band geometry, which the port turns as whole quads where retail
+hands the band to the shatter renderer.
+
 #### The init's parts: the starburst
 
 Every arm of the init's style switch seats parts beside its seeder: draw-kind-4 move-VM records

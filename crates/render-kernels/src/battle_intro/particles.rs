@@ -52,9 +52,9 @@ pub const PARTICLE_WASH_RGB: u32 = 0x0010_1010;
 /// the screen it shows: its `0x101010` comes off the style's display model
 /// ([`SCATTER_DISPLAY_DECAY_5`]) before the frame's particles land, so the
 /// primitive here falls on the black backdrop under the trail quads. The
-/// swirl's late-phase wash keeps the from-scratch caveat: its bands redraw
-/// nearly the whole display every frame, so the residual is the absence of a
-/// short motion trail, not a wrongly-lit frame.
+/// swirl's late-phase wash does the same on the same display model: its
+/// bands redraw nearly the whole display early on, and once they thin out the
+/// init's expanding discs leave the trails the wash fades.
 pub fn wash_prim(gp0_rgb_word: u32) -> ScreenPrim {
     display_rect_flat_quad(
         [

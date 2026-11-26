@@ -416,7 +416,10 @@ impl BattleIntro {
         }
         if matches!(
             style,
-            IntroStyle::Curtain | IntroStyle::SpinUpParticles | IntroStyle::ScatterParticles
+            IntroStyle::Curtain
+                | IntroStyle::SpinUpParticles
+                | IntroStyle::ScatterParticles
+                | IntroStyle::Swirl
         ) {
             self.capture_src = lift_capture_src(page);
         }
@@ -447,7 +450,7 @@ impl BattleIntro {
         let landed = std::mem::take(&mut self.upload_pending);
         if matches!(
             self.style,
-            IntroStyle::SpinUpParticles | IntroStyle::ScatterParticles
+            IntroStyle::SpinUpParticles | IntroStyle::ScatterParticles | IntroStyle::Swirl
         ) {
             self.captured.as_ref()?;
             self.update_spinup_display();
