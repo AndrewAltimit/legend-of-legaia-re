@@ -235,6 +235,37 @@
   </ul>
 </section>
 
+<section class="doc-section" id="heal-count-up" data-doc="-">
+  <h2>A heal counts the figure up</h2>
+  <p>A Healing Leaf in the original throws no number. The patient&rsquo;s HP figure counts up instead, each battle frame by a quarter of what is left to go, rounded up, so it rises fast and settles. A retail capture of a leaf on Gala at 300 reads the figures below; the port draws the same ones in both modes. It used to jump straight to the healed figure when no hit had touched that member yet, because its readout only came alive on the first hit; the original&rsquo;s is set up as the battle loads.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 540 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Step chart of the HP figure after a Healing Leaf restores 200 HP to Gala at 300, one step per battle frame: 300, 350, 388, 416, 437, 453, 465, 474, 481, then on to 500. The rise is steep at first and flattens as it nears 500. No damage-style number rises over Gala in the original.">
+      <path class="dg-edge-dim" d="M60 214.0 L520 214.0"/><text class="dg-edge-label" x="52" y="218.0" text-anchor="end">300</text>
+      <path class="dg-edge-dim" d="M60 124.0 L520 124.0"/><text class="dg-edge-label" x="52" y="128.0" text-anchor="end">400</text>
+      <path class="dg-edge-dim" d="M60 34.0 L520 34.0"/><text class="dg-edge-label" x="52" y="38.0" text-anchor="end">500</text>
+      <polyline class="dg-edge" points="64,214.0 102,214.0 102,169.0 140,169.0 140,134.8 178,134.8 178,109.6 216,109.6 216,90.7 254,90.7 254,76.3 292,76.3 292,65.5 330,65.5 330,57.4 368,57.4 368,51.1 406,51.1"/>
+      <path class="dg-edge-dim" d="M406 51.1 L520 34.0"/>
+      <circle cx="64" cy="214.0" r="4" fill="var(--dg-accent)"><title>frame 0: 300</title></circle>
+      <circle cx="102" cy="169.0" r="4" fill="var(--dg-accent)"><title>frame 1: 350</title></circle>
+      <circle cx="140" cy="134.8" r="4" fill="var(--dg-accent)"><title>frame 2: 388</title></circle>
+      <circle cx="178" cy="109.6" r="4" fill="var(--dg-accent)"><title>frame 3: 416</title></circle>
+      <circle cx="216" cy="90.7" r="4" fill="var(--dg-accent)"><title>frame 4: 437</title></circle>
+      <circle cx="254" cy="76.3" r="4" fill="var(--dg-accent)"><title>frame 5: 453</title></circle>
+      <circle cx="292" cy="65.5" r="4" fill="var(--dg-accent)"><title>frame 6: 465</title></circle>
+      <circle cx="330" cy="57.4" r="4" fill="var(--dg-accent)"><title>frame 7: 474</title></circle>
+      <circle cx="368" cy="51.1" r="4" fill="var(--dg-accent)"><title>frame 8: 481</title></circle>
+      <text class="dg-sub dg-start" x="109" y="185.0">350</text>
+      <text class="dg-sub dg-start" x="147" y="150.8">388</text>
+      <text class="dg-sub dg-start" x="223" y="106.7">437</text>
+      <text class="dg-sub dg-start" x="375" y="67.1">481</text>
+      <circle cx="520" cy="34.0" r="4" fill="var(--dg-accent)"><title>settles at 500</title></circle>
+      <text class="dg-sub dg-start" x="410" y="67.1">486, 490 &hellip;</text>
+      <text class="dg-edge-label" x="290" y="244" text-anchor="middle">battle frames after the leaf lands</text>
+    </svg>
+    <figcaption>The figure in the readout, one point per battle frame (retail capture to 481, then the same rule to 500). With <em>Heal numbers</em> on - an opt-in enhancement, off by default and held off by Retail-faithful - the port also raises a green <code>200</code> over the patient; the figure counts up the same way either way.</figcaption>
+  </figure>
+</section>
+
 <section class="doc-section" id="banners" data-doc="message-and-intro-banners">
   <h2>Message and intro banners</h2>
   <ul>
