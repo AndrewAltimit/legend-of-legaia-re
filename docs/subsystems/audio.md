@@ -4161,6 +4161,16 @@ twice names none). `zenoir_summon_mid_cast` stands at `195`, which the engine pa
 cast fits `5.5` vsyncs from the gate, past any frame step, and reads `0.836` to `0.998`. Its gate is a
 black frame, which holds still for many vsyncs, so the image corpus cannot place it closer.
 
+**The duck's candidate reaches a frame step.** The duck names a vsync, and the cast's instant can stand
+a frame step off it, as off the gate. Fitted second by second against both of its retail recordings (the
+full one less the track, and `.castcore`), `zenoir_summon_mid_cast`'s cast body lands `-5500` samples
+(`7.5` vsyncs) from the gate in seconds `2..12`, where the duck names tick `6`. A one-vsync reach about the
+duck stopped at `-5157`, and the fit fell back on the gate's step reach, which locks the closing reaction
+cues (seconds `13..14`, best at `-2170`) and misplaces the body: `0.881`. The duck candidate now reaches the
+state's frame step, and the channel reads `0.997`, level `-0.08` dB. Harness-only. What it leaves is the
+closing cues: they fit `4.5` vsyncs later in retail than the body predicts, the ring cues of arm `11`'s
+splash keying ahead of retail's ([a ring cue keys at its frame's end](#a-ring-cue-keys-at-its-frames-end)).
+
 <a id="the-monaural-states"></a>
 **Five summon states were saved in Monaural.** `theeder`, `zenoir`, `nighto`, `orb` and
 `swordie_summon_mid_cast` carry the options screen's Sound word `0x800846BC = 1` and libsnd's mono

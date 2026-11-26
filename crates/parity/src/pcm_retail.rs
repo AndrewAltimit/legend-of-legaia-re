@@ -1068,8 +1068,13 @@ fn mix_cast_best(
     let levels: Vec<u8> = std::fs::read_to_string(cast_path.with_extension("duck"))
         .map(|t| t.lines().filter_map(|l| l.trim().parse().ok()).collect())
         .unwrap_or_default();
+    // The duck names a vsync, not a game frame: on a step-`n` fight the
+    // cast's instant can stand up to `n` vsyncs off it, as on the
+    // one-vsync reach of the gate ([`fit_cast_offset`]).
+    // `zenoir_summon_mid_cast` (step `3`) fits its cast body `7.5` vsyncs
+    // from the gate where the duck names `6`, past a one-vsync reach.
     if let Some(k) = duck_anchor_tick(&levels, applied) {
-        reaches.push((-((k as f64 * vsync_samples) as i64), 1));
+        reaches.push((-((k as f64 * vsync_samples) as i64), step.max(1)));
     }
     for (center, reach) in reaches {
         let offset = fit_cast_offset(retail, &track, &cast, lag, center, reach);
