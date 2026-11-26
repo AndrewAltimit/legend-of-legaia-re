@@ -24,7 +24,7 @@
 //! | # | rung | how it is driven |
 //! |---|---|---|
 //! | 1 | selector census | `select_intro_style` over its whole documented input space + over every formation the loaded disc's own table registers |
-//! | 2 | five style emitters | the page's own `BattleIntro`, armed from the same PROT 0979 tables `battle_intro::arm_battle_intro` parses, ticked for the full retail duration |
+//! | 2 | five style emitters | the page's own `BattleIntro`, armed from the same PROT 0979 tables `battle_intro::arm_battle_intro` parses, with the init's parts seated beside it, ticked for the full retail duration |
 //! | 3 | curtain two-pass | the capture landing + `refresh_captured_page` chain (`FUN_801D1D9C`'s subtractive mid-pass decay and the no-clear display trail) |
 //! | 4 | target ring, pad-driven | a real forced encounter on the play page, walked into the target cursor with **D-pad Left** and cycled with Left/Right |
 //! | 5 | target ring, property | the ring builder + cursor step + the sweep-group aim, pinned against the disassembly's stated intent |
@@ -59,9 +59,12 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
+use legaia_engine_effects::battle_intro_parts::IntroParts;
 use legaia_engine_scene::scene::ProtIndex;
 use legaia_engine_system::input::PadButton;
-use legaia_render_kernels::battle_intro::{BattleIntro, IntroQuadTable, parse_tile_corner_table};
+use legaia_render_kernels::battle_intro::{
+    BattleIntro, IntroPartRuntime, IntroQuadTable, parse_tile_corner_table,
+};
 use legaia_render_kernels::battle_intro_particles::IntroEnv;
 use legaia_render_kernels::battle_intro_styles::{
     INTRO_FADE_RAMPS, IntroStyle, IntroStyleInputs, intro_duration_frames, select_intro_style,
@@ -217,6 +220,8 @@ struct StyleRun {
     drawn_frames: u32,
     /// Total primitives across the run.
     prims: u64,
+    /// The init seated at least one part beside the style.
+    parts_seated: bool,
     /// First frame index whose `style_drawn` was true.
     first_drawn: Option<u32>,
     /// Frames carrying a fade quad, and the abr the ramp used.
@@ -229,18 +234,21 @@ struct StyleRun {
 }
 
 /// Arm the emitter for `style` exactly as the shared `battle_intro::arm_battle_intro` does -
-/// same tables, same corner set, same `IntroEnv` seeding - and run it for the
-/// style's own retail duration.
+/// same tables, same corner set, same `IntroEnv` seeding, and the init's own
+/// parts seated out of the raw PROT 0979 bytes `overlay` when given
+/// (`legaia_engine_effects::battle_intro_parts`) - and run it for the style's
+/// own retail duration.
 fn run_style(
     style: IntroStyle,
     sub_style: i32,
     table: &IntroQuadTable,
     corners: [i32; 4],
+    overlay: Option<&[u8]>,
 ) -> StyleRun {
     let total = intro_duration_frames(style);
     let mut env = IntroEnv::new(0x1234_5678);
     let mut trig = IntroEnv::new(0x1234_5678);
-    let mut intro = BattleIntro::new(
+    let intro = BattleIntro::new(
         style,
         sub_style,
         total,
@@ -249,6 +257,9 @@ fn run_style(
         &mut trig,
         corners,
     );
+    let parts = overlay.and_then(|raw| IntroParts::seat(style, sub_style, raw));
+    let parts_seated = parts.as_ref().is_some_and(|p| !p.parts().is_empty());
+    let mut intro = intro.with_parts(parts.map(|p| Box::new(p) as Box<dyn IntroPartRuntime>));
 
     // The one-shot capture: retail stashes the drawn field frame as the
     // transition arms and every later frame samples that copy.
@@ -262,6 +273,7 @@ fn run_style(
     );
 
     let mut run = StyleRun {
+        parts_seated,
         frames: 0,
         drawn_frames: 0,
         prims: 0,
@@ -293,6 +305,9 @@ fn run_style(
 
 fn rung2_style_emitters(index: &ProtIndex) -> Result<(), String> {
     let (table, corners) = intro_tables(index);
+    let overlay = index
+        .entry_bytes_extended(INTRO_OVERLAY_PROT)
+        .map_err(|e| format!("PROT {INTRO_OVERLAY_PROT}: {e}"))?;
 
     for style in [
         IntroStyle::ScatterParticles,
@@ -301,7 +316,27 @@ fn rung2_style_emitters(index: &ProtIndex) -> Result<(), String> {
         IntroStyle::Curtain,
         IntroStyle::Swirl,
     ] {
-        let run = run_style(style, 0, &table, corners);
+        let run = run_style(style, 0, &table, corners, Some(&overlay));
+
+        // The init's parts ride beside every style but the curtain (its arm
+        // is the stub `FUN_801D1CD4`, which seats none), and they draw: a run with them emits
+        // more primitives than the bare style does.
+        let want_parts = style != IntroStyle::Curtain;
+        if run.parts_seated != want_parts {
+            return Err(format!(
+                "{style:?}: init parts seated {}, retail seats {}",
+                run.parts_seated, want_parts
+            ));
+        }
+        if want_parts {
+            let bare = run_style(style, 0, &table, corners, None);
+            if run.prims <= bare.prims {
+                return Err(format!(
+                    "{style:?}: the seated parts drew nothing ({} prims with, {} without)",
+                    run.prims, bare.prims
+                ));
+            }
+        }
 
         // Retail's own duration, and the swirl is the one arm that overrides
         // the shared 0x84 (`addiu v0,zero,0xfc` at 0x801CEFF4).
@@ -414,8 +449,20 @@ fn rung2_style_emitters(index: &ProtIndex) -> Result<(), String> {
 
     // The scatter style's sub-style 2 is the one fade arm that flips its
     // blend: `abr == 1` (additive white-out) instead of `2` (fade to black).
-    let plain = run_style(IntroStyle::ScatterParticles, 0, &table, corners);
-    let sub2 = run_style(IntroStyle::ScatterParticles, 2, &table, corners);
+    let plain = run_style(
+        IntroStyle::ScatterParticles,
+        0,
+        &table,
+        corners,
+        Some(&overlay),
+    );
+    let sub2 = run_style(
+        IntroStyle::ScatterParticles,
+        2,
+        &table,
+        corners,
+        Some(&overlay),
+    );
     if plain.fade_abr == sub2.fade_abr {
         return Err(format!(
             "scatter sub-style 2 must flip the fade blend; both read {:?}",

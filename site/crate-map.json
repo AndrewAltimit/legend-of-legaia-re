@@ -4944,6 +4944,7 @@
     "xa"
    ],
    "dev_deps": [
+    "engine-effects",
     "overlay-images",
     "prot"
    ],
