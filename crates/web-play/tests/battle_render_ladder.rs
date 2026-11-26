@@ -375,13 +375,13 @@ fn rung2_style_emitters(index: &ProtIndex) -> Result<(), String> {
             ));
         }
 
-        // The curtain and the two particle fields re-compose their page per
-        // frame (the curtain's intermediate and trail, the particle styles'
-        // never-cleared display); every other style reports exactly one
-        // changed page (the capture landing).
+        // The curtain, the two particle fields and the swirl re-compose their
+        // page per frame (the curtain's intermediate and trail, the others'
+        // never-cleared display); the shatter reports exactly one changed
+        // page (the capture landing).
         if matches!(
             style,
-            IntroStyle::SpinUpParticles | IntroStyle::ScatterParticles
+            IntroStyle::SpinUpParticles | IntroStyle::ScatterParticles | IntroStyle::Swirl
         ) {
             if run.page_refreshes != run.frames {
                 return Err(format!(
