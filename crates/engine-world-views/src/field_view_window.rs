@@ -100,9 +100,14 @@ pub fn retail_vantage(world: &World, camera: &Camera, debug_camera: bool) -> boo
 /// record's (`World::scripted_shot_holds_camera`, the ending vignettes).
 /// [`crop_framing`] turns it into the crop's [`CropFraming::Retail`] arm.
 pub fn retail_framing(world: &World, camera: &Camera) -> bool {
-    framing_is_retail(camera)
-        || crate::camera_view::cutscene_owns_camera(world)
-        || world.scripted_shot_holds_camera()
+    framing_is_retail(camera) || scripted_shot(world)
+}
+
+/// Whether a script stages this frame's shot: the modal timeline's
+/// ([`crate::camera_view::cutscene_owns_camera`]) or a player-holding helper
+/// record's (`World::scripted_shot_holds_camera`).
+fn scripted_shot(world: &World) -> bool {
+    crate::camera_view::cutscene_owns_camera(world) || world.scripted_shot_holds_camera()
 }
 
 /// The field ground's depth rule for this frame, the word both play hosts
@@ -176,7 +181,15 @@ pub fn field_ground_drop_under(
 ///   construction; the port latches it from the player actor's tile, and a
 ///   scene entered without a seat can leave the follow focus somewhere the
 ///   actor is not. Cropping then would clamp the whole window away and draw
-///   no ground at all, so the host draws the map whole instead.
+///   no ground at all, so the host draws the map whole instead - for the
+///   follow camera only. A scripted shot that aims past the latched box
+///   crops as retail does: the box stays where the last re-centre put it,
+///   so the shot shows only what the box and the window share, which can be
+///   nothing at all. `opdeene`'s prologue timeline opens on such a shot
+///   (`P2[18]`'s `45 07` at `+0x19`, focus tile `(84, 95)` against the box
+///   `(33, 0)..(73, 67)` latched at the player's tile) and retail holds it
+///   black behind the first lines of the crawl; drawn whole, the shot showed
+///   pack mesh `37`'s panels at the map's far side as the fade lifted.
 ///
 /// A cutscene shot crops too, as retail's does: the cell emitters and the
 /// actor cull read the same scratchpad window and camera globals whatever owns
@@ -216,7 +229,7 @@ pub fn field_view_cells_under(
         view.focus_stored[0].wrapping_neg() >> 7,
         view.focus_stored[1].wrapping_neg() >> 7,
     );
-    if tx < r0 || tx >= r2 || tz < r1 || tz >= r3 {
+    if (tx < r0 || tx >= r2 || tz < r1 || tz >= r3) && !scripted_shot(world) {
         return None;
     }
     let window = match framing {

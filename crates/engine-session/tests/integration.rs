@@ -48,6 +48,7 @@ mod minigame_audio_disc;
 mod new_game_seed;
 mod npc_conversation_terminates;
 mod npc_run_clip_bind_disc;
+mod opdeene_first_shot_crop_disc;
 mod opening_long_frames_disc;
 mod opening_title_card_pager_disc;
 mod overworld_fishing_return_disc;
