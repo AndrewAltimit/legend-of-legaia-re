@@ -32,7 +32,9 @@ use legaia_anm::PoseFrame;
 /// every two engine ticks (one tick = one vsync, the frame step `1`).
 pub const CLIP_RATE: u16 = 8;
 
-use legaia_engine_vm::actor_tick::{CLIP_CLAMP, clip_cursor_tick, clip_step};
+use legaia_engine_vm::actor_tick::{
+    CLIP_CLAMP, CLIP_RESTART, CLIP_REVERSE, clip_cursor_tick, clip_step,
+};
 
 /// Looping playback over one field clip: all frames pre-decoded to the
 /// `(translation, rotation)` pairs [`PoseFrame`] carries, walked by retail's
@@ -298,8 +300,26 @@ impl FieldClipPlayer {
     /// and the word the tick leaves (the end latch `0x100` raised on the tick
     /// the cursor reaches an end, a restart request consumed).
     ///
+    /// A restart request (`0x200`) seats the cursor before the pose is
+    /// emitted: retail consumes it in the same call that binds the clip and
+    /// steps it (`0x800205F8..0x80020630`, then the step at `0x8002064C`),
+    /// all before the frame's draw reads `+0x68`, so no frame draws the
+    /// cursor the request replaces. The town01 opening's hand-down binds
+    /// scene record 45 with restart and reverse raised; emitted before the
+    /// request was seated, it drew the record's frame 0 - the hand at
+    /// Vahn's side - for one vsync between the hand on his head and the
+    /// reversed clip's first frame.
+    ///
     /// REF: FUN_800204F8 (`legaia_engine_vm::actor_tick::clip_cursor_tick`)
     pub fn tick_with(&mut self, scale: u16, flags: u16) -> (PoseFrame, u16) {
+        if flags & CLIP_RESTART != 0 && !self.frames.is_empty() {
+            self.cursor = if flags & CLIP_REVERSE == 0 {
+                0
+            } else {
+                (self.frames.len() as u32 - 1) * 16
+            };
+            self.hold_at_end = flags & CLIP_CLAMP != 0 && self.frame() + 1 >= self.frames.len();
+        }
         let pose = self.current_pose();
         let flags = self.advance_with(scale, flags);
         (pose, flags)
@@ -1148,6 +1168,34 @@ mod tests {
             .map(|_| anim.tick_with_flags(0).0.bone_outputs[0].0[0])
             .collect();
         assert_eq!(seen, vec![0, 10, 20, 0, 10]);
+    }
+
+    /// A scripted clip bound with restart and reverse raised (the town01
+    /// opening's hand-down) draws from its last frame on the bind tick:
+    /// retail seats the request before the draw, so the clip's frame 0 never
+    /// shows between the pose before and the reversed playback.
+    #[test]
+    fn a_reversed_restart_draws_the_last_frame_on_the_bind_tick() {
+        use legaia_engine_vm::actor_tick::CLIP_REVERSE;
+        let bundle = synth_bundle();
+        let mut idle = FieldClipPlayer::from_record(&bundle, 1).unwrap();
+        let mut walk = FieldClipPlayer::from_record(&bundle, 0).unwrap();
+        idle.set_step(16);
+        walk.set_step(16);
+        let mut anim = FieldPlayerAnim::new(idle, walk);
+        anim.set_clip_rate(16);
+        anim.select_scene_record(Some(0));
+        anim.bind_scripted(0, FieldClipPlayer::from_record(&bundle, 0).unwrap());
+        let mut flags = CLIP_CLAMP | CLIP_REVERSE | CLIP_RESTART;
+        let mut seen = Vec::new();
+        for _ in 0..5 {
+            let (pose, out) = anim.tick_with_flags(flags);
+            flags = out;
+            seen.push(pose.bone_outputs[0].0[0]);
+        }
+        assert_eq!(flags & CLIP_RESTART, 0, "the request is consumed");
+        // Frames 2 / 1 / 0, then held on frame 0; never frame 0 first.
+        assert_eq!(seen, vec![20, 10, 0, 0, 0]);
     }
 
     /// The ledge hop's take-off clip is the pick on frames the arc - not the

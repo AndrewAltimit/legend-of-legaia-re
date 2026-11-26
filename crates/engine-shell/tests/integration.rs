@@ -42,6 +42,7 @@ mod native_new_game_save_continue;
 mod native_tools_page_parity;
 mod netplay_room_frame_movie_host_parity;
 mod ocean_anim_real;
+mod opening_hand_on_head;
 mod pack_map_host_vram;
 mod pause_learned_content_ladder;
 mod retail_compare_corpus;

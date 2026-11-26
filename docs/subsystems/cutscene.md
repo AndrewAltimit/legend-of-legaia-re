@@ -2359,6 +2359,17 @@ re-seat on the last frame and hold), and a context word still holding the spawn'
 moved only the reverse bit, leaving the door shut through the dinner (disc-gated
 `bylon_dinner_disc`).
 
+The restart is seated before the frame draws. `FUN_800204F8` binds a new clip (cursor `0`),
+consumes the request (`0x800205F8..0x80020630`: frame `0`, or the last frame under the reverse
+bit) and steps the cursor in one call, all ahead of the draw that reads `+0x68`, so no frame
+shows the cursor the request replaces. The New Game opening's walk-out leans on it: Vahn raises
+a hand to his head (scene record 45, clamped), holds it there (record 46), and lowers it by
+binding record 45 again with restart and reverse raised; a PCSX-Redux film from
+`s2_rimelm_town01` draws the reversed clip from cursor `136` on its first frame. The player's
+scripted clip (`FieldClipPlayer::tick_with`) seats the request before it emits the pose; emitted
+from the bound cursor instead, it drew record 45's frame `0`, the hand at Vahn's side, for one
+vsync between the two (disc-gated `opening_hand_on_head`).
+
 A helper record's shot frames through the follow arm (`camera_view::field_follow_view`), which
 for a follow shot folds a negative eye depth into its magnitude. Under a scripted shot it keeps
 the sign, as GTE `TR` does: the same window shot glides the depth through zero, the lens passing
