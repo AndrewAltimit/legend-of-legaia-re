@@ -1635,8 +1635,10 @@ left on the poses the replay had struck, so the first pass re-faced the attacker
 keyframe retail's bodies never held. `battle_ropeway_party_gala_flying_knee_mid`'s Killer
 Bee stood its pair at `(-3, -32)` in the replay where retail's reads `(5, -25)`, and Gala's
 heading, the Bee's after the hit and so case 7's yaw parted by `7` to `19` units for the rest
-of the action. The engine now decodes the pairs again off the seated poses
-(`World::refresh_battle_body_pairs_now`) on the gate's tick: the film reads `.889` to `.982`.
+of the action. On a gate in the strike band (`0x14..=0x20`) the engine now decodes the pairs
+again off the seated poses (`World::refresh_battle_body_pairs_now`): the film reads `.889` to
+`.982`. A cast module's gate keeps them, its bodies standing on the module's own seats (Death
+Game's film falls `.952` to `.903` re-decoded).
 
 A state saved inside a voice line's read holds the clip player's stop watch polling the
 drive (`FUN_8003D764`), which no field the seeds carry stands in for, and the replay's line
