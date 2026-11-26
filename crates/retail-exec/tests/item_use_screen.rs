@@ -68,6 +68,8 @@ enum Landing {
     List,
     /// The bag is empty: back to the command window.
     Command,
+    /// The target rows were backed out of.
+    Cancelled,
 }
 
 fn items(sub: &FieldMenuSubsession) -> &legaia_engine_menus::pause_screens::PauseItemsSession {
@@ -90,7 +92,10 @@ fn the_apply_screens_use_what_retail_uses_and_land_where_it_lands() {
     for va in [VM, WINDOW_TICK, PREVIEW] {
         cpu.stub(va, 0);
     }
-    cpu.hook(PICKER, |r, _| r.r[V0] = 1);
+    // The target picker answers "confirmed", or "cancelled" on a cancel round.
+    let answer = Rc::new(std::cell::Cell::new(1u32));
+    let a = answer.clone();
+    cpu.hook(PICKER, move |r, _| r.r[V0] = a.get());
     let cues: Rc<RefCell<Vec<(u32, u32)>>> = Rc::default();
     for entry in [CUE, SFX] {
         let c = cues.clone();
@@ -226,6 +231,37 @@ fn the_apply_screens_use_what_retail_uses_and_land_where_it_lands() {
         if on_target != Some(target) {
             continue;
         }
+        // An eighth of the single-target rounds back out of the target rows:
+        // the picker's "cancelled" returns to the Use list, sub-screen 6
+        // (`0x801D83DC`, `0x801D8490`), with nothing used.
+        if !all && rng.below(8) == 0 {
+            press(&mut sub, &mut world, PadButton::Circle);
+            answer.set(2);
+            cpu.mem.wr32(SCREEN, 8);
+            cpu.mem.wr32(STEP, 1);
+            cpu.mem.wr32(BUSY, 0);
+            cues.borrow_mut().clear();
+            assert_eq!(cpu.call(SINGLE, &[]), Stop::Returned, "round {round}");
+            answer.set(1);
+            let rbag: Vec<(u8, u8)> = (0..256u32)
+                .map(|i| (cpu.mem.rd8(BAG + i * 2), cpu.mem.rd8(BAG + i * 2 + 1)))
+                .collect();
+            let port_list =
+                !items(&sub).target_select() && items(&sub).focus == PauseItemsFocus::List;
+            if cpu.mem.rd32(SCREEN) != 6
+                || !port_list
+                || rbag.as_slice() != world.party.inventory.slots()
+            {
+                failures.push(format!(
+                    "round {round}: item {id:#04x} cancel: retail screen {} port {:?} {:?}",
+                    cpu.mem.rd32(SCREEN),
+                    items(&sub).focus,
+                    items(&sub).inner.state
+                ));
+            }
+            *seen.entry((all, Landing::Cancelled)).or_default() += 1;
+            continue;
+        }
         press(&mut sub, &mut world, PadButton::Cross);
         let port_landing = {
             let s = items(&sub);
@@ -344,6 +380,7 @@ fn the_apply_screens_use_what_retail_uses_and_land_where_it_lands() {
     );
     eprintln!("{seen:?}");
     for key in [
+        (false, Landing::Cancelled),
         (false, Landing::Again),
         (false, Landing::List),
         (true, Landing::Again),
