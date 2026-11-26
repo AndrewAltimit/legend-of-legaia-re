@@ -218,13 +218,15 @@ pub struct WorldToggles {
     /// timing model, so [`Self::pin_retail`] leaves it alone; the native
     /// session raises it from `LEGAIA_BATTLE_DERIVED_FRAME_COST=1`.
     pub battle_derived_frame_cost: bool,
-    /// Opt-in, off by default: the battle census decides each primitive by
-    /// the dispatcher leaves' own rules on the GTE's integer corners (the
-    /// winding test with its zero kept, the near floor on `OTZ`, the
-    /// off-screen test where the leaf runs it, bodies included) in place of
-    /// the float rules the fitted census line was fitted on. Always on under
-    /// [`Self::battle_derived_frame_cost`]; this raises it on the census line
-    /// alone (`LEGAIA_CENSUS_RETAIL_CULLS=1` in the native session).
+    /// On by default: the battle census decides each primitive by the
+    /// dispatcher leaves' own rules on the GTE's integer corners (the winding
+    /// test with its zero kept, the near floor on `OTZ`, the off-screen test
+    /// where the leaf runs it, bodies included) in place of the float rules,
+    /// and a census-priced frame is priced on those counts unit by unit
+    /// (`frame_clock::leaf_frame_work`) instead of the one-price line fitted
+    /// on the float rules' counts. Always on under
+    /// [`Self::battle_derived_frame_cost`]; the native session sets it either
+    /// way from `LEGAIA_CENSUS_RETAIL_CULLS`.
     pub battle_census_retail_culls: bool,
     /// Which machine's CD response timing a battle frame's cost reads while a
     /// CD-XA voice clip plays: PCSX-Redux's, where the clip player's stop
@@ -755,7 +757,7 @@ impl WorldToggles {
             battle_effect_walk_cost: false,
             derived_frame_cost: true,
             battle_derived_frame_cost: false,
-            battle_census_retail_culls: false,
+            battle_census_retail_culls: true,
             battle_cd_timing: legaia_engine_battle_loop::frame_clock::CdTiming::PcsxRedux,
             battle_frame_span_law: true,
             battle_poly_frame_cost: true,

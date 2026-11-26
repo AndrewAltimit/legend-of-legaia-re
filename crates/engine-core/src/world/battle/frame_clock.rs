@@ -110,7 +110,10 @@ impl World {
         // The census of world state (`World::note_linked_polys`), or the
         // window's own drawn table under the diagnostic source.
         let census = if window_source {
-            self.battle.drawn_polys.map(polygon_frame_work)
+            self.battle
+                .drawn_polys
+                .map(polygon_frame_work)
+                .map(|w| (w, w))
         } else {
             self.battle.linked_polys.map(|n| {
                 // The scanline wash below fills the screen where a backdrop
@@ -130,19 +133,43 @@ impl World {
                 // (`battle_frame_tick_cost`). A monster's swing carries its
                 // spark bursts there, the work the strike films once read as
                 // a flat offset over the line.
-                let w = linked_frame_work(n, wash || self.battle_backdrop_drawn()).saturating_add(
-                    legaia_engine_battle_loop::frame_clock::floor_clip_walk_work(
-                        self.battle.floor_clip_walk,
-                    )
-                    .saturating_add(self.battle_frame_tick_cost()),
+                // On the dispatcher leaves' own rules the census's counts are
+                // retail's, fate by fate, and the frame is priced on them unit
+                // by unit (`leaf_frame_work`); the one-price line was fitted on
+                // the float rules' counts.
+                let backdrop = wash || self.battle_backdrop_drawn();
+                let floor = legaia_engine_battle_loop::frame_clock::floor_clip_walk_work(
+                    self.battle.floor_clip_walk,
                 );
+                // The one-price line stays the work the stop watch's poll
+                // ratios read (`xa_polled_work_cost`, `arts_shout_census_cost`):
+                // they were fitted over it.
+                let line = linked_frame_work(n, backdrop)
+                    .saturating_add(floor.saturating_add(self.battle_frame_tick_cost()));
+                let w = match (
+                    self.toggles.battle_census_retail_culls,
+                    self.battle.derived_units,
+                    self.battle.link_classes,
+                ) {
+                    (true, Some(u), Some(c)) => {
+                        legaia_engine_battle_loop::frame_clock::leaf_frame_work(
+                            &u,
+                            c.shadows,
+                            backdrop,
+                            self.battle_frame_tick_cost(),
+                        )
+                        .saturating_add(floor)
+                    }
+                    _ => line,
+                };
                 // The resident module's scanline wash, a screen layer the
                 // census does not count (`SCANLINE_WASH_WORK`).
-                let w = if wash {
-                    w.saturating_add(legaia_engine_battle_loop::frame_clock::SCANLINE_WASH_WORK)
+                let wash_work = if wash {
+                    legaia_engine_battle_loop::frame_clock::SCANLINE_WASH_WORK
                 } else {
-                    w
+                    0
                 };
+                let (w, line) = (w.saturating_add(wash_work), line.saturating_add(wash_work));
                 // Under the derived pricing the census's units are priced
                 // from retail's instruction counts instead, the wash an
                 // instruction count already.
@@ -150,8 +177,11 @@ impl World {
                     self.toggles.battle_derived_frame_cost,
                     self.battle.derived_units,
                 ) {
-                    (true, Some(units)) => self.derived_battle_work(&units, wash),
-                    _ => w,
+                    (true, Some(units)) => {
+                        let d = self.derived_battle_work(&units, wash);
+                        (d, d)
+                    }
+                    _ => (w, line),
                 }
             })
         };
@@ -164,12 +194,17 @@ impl World {
         } else {
             0
         };
-        let census = census.map(|w| w.saturating_add(surface));
+        let census_line = census.map(|(_, l)| l.saturating_add(surface));
+        let census = census.map(|(w, _)| w.saturating_add(surface));
         // An arm table's frames still have the census's work: what spans
-        // them under a capture-band module's line (below).
-        let arm_census = census.filter(|_| self.toggles.battle_poly_frame_cost);
+        // them under a capture-band module's line (below), on the line its
+        // poll ratio was fitted over.
+        let arm_census = census_line.filter(|_| self.toggles.battle_poly_frame_cost);
         let census = census.filter(|_| !table_kept);
         let poly = census.filter(|_| self.toggles.battle_poly_frame_cost);
+        let poly_line = census_line
+            .filter(|_| !table_kept)
+            .filter(|_| self.toggles.battle_poly_frame_cost);
         let table_work = measured_frame_cost_at(self.party.party_count, state, passes)
             .saturating_add(self.battle_frame_load_cost())
             .saturating_add(surface);
@@ -178,14 +213,17 @@ impl World {
         let me_decode = std::mem::take(&mut self.battle.me_decode_work);
         let derived = self.toggles.battle_derived_frame_cost && self.battle.derived_units.is_some();
         self.battle.me_decode_cycles = 0;
-        let poly = poly.map(|w| {
+        let with_me = |w: u16| {
             if derived {
                 w
             } else {
                 w.saturating_add(me_decode)
             }
-        });
+        };
+        let poly = poly.map(with_me);
+        let poly_line = poly_line.map(with_me);
         let work = poly.unwrap_or(table_work.saturating_add(me_decode));
+        let work_line = poly_line.unwrap_or(work);
         self.battle.frame_work = work;
         // The walker's branches up to here are this pass's.
         self.battle.effect_walk_cost =
@@ -208,7 +246,7 @@ impl World {
         // clip's read span runs the frame on the CD interrupt path
         // (`FUN_8005DAB0`) once the stream is up, and an arm table's step
         // stands in for a cost the world cannot price.
-        let price = |poly: Option<u16>, work: u16| -> (Option<u16>, u16) {
+        let price = |poly: Option<u16>, work: u16, work_line: u16| -> (Option<u16>, u16) {
             let poll_wait = self.audio.battle_xa_poll_wait;
             let loaded =
                 xa_passes.map(|n| match (poly, self.toggles.battle_cd_timing, poll_wait) {
@@ -245,10 +283,12 @@ impl World {
                     // module's line as the funnel's: the polls run for every clip
                     // the player starts (`FUN_8003D764`), so a frame's span under
                     // one is its work over the share they leave.
+                    // On the one-price line's work, which the poll ratio was
+                    // fitted over.
                     (Some(_), CdTiming::PcsxRedux, None) => match n {
                         0 => work,
-                        1 => work.saturating_add(XA_STREAM_ONSET_COST),
-                        _ => xa_polled_work_cost(work),
+                        1 => work_line.saturating_add(XA_STREAM_ONSET_COST),
+                        _ => xa_polled_work_cost(work_line),
                     },
                     _ => legaia_engine_battle_loop::frame_clock::xa_stream_pass_cost(
                         n,
@@ -272,7 +312,7 @@ impl World {
             };
             (loaded, cost)
         };
-        let (loaded, cost) = price(poly, work);
+        let (loaded, cost) = price(poly, work, work_line);
         self.battle.frame_cost_ring_before =
             matches!((arm_step, poly), (Some(_), None)).then_some(self.battle.frame_cost_ring);
         let before = self.battle.frame_cost_ring;
@@ -369,6 +409,18 @@ impl World {
     pub fn note_linked_polys(&mut self, polys: u32) {
         if self.mode == legaia_engine_mode::mode::SceneMode::Battle {
             self.battle.linked_polys = Some(polys);
+        }
+    }
+
+    /// Note the census's count by class
+    /// ([`LinkClasses`](legaia_engine_battle_loop::frame_clock::LinkClasses)),
+    /// the class-priced line's input. A no-op outside a battle.
+    pub fn note_link_classes(
+        &mut self,
+        classes: legaia_engine_battle_loop::frame_clock::LinkClasses,
+    ) {
+        if self.mode == legaia_engine_mode::mode::SceneMode::Battle {
+            self.battle.link_classes = Some(classes);
         }
     }
 

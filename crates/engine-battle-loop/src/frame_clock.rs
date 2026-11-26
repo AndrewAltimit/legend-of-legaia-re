@@ -692,6 +692,95 @@ pub const fn me_decode_work(parts: u32, frames: u32) -> u16 {
     }
 }
 
+/// One battle frame's linked primitives by class, as the scene host's census
+/// counts them on the dispatcher leaves' own rules
+/// (`legaia_engine_scene_host::battle_link_census::LinkCount`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct LinkClasses {
+    pub stage: u32,
+    pub grid: u32,
+    pub bodies: u32,
+    pub ghosts: u32,
+    pub shadows: u32,
+    pub effects: u32,
+    pub sprites: u32,
+    pub trails: u32,
+}
+
+/// The intercept of [`leaf_frame_work`]: the frame's work that no counted
+/// unit carries, in hblanks.
+pub const LEAF_FRAME_BASE: u16 = 34;
+/// What the backdrop pair and the grid's fixed walk add while they draw.
+pub const LEAF_BACKDROP_WORK: u16 = 74;
+/// Thousandths of an hblank per unit, in the order of [`leaf_units`]:
+/// triangles linked, off screen, culled; quads linked, off screen, culled;
+/// dispatcher objects; ghost draws; visible grid cells; swept-band packets;
+/// ground-shadow packets.
+pub const LEAF_UNIT_MILLI: [u32; 11] = [138, 132, 49, 103, 118, 30, 605, 717, 290, 1259, 438];
+/// Thousandths of the effects' tick price (`World::battle_frame_tick_cost`)
+/// the fit reads on these frames.
+pub const LEAF_TICK_MILLI: u32 = 426;
+
+/// The units [`leaf_frame_work`] prices, in [`LEAF_UNIT_MILLI`]'s order.
+pub const fn leaf_units(u: &crate::derived_cost::DerivedUnits, shadows: u32) -> [u32; 11] {
+    [
+        u.prims.tris_linked,
+        u.prims.tris_off_screen,
+        u.prims.tris_culled,
+        u.prims.quads_linked,
+        u.prims.quads_off_screen,
+        u.prims.quads_culled,
+        u.objects,
+        u.ghosts,
+        match u.grid_cells {
+            Some(n) => n,
+            None => 0,
+        },
+        u.trail_packets,
+        shadows,
+    ]
+}
+
+/// A census-priced battle frame's work on the dispatcher leaves' own counts
+/// (`WorldToggles::battle_census_retail_culls`): each primitive by its fate
+/// and topology, the objects, ghosts, grid cells, swept bands and shadows,
+/// with the effects' tick price scaled by [`LEAF_TICK_MILLI`].
+///
+/// Fitted on the PCSX-Redux recordings' unpolled census-priced frames of the
+/// party-arts, monster-strike and enemy-cast film sets against the census on
+/// the paired engine tick, whose counts on these rules land within a few
+/// primitives of the GPU table's (`--gpu-cost`). Each set held out of the fit
+/// reads rms `24` / `14` / `30` hblanks against the one-price line's `30` /
+/// `27` / `39`, and the step right on `.96` / `.98` / `.92` of frames against
+/// `.93` / `.97` / `.91` (`docs/subsystems/battle-stage-camera.md`, "Priced
+/// unit by unit").
+pub const fn leaf_frame_work(
+    u: &crate::derived_cost::DerivedUnits,
+    shadows: u32,
+    backdrop: bool,
+    tick_cost: u16,
+) -> u16 {
+    let n = leaf_units(u, shadows);
+    let mut milli = tick_cost as u64 * LEAF_TICK_MILLI as u64;
+    let mut i = 0;
+    while i < n.len() {
+        milli += n[i] as u64 * LEAF_UNIT_MILLI[i] as u64;
+        i += 1;
+    }
+    let base = LEAF_FRAME_BASE as u64
+        + if backdrop {
+            LEAF_BACKDROP_WORK as u64
+        } else {
+            0
+        };
+    let w = base + (milli + 500) / 1000;
+    if w > u16::MAX as u64 {
+        u16::MAX
+    } else {
+        w as u16
+    }
+}
+
 /// The work a battle frame whose census counts `linked` primitives costs
 /// ([`LINKED_FRAME_BASE`], [`LINKED_WORK_MILLI`]), in hblanks, with
 /// [`LINKED_BACKDROP_WORK`] while the backdrop pair or the grid draws.
@@ -1259,6 +1348,33 @@ impl RetailRandTrack {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn leaf_pricing_reads_each_unit_at_its_own_price() {
+        use crate::derived_cost::{DerivedUnits, PrimTally};
+        let none = DerivedUnits::default();
+        assert_eq!(leaf_frame_work(&none, 0, false, 0), LEAF_FRAME_BASE);
+        assert_eq!(
+            leaf_frame_work(&none, 0, true, 0),
+            LEAF_FRAME_BASE + LEAF_BACKDROP_WORK
+        );
+        // A ghost draw is priced on its own beside the primitives it links.
+        let u = DerivedUnits {
+            prims: PrimTally {
+                tris_linked: 1130,
+                quads_linked: 836,
+                ..Default::default()
+            },
+            objects: 120,
+            ghosts: 1,
+            grid_cells: Some(118),
+            ..Default::default()
+        };
+        let one = leaf_frame_work(&u, 120, true, 0);
+        let two = leaf_frame_work(&DerivedUnits { ghosts: 2, ..u }, 120, true, 0);
+        assert_eq!(leaf_units(&u, 120)[7], 1);
+        assert!(two > one && two - one <= 1 + (LEAF_UNIT_MILLI[7] / 1000) as u16);
+    }
 
     /// Frost Breath on a full party: the shout from Noa's parked bank loads
     /// its own pass (retail `8` vsyncs), where a seek leaves it to its step

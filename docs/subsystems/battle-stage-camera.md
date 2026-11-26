@@ -2104,8 +2104,9 @@ leaves' rules:
 
 The step agreement over all four reads `.960`, `.935`, `.956` and `.962`. The census line
 loses on every set with retail's counts under it: its `.200` a link was fitted on the float
-rules' counts. So the leaves' rules ride the derived pricing only, and the census line keeps
-the float rules by default. The derived pricing on them takes the enemy casts (image over
+rules' counts, and a one-price refit on the leaves' counts reads no better (arts rms `38`
+against `29`): what retail spends is not one price a link. The census therefore prices the
+leaves' counts unit by unit ([below](#priced-unit-by-unit)). The derived pricing on them takes the enemy casts (image over
 the line's, every cue, camera `2.50` to `2.11`, Kor's Gaza's Astral Slash back to `1.0`,
 Zenoir's Fire Claw back to the line's `.9165`, Rogue Wind's `.9327` against `.9312`), the
 arts' image and cues, the Seru frames and the overall step agreement, but not the strikes
@@ -2114,6 +2115,36 @@ Its strike bands now read retail's counts, and their frames price within a few p
 either side of the recordings' (Devil Pump's `0x1F` `629` against `643`, Orb's `698`
 against `679`, Ironman's `658` against `670`); the Done band (`0x51`) still reads `16`
 hblanks under. So it stays opt-in.
+
+<a id="priced-unit-by-unit"></a>
+
+**Priced unit by unit.** On the leaves' rules the census's count is retail's: over
+Tri-Somersault's and Gala's Chain's `--gpu-cost` recordings its linked primitives land
+within `20` of the GPU table's on every frame, where the float rules ran `-55` to `+310`
+apart as the shots closed in (Tri-Somersault's camera pulls in over frames `1514..1521` and
+retail stops drawing some `440` body primitives off screen; the float rules, which send no
+body primitive to the off-screen test, kept all but `110`). What the frame costs is then
+read per unit: `frame_clock::leaf_frame_work` prices each primitive by fate and topology
+(about `.13` hblanks linked or off screen, `.03` to `.05` culled), each dispatcher object
+(`.6`), each ghost draw (`.7` over its primitives), each visible grid cell (`.29`), each
+swept-band packet (`1.26`) and ground-shadow packet (`.44`), with the effects' tick price
+at `.43` of its old weight, over a base of `34` and `74` more while the backdrop draws.
+The constants are a least-squares fit on the unpolled census-priced frames of the arts,
+strike and enemy film sets against their PCSX-Redux recordings. With each set held out of
+the fit in turn, the frame cost reads rms `24` / `14` / `30` hblanks against the one-price
+line's `30` / `27` / `39`, and the step right on `.956` / `.982` / `.920` of frames against
+`.926` / `.967` / `.905`. Grade `capture`; the per-unit prices are a fit, not instruction
+counts (the derived pricing holds those).
+
+It is what lands the Super Arts' edge frames on retail's step together: Tri-Somersault's
+one-ghost frame `1521` prices `707` (retail `692`, the line `721`), Gala's Chain's commit
+pass `719` (retail `717`, the line `723`), Dragon Fangs' two-ghost frames `709..717`
+(retail `685..707`, the line `724..734`). Port: `WorldToggles::battle_census_retail_culls`,
+on by default (`LEGAIA_CENSUS_RETAIL_CULLS=0` restores the float rules and the line). The
+film sets move: arts `.9517` to `.9656` (Tri-Somersault `.817` to `.939`, Gala's Chain back
+to `.992` / `.994`, Vahn's Chain `.966` / `.982`, Dragon Fangs `.868` to `.890`), strikes
+`.9849` to `.9882` with none down (Kemaro `.897` to `.970`, Mush Mush `.897` to `.953`),
+enemy casts `.9620` to `.9634`.
 
 **The three opt-in terms under the derived pricing.** The `"ME"` decode and the walker's
 branches are the derived pricing's own terms (`derived_cost::me_decode_cycles`,
