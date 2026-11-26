@@ -33,9 +33,11 @@
 //! For the curtain's display decay (`CURTAIN_DISPLAY_DECAY_5`, one 5-bit level
 //! each time a host refreshes the page, once per presented frame, and the
 //! entity clock moves one unit per world tick) the totals agree exactly,
-//! since `0x08 * s >> 3 == s` and nothing saturates below `s = 32`; the two `0x101010` washes `wash_prim` still
-//! draws land on a black backdrop, where a subtraction of any size is a
-//! no-op. Calling this from `wash_prim` with the step would double-count the
+//! since `0x08 * s >> 3 == s` and nothing saturates below `s = 32`. The
+//! scatter style's `0x101010` comes off its display model the same way
+//! (`SCATTER_DISPLAY_DECAY_5`, two levels a step), and the swirl's late wash
+//! lands on a black backdrop, where a subtraction of any size is a no-op.
+//! Calling this from `wash_prim` with the step would double-count the
 //! cadence.
 //!
 //! It is ported because its edge case (the pre-multiply saturation) is
