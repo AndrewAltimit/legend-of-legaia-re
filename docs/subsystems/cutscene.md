@@ -1032,7 +1032,7 @@ with zero input** (pinned by a PCSX-Redux cold-boot pixel capture; disc-gated or
 | `map01` | World-map fly-in: static "twilight of humanity" title card + a 5-page crawl over an aerial approach of Rim Elm | P2[38], spawned by the **walk-on tile trigger** at the arrival tile; scene-changes into `town01` at tile `(0x1D, 0x5B)` |
 | `town01` | Establishing pan → **name entry** → Vahn's walk-out (the walk-out is post-confirm) | P2[3], walk-on tile trigger; C1 gate lists flag `0x225` (one-shot) |
 
-The natural chain needs no input. A confirm press at any time after `opdeene`'s timeline arms
+The natural chain needs no input. A held Select at any time after `opdeene`'s timeline arms
 `GFLAG 26` (near the record's top) fires the `FUN_801D1344` `town01` scene-change packet - the
 **intro skip**, not a hand-off gate. See
 [`boot.md`](boot.md#the-opening-scene-chain--the-fun_801d1344-intro-skip).

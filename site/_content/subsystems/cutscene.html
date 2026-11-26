@@ -196,7 +196,7 @@ legaia-engine play-str MOV/MV1.STR --disc "Legend of Legaia (USA).bin"</code></p
       <tr><td><code>town01</code></td><td>Establishing pan, name entry, Vahn's walk-out</td><td>Walk-on tile trigger at <code>(0x1D, 0x5B)</code>, one-shot gate</td><td>play</td></tr>
     </tbody>
   </table>
-  <p>A confirm press after the first crawl arms story flag 26, which fires the <code>town01</code> packet - the <strong>intro skip</strong>. The engine drives the whole chain by executing the same records (<code>World::step_cutscene_timeline</code>), pinned against a cold-boot pixel capture.</p>
+  <p>Once the first crawl arms story flag 26, a held Select fires the <code>town01</code> packet - the <strong>intro skip</strong>. The engine drives the whole chain by executing the same records (<code>World::step_cutscene_timeline</code>), pinned against a cold-boot pixel capture.</p>
   <h3 id="narration-format">The narration crawl</h3>
   <ul class="bullets">
     <li><strong>Text.</strong> Inline ASCII pages inside the timeline record, each framed <code>0x1F &hellip; 0x00</code>, introduced by <code>CC F8 80 N</code> (<code>N</code> = page count). A sibling op <code>CC F8 89</code> shows a title card: it is the dialog pager&rsquo;s automatic press, so its lines are a box that holds whichever record runs it (the modal timeline or a helper) until the press lands, and the press closes the card unless its page ends on a <code>0x24</code> continuation. Parser <code>legaia_scene_formats::cutscene_text</code>; no text is committed.</li>

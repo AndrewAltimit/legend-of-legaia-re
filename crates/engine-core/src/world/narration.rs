@@ -492,7 +492,8 @@ impl World {
     /// through its `opstati` / `opurud` legs), the trigger bit is set
     /// ([`Self::arm_prologue_handoff`] - `opdeene`'s timeline raises it near
     /// its top, so the skip is available almost immediately), and the caller
-    /// reports a confirm-button press this frame. This is the retail
+    /// reports the skip press this frame - a held Select
+    /// ([`crate::world::prologue_skip_held`]). This is the retail
     /// intro-SKIP: the packet fires mid-narration too (the roller is
     /// timer-driven, not confirm-paced). Clears the bit so it fires once,
     /// exactly as retail clears `0x4000000`, and tears down the playing

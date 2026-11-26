@@ -553,10 +553,23 @@ pub const NEW_GAME_STARTING_GOLD: i32 = 500;
 /// the opening cutscene `opdeene` raises to arm the handoff to Rim Elm
 /// (`town01`). Retail sets it with field-VM `GFLAG_SET 26` (op `0x2E`
 /// operand `0x1A`) at the end of the prologue cutscene timeline, and the
-/// per-frame field controller `FUN_801D1344` consumes it (with the
-/// confirm-press gate) to issue the name-based scene change. See
-/// [`World::arm_prologue_handoff`] / [`World::take_prologue_handoff`].
+/// per-frame field controller `FUN_801D1344` consumes it (with the held
+/// Select gate, [`prologue_skip_held`]) to issue the name-based scene change.
+/// See [`World::arm_prologue_handoff`] / [`World::take_prologue_handoff`].
 pub const PROLOGUE_HANDOFF_FLAG: u32 = 1 << PROLOGUE_HANDOFF_BIT;
+
+/// The intro skip's press: `FUN_801D1344` tests the **held** pad word
+/// `_DAT_8007B850` against `0x100` (`andi v0,v0,0x100` at `0x801D14AC`),
+/// which in the packed layout (`legaia_engine_system::retail_pad`: the
+/// dpad / system byte in bits 8..15, so Select + Start is `0x900`) is
+/// Select. Not Cross, and not an edge: a player holding Select when the
+/// opening arms bit 26 skips on that frame. `held` is the engine's pad
+/// layout ([`legaia_engine_system::input::PadButton`]).
+///
+/// PORT: FUN_801D1344 (`0x801D14A4..0x801D14B0`, the skip press)
+pub fn prologue_skip_held(held: u16) -> bool {
+    held & legaia_engine_system::input::PadButton::Select.mask() != 0
+}
 
 /// Scratchpad flag-bit index (`26`) of [`PROLOGUE_HANDOFF_FLAG`]. This is
 /// the operand of the prologue cutscene's `GFLAG_SET` op (`0x2E 0x1A`); the

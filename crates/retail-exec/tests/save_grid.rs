@@ -33,6 +33,8 @@ const RECORD_QUAD: u32 = 0x801E_3FF0;
 /// eight records).
 const RECORDS: u32 = 0x801E_5048;
 
+/// One per-cell drawer call from the grid: `(slot, x, y, mode)`.
+type GridCall = (u32, i32, i32, u32);
 /// One `FUN_801E2EE4(mode, x, y, record, brightness, scale)` call.
 type StripCall = (u32, i32, i32, u32, i32, u32);
 /// One `FUN_801E3FF0(record, rgb, x, y)` call, with the face record's `u`.
@@ -69,7 +71,7 @@ fn the_grid_slides_every_cell_where_retail_does() {
         h.borrow_mut()
             .push((r.r[A0] as i32, r.r[A1] as i32, r.r[A2]));
     });
-    let cells: Rc<RefCell<Vec<(u32, i32, i32, u32)>>> = Rc::default();
+    let cells: Rc<RefCell<Vec<GridCall>>> = Rc::default();
     let c = cells.clone();
     cpu.hook(CELL, move |r, _| {
         c.borrow_mut()

@@ -11,7 +11,6 @@
 //! pause menu - are done by the time it returns.
 
 use legaia_engine_audio::AudioSink;
-use legaia_engine_system::input::PadButton;
 
 use super::{BootSession, PauseMenuPress};
 
@@ -115,11 +114,13 @@ impl<S: AudioSink> BootSession<S> {
             return TickOwner::NameEntry(!self.host.world.name_entry_active());
         }
         // The prologue intro skip: while the opening chain plays with the
-        // trigger bit armed, a Cross press skips the whole remaining opening.
+        // trigger bit armed, a held Select skips the whole remaining opening
+        // (retail tests the held word, `FUN_801D1344`); Cross, which a player
+        // presses to hurry the narration along, does not.
         if let Some(target) = self
             .host
             .world
-            .take_prologue_handoff(edge & PadButton::Cross.mask() != 0)
+            .take_prologue_handoff(legaia_engine_core::world::prologue_skip_held(claims.held))
         {
             return TickOwner::PrologueSkip(target);
         }

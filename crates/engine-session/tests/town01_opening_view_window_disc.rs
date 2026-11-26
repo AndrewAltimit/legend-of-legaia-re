@@ -51,7 +51,7 @@ fn the_establishing_pan_crops_by_the_records_window() {
         s.start_new_game(&FieldLiveOpts::default()).is_some(),
         "the New Game entered its opening"
     );
-    // Into the crawl, then the intro skip's confirm press, entered the way
+    // Into the crawl, then the intro skip's press (a held Select), entered the way
     // both play hosts take `TickOwner::PrologueSkip`.
     for _ in 0..300 {
         s.tick().expect("tick");
@@ -60,7 +60,7 @@ fn the_establishing_pan_crops_by_the_records_window() {
         .host
         .world
         .take_prologue_handoff(true)
-        .expect("a confirm in the crawl skips the opening");
+        .expect("the skip press in the crawl skips the opening");
     s.enter_field_live(target, &FieldLiveOpts::default())
         .expect("enter town01");
     assert_eq!(s.host.world.active_scene_label, "town01");
