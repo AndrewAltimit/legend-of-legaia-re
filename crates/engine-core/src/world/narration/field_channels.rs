@@ -167,11 +167,17 @@ impl World {
     /// Whether the player draws ten buckets nearer: the floor sampler
     /// `FUN_80019278` raises `+0x10 & 0x800000` per step on an object-grid
     /// cell without bit `0x1000` (`0x80019314..0x80019328`).
+    ///
+    /// The cell is the sampler's, wherever the actor stands: each coordinate
+    /// is read as a halfword, shifted down six, rounded toward zero to the
+    /// tile and wrapped onto the 128-tile grid (`0x8001929C..0x800192FC`), so
+    /// a position off the map reads a cell on it.
     pub fn player_near_buckets(&self, x: i32, z: i32) -> bool {
-        if !(0..0x4000).contains(&x) || !(0..0x4000).contains(&z) {
-            return false;
-        }
-        let i = ((z >> 7) * 128 + (x >> 7)) as usize;
+        let tile = |v: i32| {
+            let t = i32::from(v as i16) >> 6;
+            (((t + i32::from(t < 0)) & 0xFE) >> 1) as usize
+        };
+        let i = tile(z) * 128 + tile(x);
         let cell = self.terrain.object_cells.get(i).copied().unwrap_or(0);
         cell & 0x1000 == 0
     }

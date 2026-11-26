@@ -3,7 +3,8 @@
 //! `World::sample_field_floor_height`: generated tier grids, object cells with
 //! and without the ramp bit, override records in both trigger blocks, and every
 //! position class - tile interiors, tile and sub-cell edges, the map's borders
-//! and negative coordinates.
+//! and negative coordinates. The actor's flag word is held too, against
+//! `World::floor_sampler_sort_flags`: the sampler rewrites its near-bucket bit.
 
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_core::world::World;
@@ -134,7 +135,14 @@ fn the_floor_is_where_retail_puts_it() {
                 }
                 _ => (rng.below(0x3F80) as i16, rng.below(0x3F80) as i16),
             };
-            cpu.mem.wr32(ENTITY + 0x10, 0);
+            // The actor's flag word, whose near-bucket bit `0x800000` the
+            // sampler rewrites from the cell (`0x800192F8..0x80019350`).
+            let seed = match rng.below(4) {
+                0 => rng.next() | 0x8000_0000,
+                1 => 0,
+                _ => rng.next() & 0x7FFF_FFFF,
+            };
+            cpu.mem.wr32(ENTITY + 0x10, seed);
             cpu.mem.wr16(ENTITY + 0x14, x as u16);
             cpu.mem.wr16(ENTITY + 0x18, z as u16);
             cpu.regs.r[V0] = 0;
@@ -147,6 +155,15 @@ fn the_floor_is_where_retail_puts_it() {
                 ramps += 1;
             } else {
                 blends += 1;
+            }
+            let (flags, port_flags) = (
+                cpu.mem.rd32(ENTITY + 0x10),
+                w.floor_sampler_sort_flags(seed, i32::from(x), i32::from(z)),
+            );
+            if flags != port_flags && failures.len() < 12 {
+                failures.push(format!(
+                    "map {map_round} ({x}, {z}) flags {seed:#x}: retail {flags:#x} port {port_flags:#x}"
+                ));
             }
             if retail != port && failures.len() < 12 {
                 failures.push(format!(
