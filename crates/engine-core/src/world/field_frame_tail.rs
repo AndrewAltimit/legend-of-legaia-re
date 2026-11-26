@@ -1050,6 +1050,30 @@ mod tests {
         assert_eq!((c.anim_id, c.cursor), (3, 0), "between frames: unstepped");
     }
 
+    /// A script's poke of a host-bound clip takes two steps at the drain (the
+    /// op's consumer call and the actor's own tick); a stream's unforced
+    /// request takes one.
+    #[test]
+    fn a_poked_npc_clip_takes_both_steps_on_its_bind_frame() {
+        let loco = legaia_engine_field::field_anim::synth_anm_bundle(&[(10, 4); 3]);
+        let mut w = World::new();
+        w.mode = SceneMode::Field;
+        w.clock.game_tick_live = true;
+        w.clock.frame_step = 2;
+        w.clock.game_tick_fired = true;
+        let party = legaia_engine_field::field_player_clip::PARTY_BANK_FLAG;
+        w.field_vm.channels.push(party_channel(3, party));
+        w.field_vm.channels.push(party_channel(4, party));
+        w.carry_npc_run_anim(3, 2);
+        w.seat_npc_run_anim(4, 2);
+        let _ = w.drain_field_anim_cues(None, Some(&loco), |_| Some(true));
+        let stream = w.npcs.clip_cursors[&3].cursor;
+        let poked = w.npcs.clip_cursors[&4].cursor;
+        assert!(stream > 0);
+        assert_eq!(poked, 2 * stream, "the poke's two steps");
+        assert!(w.npcs.poked_cues.is_empty(), "the drain spends the marks");
+    }
+
     /// A clip for another skeleton never replaces a bound one: the hosts cut
     /// the actor's mesh to the bound clip's bone count.
     #[test]
