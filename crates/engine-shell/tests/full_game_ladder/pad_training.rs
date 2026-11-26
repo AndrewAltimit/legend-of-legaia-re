@@ -206,8 +206,16 @@ pub(super) fn pad_grow_for_race(session: &mut NativeSession) -> Result<Option<St
         }
         other => other,
     };
+    // The race is met healed: the bag first, then the casters' spells (the
+    // MP goes back from the bag before the charge and the fight, [`pad_ready`]).
+    // The bag alone, held at its reserve by the outings, sent a grown party
+    // into Koru at seven tenths of its HP, and the race was lost three times
+    // running from that save.
     if matches!(&left, Ok(None)) && walking(session) {
         pad_field_heal(session, 900);
+        if party_hp_permille(session) < 900 {
+            pad_field_spell_heal(session, 900, false);
+        }
     }
     if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
         let w = &session.host.world;
@@ -232,8 +240,8 @@ pub(super) fn pad_grow_for_race(session: &mut NativeSession) -> Result<Option<St
     left.map(|s| s.filter(|s| *s != here))
 }
 
-/// Whether the party still holds half its MP. Charging pays for its fights out of
-/// what would heal it, and a party that spends it all meets the boss hurt.
+/// Whether the party still holds half its MP: under it the charge first
+/// takes the bag's MP restoratives ([`pad_charge_for_race`]).
 fn charge_affordable(session: &NativeSession) -> bool {
     let w = &session.host.world;
     let (mp, max) = w
@@ -247,12 +255,15 @@ fn charge_affordable(session: &NativeSession) -> bool {
     mp * 2 >= max
 }
 
-/// After a lost race against a timed finisher (Koru), walk the scene's
-/// encounters until the typists' gauges are full. The gauge carries between
-/// fights (the record's AP cell `+0x10E`,
+/// At the door of a race against a timed finisher (Koru, [`race_ahead`]),
+/// walk the scene's encounters until the typists' gauges are full. The gauge
+/// carries between fights (the record's AP cell `+0x10E`,
 /// [`arts-command-gauge.md`](../../../../docs/subsystems/arts-command-gauge.md#what-an-art-costs-in-ap)),
-/// so a player who watched the finisher land walks into the next attempt with a
-/// Miracle ready: `+0x20` a Spirit turn. Against any other boss the walk costs
+/// so a player who knows the finisher walks in with a Miracle ready: `+0x20`
+/// a Spirit turn. Once taken only after a lost race, it is taken before the
+/// first: from three `nivora_late` saves of the run's own on eight dealt
+/// streams each, the race took 21 extra attempts charged only on a reload
+/// and 6 charged from the first. Against any other boss the walk costs
 /// more than it buys: the stance earns the same in the boss's own rounds, and
 /// the first attempt from a `zora_castle` save took Zora to 4204 of 22422 on 22
 /// heals where each charged attempt after it met him with an empty bag and left
@@ -263,8 +274,7 @@ pub(super) fn pad_charge_for_race(session: &mut NativeSession) -> Result<Option<
     /// Frames of walking the charge may spend, apart from the stretch's own
     /// budget (a segment's worth, as for the heal hunt).
     const CHARGE_FRAMES: u64 = PAD_SEGMENT_FRAMES;
-    if !RACE_LOST.with(std::cell::Cell::get)
-        || !at_lost_door()
+    if !race_ahead(session)
         || session.host.world.party.party_count < 3
         || !walking(session)
         || !released(session)
@@ -274,6 +284,15 @@ pub(super) fn pad_charge_for_race(session: &mut NativeSession) -> Result<Option<
     }
     if typists_charged(session) {
         return Ok(None);
+    }
+    // The growing before it ([`pad_grow_for_race`]) pays for its fights out
+    // of the MP. The bag's MP restoratives come first, and the charge is
+    // taken whatever MP is left: gated on half the MP, a reload after the
+    // growing charged nothing, met Koru with its typists at ten to twenty AP
+    // and lost again, three times running from one save. The stance deals
+    // nothing and costs no MP; the fights are fled past half the HP.
+    if !charge_affordable(session) {
+        pad_field_restore(session, 600, true);
     }
     let here = scene_name(session);
     // The walk is taken on its feet: the stance halves what it costs.
@@ -304,7 +323,7 @@ pub(super) fn pad_charge_for_race(session: &mut NativeSession) -> Result<Option<
     PAD_BATTLE_LEFT.with(|l| l.set(battle_left.max(PAD_BATTLE_ALLOWANCE)));
     let mut left = Ok(None);
     for _ in 0..CHARGE_OUTINGS {
-        if typists_charged(session) || !charge_affordable(session) {
+        if typists_charged(session) {
             break;
         }
         // A fled fight comes back hurt, and an outing below its floor walks nowhere.
@@ -327,9 +346,15 @@ pub(super) fn pad_charge_for_race(session: &mut NativeSession) -> Result<Option<
     };
     PAD_DEADLINE.with(|d| d.set(session.frames + walk_left));
     PAD_BATTLE_LEFT.with(|l| l.set(battle_left));
-    // The last fight may have been fled: the boss is met healed.
+    // The last fight may have been fled: the boss is met healed, by the
+    // casters' spells where the bag runs short. Charged on an empty bag, a
+    // reload met Koru at half its HP with every typist at 100 AP and left it
+    // at 682.
     if matches!(&left, Ok(None)) && walking(session) {
         pad_field_heal(session, 900);
+        if party_hp_permille(session) < 900 {
+            pad_field_spell_heal(session, 900, false);
+        }
     }
     if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
         let w = &session.host.world;
