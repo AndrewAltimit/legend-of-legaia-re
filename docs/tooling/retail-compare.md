@@ -5092,6 +5092,26 @@ leader's back a few pixels round (`gaza2_card_first_menu` `.969` to `.995`,
 eight units short of the yaw counter `ctx[+0x6DA]` at any step; it keeps the
 eight (`nilboa_lava_face_pre_fissure` at step `3`: eight `.999`, twelve `.841`).
 
+**A component that landed on the RAM's pass.** The magic band's framings
+(`0x29..0x2E`, `FUN_801DC0A0` case `0xA` and its group shot) re-arm the table
+every pass, so a component already on its endpoint is armed increment `0`. One
+whose increment is still set on a zero gap therefore reached its endpoint on
+the RAM's own pass, and stood short of it on the displayed frame: its gap
+before that pass lay in `(inc - 1) * d + 1 ..= min(step * inc, inc * d)`, and
+the walk-back takes the middle of that range, then the re-arm's share as
+usual (`landed_first_pass`). Over the retail films' magic and strike bands no
+set increment on a zero gap had landed earlier than that pass, and the middle
+lands within a unit or two of the recording. On
+`battle_balden_devil_pump_multi_cutter_mid_cast` the pitch reads `64` on
+increment `1`; its recording stood at `59` two passes back, which is where the
+walk lands, and the frame reads `.950` to `.985` (`battle_noaru_barra_v2_multi_cutter_mid_cast`
+`.972` to `1.000`; no battle state falls). It is held to the magic band and to
+a table some other component still walks: a turning shot lands its yaw inside
+every pass with the rest idle, and the module states keep a once-built table's
+increments after landing. The strike band read mixed (`battle_cave01_theeder_strike`
+up, `battle_noa_miracle_art_combo` and `battle_melee_hit_spark` down), so it
+stays out.
+
 **Each pass on its own step.** The two passes the walk-back undoes need not
 share a step. The frame driver stores a duration of `0x2D0` hsyncs or more in
 the history as the `0x2BC` clamp but takes the step off the raw duration

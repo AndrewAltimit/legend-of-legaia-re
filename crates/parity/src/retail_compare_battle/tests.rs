@@ -320,6 +320,37 @@ fn the_displayed_camera_stands_two_passes_short() {
     );
 }
 
+/// `battle_balden_devil_pump_multi_cutter_mid_cast`'s magic-band table: the
+/// pitch reads `64` on its endpoint with increment `1` still set, so it landed
+/// on the RAM's pass, while TR z still closes on `6144` by `14`. Two passes
+/// back the pitch stood at `59`, as the cast's retail recording reads; a
+/// table whose components are all home (a turning shot) or another band
+/// walks no landed component.
+#[test]
+fn a_component_landed_on_the_rams_pass_walks_back() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let rec = |k: u32| ctx + camera_align::TWEEN_TABLE + k * 4;
+    put8(&mut ram, ctx + 7, 0x2B);
+    put16(&mut ram, 0x8007_B790, 64);
+    put16(&mut ram, rec(0), 1);
+    put16(&mut ram, rec(0) + 2, 64);
+    put32(&mut ram, 0x8008_40C0, 6105);
+    put16(&mut ram, rec(5), 14);
+    put16(&mut ram, rec(5) + 2, 6144);
+    let walk = |ram: &[u8]| {
+        camera_align::displayed_cam_live_steps(ram, ctx, &[3, 3], false, [None; 9], [0; 9], false)
+    };
+    assert_eq!(walk(&ram).pitch, 59.0);
+    // The band's framings re-arm every pass; a module shot's need not.
+    put8(&mut ram, ctx + 7, 0x70);
+    assert_eq!(walk(&ram).pitch, 64.0);
+    // Nothing else walks: the table is idle, not freshly armed.
+    put8(&mut ram, ctx + 7, 0x2B);
+    put32(&mut ram, 0x8008_40C0, 6144);
+    assert_eq!(walk(&ram).pitch, 64.0);
+}
+
 /// `battle_garmel_zenoir_fire_claw_mid_cast`: the animation chain's
 /// terminator pass armed no framing, so the RAM's yaw increment `12` with
 /// `70` to go at step `3` is the pass before's re-arm (`ceil(142 / 12)`), not
