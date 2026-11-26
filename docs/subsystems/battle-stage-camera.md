@@ -1972,16 +1972,17 @@ node's build (`FUN_80028158`, `6386` cycles and `59` a segment), which is the si
 `.38` a child the engine's Earthquake frames fall short by. Grade `capture` for the costs,
 inference for the shortfall's owner.
 
-**The three opt-in terms on this clock.** `WorldToggles::battle_me_decode_cost` prices an
-art commit's `"ME"` keyframe decode (`FUN_8002B28C`): real CPU work, `95` to `122` hblanks
+**Three terms on this clock that the line does not hold.** `WorldToggles::battle_me_decode_cost`
+(on by default) prices an art commit's `"ME"` keyframe decode (`FUN_8002B28C`): real CPU
+work, `95` to `122` hblanks
 on the commit passes of Noa's Frost Breath, Gala's Thunder Punch and Vahn's Slash Kick, at
 `2.27` cycles an instruction with its data accesses where `frame_clock::me_decode_work`
-charges `2` over `2152` cycles an hblank, `13%` low. `battle_effect_walk_cost` prices the
+charges `2` over `2152` cycles an hblank, `13%` low. `battle_effect_walk_cost` (opt-in) prices the
 walker's branches: real, the in-frame visits read the random-walk fit within `5%` (a step
 `150` against `157` and `166`, an overrun advance `150` against `149`, a draw `665` against
 `652`, a sweep `4446` against `4243`), and the flat price it replaces runs about `.9` a child
 over these for a child that lives. `frame_clock::CYCLES_PER_HBLANK` (`2172`) is the
-video clock's hblank, `1.2%` longer than PCSX-Redux's `2146.3`. `battle_arts_shout_cd` prices
+video clock's hblank, `1.2%` longer than PCSX-Redux's `2146.3`. `battle_arts_shout_cd` (opt-in) prices
 a CD read's polls, whose length is the emulator's CD timing and no instruction count: the
 interpreter takes no CD interrupt and cannot read it, so it stays the `--cd-trace`
 recordings' measurement. Grade `capture`.
@@ -2836,15 +2837,37 @@ dispatched from the banner block before the decode, which is why Frost Breath's 
 passes read `60..120` hblanks over their census without the term. Port:
 `frame_clock::me_decode_work`, added by `World::commit_staged_battle_anim_at_boundary` and
 taken by the pass's push, behind `WorldToggles::battle_me_decode_cost`
-(`LEGAIA_BATTLE_ME_DECODE=1`), off by default. On, Tri-Somersault reads `.767` to `.816` and
-its cues `.964` to `1.000`, Slash Kick `.911` to `.979`, but the arts mean falls `.9454` to
-`.9423` and the camera `1.46` to `1.94` px. The Gala chain films fall (`.99` to `.94`) on a
-knife edge: their art pass prices `722` where retail's reads `717`, the census `4` over
-retail's base, which tips the ring to step `4`; from there the port's voiced frames run a
-vsync past retail's (`9` against `8`) and the line covers one pass fewer. Closing a pass's
-polls where the read ends, and opening a shout's polls after its commit's decode, do not
-recover it (Sonic Javelin `.942` to `.828`). Grade `disassembly` for the call and the
-instruction count, `capture` for the films.
+(`LEGAIA_BATTLE_ME_DECODE`), on by default.
+
+The term is what keeps a Super Art's camera on retail's. Tri-Somersault's first commit
+pass (frame `1510` of `battle_jou_party_vahn_tri_somersault_super_open`'s recording) costs
+`818` where its neighbours cost `677` to `701`; the port prices it `808` with the term and
+`701` without, which runs the pass at step `3` where retail's runs `4`. A step-`3` pass
+moves Vahn's root motion three quarters as far, so he stands `4` units short of retail's
+pair for the rest of the art. His heading tracks the bearing from his live pair to the
+target's body pair, the per-art attack camera's yaw is that heading's negation, and the
+short pair drifted the camera `11` to `34` units behind retail's by the second slow
+motion and `120` behind through `0x1F` / `0x20`. With the term the camera reads retail's
+through the strike states' ends. Over the arts films the mean goes `.9478` to `.9517`:
+Tri-Somersault `.752` to `.817`, Super Ironhead `.900` to `.964`, Vahn's Chain `.900` to
+`.956` (late) and `.926` to `.971` (open). Three films fall on a knife edge of the census
+base. Gala's Chain (`.99` to `.93`, both films): its art pass prices `722` where retail's
+reads `717`, the census `4` over retail's base, which tips the pass to step `4`. Dragon
+Fangs (`.896` to `.868`): Noa's two-ghost frames price `724` to `734` where retail's read
+`685` to `707`, step `4` against retail's `3` with or without the term, and the term moves
+which frames those are. Tornado Flame `.924` to `.917`.
+
+Tri-Somersault's remaining fall is the same edge on a ghost frame: the first frame outside
+the arts voice's polls that draws one ghost costs `692` on retail and `721` on the census,
+the line's base `27` over retail's there, and the port runs the next pass at step `4`
+where retail's runs `3`. Over the arts films' unpolled frames the census reads `+12`
+hblanks over retail's at the median with no ghost and `+22` with two. The ghosts
+themselves are priced right: the `--ghost-trace` recordings' one-ghost steps (Tri-Somersault,
+Vahn's Chain, Dragon Fangs, the frames where only the ghost count changes) cost `91` to
+`129` hblanks, `105` on the mean, against the census's `103` to `110` for a party member's
+ghost; pricing a party ghost at a flat `90` lifted Tri-Somersault and Dragon Fangs and cost
+Vahn's Chain as much. Grade `disassembly` for the call and the instruction count,
+`capture` for the films.
 
 **A party member's ghosts.** The Super Arts' slow motion and the chain finishers draw two
 ghosts of the acting member. PCSX-Redux recordings of the three Super Arts on a full party

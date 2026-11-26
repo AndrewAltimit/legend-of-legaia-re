@@ -175,13 +175,12 @@ pub struct WorldToggles {
     /// raises it from `LEGAIA_FIELD_GPU_COST=1`; only the native window
     /// prices its frames.
     pub field_gpu_cost_step: bool,
-    /// Opt-in, off by default: a party art commit's `"ME"` keyframe decode
-    /// priced into its battle frame (`frame_clock::me_decode_work`;
-    /// `FUN_8002B28C` from `FUN_8004AD80`). Retail-correct, but over the
-    /// arts films it trades the arts mean and camera against the worst rows
-    /// until the census base and the voiced frames' span agree with retail's
-    /// (`battle-stage-camera.md`, an art's keyframe decode). The native
-    /// session sets it either way from `LEGAIA_BATTLE_ME_DECODE`.
+    /// On by default: a party art commit's `"ME"` keyframe decode priced
+    /// into its battle frame (`frame_clock::me_decode_work`; `FUN_8002B28C`
+    /// from `FUN_8004AD80`), the retail work of the commit pass. It carries
+    /// the Super Arts' voiced commit passes over the step-`4` edge as
+    /// retail's are (`battle-stage-camera.md`, an art's keyframe decode).
+    /// The native session sets it either way from `LEGAIA_BATTLE_ME_DECODE`.
     pub battle_me_decode_cost: bool,
     /// Opt-in, off by default: an arts shout's CD read priced from its own
     /// `--cd-trace` recordings, the polls running from the read the seek opens
@@ -751,7 +750,7 @@ impl WorldToggles {
             battle_gpu_cost_step: false,
             gpu_cost_timing: legaia_engine_system::gpu_draw_cost::GpuTiming::DuckStation,
             field_gpu_cost_step: false,
-            battle_me_decode_cost: false,
+            battle_me_decode_cost: true,
             battle_arts_shout_cd: false,
             battle_effect_walk_cost: false,
             derived_frame_cost: true,
