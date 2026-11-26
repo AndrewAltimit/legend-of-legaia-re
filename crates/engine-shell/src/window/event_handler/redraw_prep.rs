@@ -256,6 +256,20 @@ impl PlayWindowApp {
                             c.age = u16::from(g.elapsed);
                         }
                     } else {
+                        // A row-aimed cast's value window: each row's name
+                        // plate (records `0x60..`, seat B on row `192`) opens
+                        // with its value record (`0x5C..`) on the same frame
+                        // (`0x801E8128..`), so the plates' elapsed is the
+                        // rows' glide too, which the host owns.
+                        // The rows rest at `x = 16 / 92 / 168 / 244`
+                        // (the value readout's `MULTI_ROW_X`).
+                        if g.target[1] == 192
+                            && [16, 92, 168, 244].contains(&g.target[0])
+                            && let Some(m) =
+                                self.battle_hud.multi_readout.as_mut().filter(|m| m.open)
+                        {
+                            m.age = u16::from(g.elapsed);
+                        }
                         self.session
                             .host
                             .world

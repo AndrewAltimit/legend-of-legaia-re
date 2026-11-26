@@ -4209,6 +4209,14 @@ the seat's facing (`RetailBattle::inflight_ground`), so the replayed knockback
 starts where retail's did. Both apply only in `0x35` / `0x36`, where the
 module phase byte is the module's.
 
+**The value rows ride their plates' glide.** A row-aimed cast's value window opens each row's
+name plate (records `0x60..`) and its value record (`0x5C..`) on one frame (`0x801E8128..`). The
+seed lists the plates' glides still in flight; the host now takes their elapsed for the rows'
+glide too (`MultiReadout::age`), where the rows had kept the replay's own clock, two frames
+younger on `theeder_summon_value_rows_rising` (each value `20` px further from its rest, the first
+row left of retail's and the others right). A harness seat: the rising frame reads `.916` for
+`.842`. Whether the replay opens the window late against the gate is not measured.
+
 The gate places the frame inside the arm by the module's own clocks: arm 13
 (the retract) by the trail count `0x801F91FC` (`PhaseGate::trail_count`, the
 `r<n>` suffix) and arm 14 by the settle word `0x801F9204`
