@@ -217,7 +217,7 @@ impl World {
                     (Some(_), CdTiming::PcsxRedux, Some(wait)) => {
                         use legaia_engine_battle_loop::frame_clock as fc;
                         if !self.toggles.battle_arts_shout_cd {
-                            fc::xa_partly_polled_cost(wait, work, xa_polled_work_cost)
+                            fc::xa_partly_polled_cost(wait, work, fc::arts_shout_census_cost)
                         } else {
                             let c = fc::xa_partly_polled_cost(
                                 wait,

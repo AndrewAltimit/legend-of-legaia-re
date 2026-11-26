@@ -2596,6 +2596,17 @@ falls (sustained error `1.46` to `1.88` px, Tri-Somersault `7.2` to `12.0`), who
 line's frames still run a vsync under retail's `9`. Grade `capture` for the timings,
 `disassembly` for the sequencer.
 
+**An arts shout over the census.** By default (the toggle off) a shout's polled frames are
+priced over the census's own work of the pass, and that work reads under retail's: what is
+left of a polled frame between its CD interrupt spans carries the exception exits too, so
+`2.78` over it, the ratio the capture-band lines read on retail's own work, ran the arts'
+polled frames a vsync short. Each polled frame of four `--cd-trace` recordings (Flying Knee,
+Tri-Somersault, Gala's Chain, Sonic Javelin) over the engine's census work on the paired tick
+reads `3.06` to `3.38` by film, and `3.2` puts the frame's span on retail's vsync count for
+`35` of the `73` frames where `2.78` puts `21`. Port: `ARTS_SHOUT_CENSUS_RATIO_MILLI`
+(`arts_shout_census_cost`), on PCSX-Redux's timing only. The fit holds arts shouts alone, so
+every other line keeps `2.78`. Grade `capture`.
+
 **Port.** `WorldToggles::battle_cd_timing` (`CdTiming`) picks the machine. `PcsxRedux`, the
 engine's default and every harness's, keeps the recordings' tables, the clamp `1063` and the
 overrun. `Console` is what players run: both play hosts seat `PLAY_BATTLE_CD_TIMING`
