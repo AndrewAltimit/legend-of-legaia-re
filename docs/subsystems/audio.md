@@ -133,8 +133,9 @@ clamped `0x3F80` (`scale` the per-row pair at `0x80091658 + row * 0x10`,
 the voices (`FUN_800657D0`), so the register a capture reads is the law, not
 the key-on chain, and the write goes out in the score's flush, ahead of its key-ons
 ([an emitter's level rides the score's flush](#an-emitters-level-rides-the-scores-flush)); leaving the box, or the side-band request going unsettled,
-releases them (`FUN_800250D4`). The arm keys only in the field mode and
-behind the settled side-band pair. Port: `engine-vm::sfx_emitter`, ticked from
+releases them (`FUN_800250D4`). The arm keys only in game mode `3` and
+behind the settled side-band pair. The overworld walks in mode `3` as well (only its map display is
+`0x0D`), so `map01`'s Genesis Tree revival keys its emitter, cue `0x22B` on voices `16` / `17`. Port: `engine-vm::sfx_emitter`, ticked from
 `World::tick_ambient_fx` with the focus the camera stored
 (`frame_step::camera_before_world_tick`), its voices driven by
 `AudioDirector::drive_sfx_emitters` on both hosts.
@@ -3829,10 +3830,12 @@ activation arm (`36 00 80 30 00`), and the engine's seed sounds the same cue
 `vozz_ozma_hatching_hover` sounds `map01`'s `2000` under the word `2035`. Its arrival names
 `map01`'s `P2[31]` and the flag `0x2C3` that `vozz`'s `P2[17]` cleared before the capture, so
 the engine keeps `2000` too ([the overworld's story cutscenes](#the-overworlds-story-cutscenes-are-door-records-too)).
-`map01_tree_revival_cutscene` reads `track` `0`: it sounds `2035`, kept by `vozz` `P1[7]`, and
-the card-load seed has no arrival through a partition-1 beat. Its `ambient` `0` is the same
-history: the cue voices are the revival's own, scene cue `0x22A` pushed by `P2[31]`
-(`36 00 80 2A 02` at `+0x152` and `+0x1AF`) ahead of the PC the seed resumes the record on.
+`map01_tree_revival_cutscene` sounds `2035`, kept by `vozz` `P1[7]`, under `map01`'s word
+`2000`. A card-load seed has no arrival through a partition-1 beat, so the scenario names that
+history (`kept_bgm = 2035`). The seed starts the kept track after the entry's first slice and
+latches the scene's word onto it once it sounds. Its `ambient` row is the revival's own cues:
+scene cue `0x22A` pushed by `P2[31]` (`36 00 80 2A 02` at `+0x152` and `+0x1AF`) ahead of the PC
+the seed resumes the record on, beside the emitter on `0x22B`.
 Neither is a card load's music: a save cannot be made inside either record, and across the
 library's walkable states (the retail card boots among them) the seeded engine sounds
 retail's track on every other row.
@@ -4208,6 +4211,14 @@ level tracks a frame-stepped retail one within `8` units across the ramp.
 | `zora_glare_petrify_pre` | `0.947` | `-0.01` dB | | Glare from inside the capture band's seek ([seated](#the-capture-bands-seek)); the voice `XA23` channel `7` |
 | `cort_evil_seru_magic_mid_cast` | `0.996` | `+0.04` dB | | Evil Seru Magic from inside the same seek; the voice `XA22` channel `6` |
 | `cort_mystic_circle_mid_cast` | `0.962` | `-0.03` dB | | not split window by window |
+
+The channel also scores the rest of the Seru the library holds mid-cast, and Evil Medallion's Rage.
+Most read `0.986..0.999` on `cast` and `0.993..1.000` on `cast_core`. Five read `0.14..0.33`:
+`iota`, `puera`, `slippery`, `mule` and `jedo`. Their 10 ms level envelopes still agree with
+retail's at `0.76..0.96`, but only at a shift of `0.62..1.35` s, outside the seek window. So the
+engine plays the right sounds at the wrong time: the cast's offset or its seek wait. Rage reads
+`0.42`, best fitting `4.35` s late on a short engine recording. `zora_glare_petrify_post` is not
+scored, because its gate falls at the end of the cast and leaves the engine a third of a second.
 
 <a id="the-casts-step-is-pcsx-reduxs"></a>
 **The cast's step is PCSX-Redux's.** The battle frame step carries each pass's cost into the next

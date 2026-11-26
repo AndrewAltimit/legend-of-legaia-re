@@ -152,6 +152,28 @@ CAST_STATES = [
     "zora_glare_petrify_pre",
     "cort_evil_seru_magic_mid_cast",
     "cort_mystic_circle_mid_cast",
+    "evil_medallion_rage_battle",
+    # The rest of the Seru the library holds mid-cast.
+    "vera_summon_mid_cast",
+    "gizam_summon_mid_cast",
+    "viguro_summon_mid_cast",
+    "freed_summon_mid_cast",
+    "nova_summon_mid_cast",
+    "gola_gola_summon_mid_cast",
+    "mushura_summon_mid_cast",
+    "barra_summon_mid_cast",
+    "aluru_summon_mid_cast",
+    "slippery_summon_mid_cast",
+    "iota_summon_mid_cast",
+    "puera_summon_mid_cast",
+    "juggernaut_summon_mid_cast",
+    "meta_summon_mid_cast",
+    "terra_summon_mid_cast",
+    "ozma_summon_mid_cast",
+    "palma_summon_mid_cast",
+    "mule_summon_mid_cast",
+    "horn_summon_mid_cast",
+    "jedo_summon_mid_cast",
 ]
 # Cast states whose recording carries its own frame steps (`<label>.steps`) for
 # the `cast_steps` channel, and how many mednafen frames the stepping logs: a
