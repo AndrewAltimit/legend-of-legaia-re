@@ -231,6 +231,13 @@ pub struct FieldLocomotion {
     /// step, so contact must be tested ahead of the player, not at the
     /// player's feet.
     pub(crate) last_move_dir_bits: u16,
+    /// Where this tick's last collision probe stood, per probe direction
+    /// (`FIELD_ACTOR_PROBES` index): the position a 2-unit sub-step tested
+    /// from before it moved. Retail posts a walk touch from those probes
+    /// (`FUN_801CFE4C`'s `FUN_801CFC40` calls inside `FUN_801D01B0`), not
+    /// from where the step ends, so the walk-touch dispatch takes its
+    /// leading points from here ([`crate::world::World::check_field_walk_touch`]).
+    pub(crate) walk_probe_from: [Option<(i16, i16)>; 4],
     /// The last **committed** locomotion sub-step direction, one entry per
     /// axis at retail's fixed magnitude 8 - the engine's stand-in for the
     /// retail global pair `0x8007BDE0` (X) / `0x8007BDE4` (Z).
@@ -424,6 +431,7 @@ impl FieldLocomotion {
             motion_prev: std::collections::HashMap::new(),
             actor_moving: std::collections::HashSet::new(),
             last_move_dir_bits: 0,
+            walk_probe_from: [None; 4],
             step_delta: (0, 0),
             vertical_settle: false,
             ladder_seen: [0; 16],

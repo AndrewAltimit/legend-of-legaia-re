@@ -1366,6 +1366,7 @@ impl World {
             if dir_bits & 0x1000 != 0 {
                 let nz = cz.saturating_add(FIELD_STEP_UNIT as i16);
                 let actors = self.probe_actors_for_step(cx, cz, 2, solid_npcs);
+                self.locomotion.walk_probe_from[2] = Some((cx, cz));
                 let blocked = if edge {
                     self.field_dir_blocked(cx, cz, 2)
                 } else {
@@ -1379,6 +1380,7 @@ impl World {
             } else if dir_bits & 0x4000 != 0 {
                 let nz = cz.saturating_sub(FIELD_STEP_UNIT as i16);
                 let actors = self.probe_actors_for_step(cx, cz, 0, solid_npcs);
+                self.locomotion.walk_probe_from[0] = Some((cx, cz));
                 let blocked = if edge {
                     self.field_dir_blocked(cx, cz, 0)
                 } else {
@@ -1396,6 +1398,7 @@ impl World {
             if dir_bits & 0x2000 != 0 {
                 let nx = cx.saturating_add(FIELD_STEP_UNIT as i16);
                 let actors = self.probe_actors_for_step(cx, cz2, 3, solid_npcs);
+                self.locomotion.walk_probe_from[3] = Some((cx, cz2));
                 let blocked = if edge {
                     self.field_dir_blocked(cx, cz2, 3)
                 } else {
@@ -1409,6 +1412,7 @@ impl World {
             } else if dir_bits & 0x8000 != 0 {
                 let nx = cx.saturating_sub(FIELD_STEP_UNIT as i16);
                 let actors = self.probe_actors_for_step(cx, cz2, 1, solid_npcs);
+                self.locomotion.walk_probe_from[1] = Some((cx, cz2));
                 let blocked = if edge {
                     self.field_dir_blocked(cx, cz2, 1)
                 } else {
