@@ -214,7 +214,8 @@ pub struct AudioState {
     pub(crate) battle_bgm: Option<u16>,
     /// `_DAT_8007B880` - the **battle sound set** the field script selects
     /// for the next fight: op-`0x35` sub-op `7` stores its operand, or `-1`
-    /// for an operand byte of `0xFF` (`0x801E01DC..0x801E0208`); the scene
+    /// for an operand whose high byte is `0xFF` (`0x801E01DC..0x801E0208`;
+    /// any other operand lands as its signed halfword); the scene
     /// map-init `FUN_8003AEB0` zeroes it on every scene entry
     /// (`0x8003B4F8`). The battle intro reads it: `-1` loads no battle
     /// track and the field score plays through the fight (a scripted boss

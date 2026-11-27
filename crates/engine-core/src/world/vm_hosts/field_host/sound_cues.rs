@@ -110,12 +110,15 @@ impl FieldHostImpl<'_> {
         } else if sub_op == 7 {
             // Sub-7 stores the next fight's battle sound set `_DAT_8007B880`
             // and makes no sequencer call: `lbu v1,0x1(s6)` tests the
-            // operand's low byte against `0xFF` (store `-1`), else the u16
-            // operand is stored (`0x801E01DC..0x801E0208`).
-            self.world.audio.battle_sound_set = if text_id & 0xFF == 0xFF {
+            // operand's **high** byte (`s6` is the little-endian halfword)
+            // against `0xFF` (store `-1`), else the halfword `FUN_8003CE9C`
+            // reads, sign-extended, is stored (`0x801E01DC..0x801E0208`).
+            // The shipped operands (`0..=8`, `0xFFFF`) read the same either
+            // way; `0x00FF` is set 255, not `-1`, and `0x8000..` negative.
+            self.world.audio.battle_sound_set = if text_id >> 8 == 0xFF {
                 -1
             } else {
-                i32::from(text_id)
+                i32::from(text_id as i16)
             };
         } else if sub_op == 5 {
             // Sub-5 is the timed release: retail's handler is

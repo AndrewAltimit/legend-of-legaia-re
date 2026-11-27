@@ -2066,3 +2066,81 @@ fn the_arc_jump_hands_the_arc_the_landing_retail_hands_it() {
         "{ran} {in_place} {half} {wide}"
     );
 }
+
+/// `35 .. .. 07`, the battle sound set, stepped by the real `World` against
+/// the store retail makes to `_DAT_8007B880` (`0x801E01DC..0x801E0208`): the
+/// operand's **high** byte `0xFF` (`lbu v1,0x1(s6)` over the little-endian
+/// halfword) stores `-1`, any other operand the signed halfword
+/// `FUN_8003CE9C` reads. Every shipped carrier runs, then each with its
+/// operand dealt from the edges (`0x00FF`, `0xFF00`, `0x80xx`) and at random.
+#[test]
+fn the_battle_sound_set_is_the_set_retail_stores() {
+    differential!(prot(897, VM));
+    let Some(mut cpu) = retail_vm() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    const SOUND_SET: u32 = 0x8007_B880;
+    let gp = cpu.regs.r[GP];
+    let clean = cpu.mem.clone();
+    let mut rng = Rng(0x5345_5437);
+    let (mut shipped, mut ran, mut minus_one) = (BTreeMap::new(), 0u32, 0u32);
+    let mut differ: BTreeMap<String, (u32, String)> = BTreeMap::new();
+    for (script, pc, _) in corpus() {
+        let operand = pc + 1 + usize::from(script[pc] & 0x80 != 0);
+        if script[pc] & 0x7F != 0x35 || script.get(operand + 2) != Some(&7) {
+            continue;
+        }
+        *shipped
+            .entry(u16::from_le_bytes([script[operand], script[operand + 1]]))
+            .or_insert(0u32) += 1;
+        for variant in 0..24 {
+            let mut script = script.clone();
+            if variant > 0 {
+                let v: u16 = match variant % 6 {
+                    1 => 0x00FF,
+                    2 => 0xFF00 | rng.below(0x100) as u16,
+                    3 => 0x8000 | rng.below(0x7F00) as u16,
+                    4 => rng.below(0x40) as u16,
+                    _ => rng.next() as u16,
+                };
+                script[operand..operand + 2].copy_from_slice(&v.to_le_bytes());
+            }
+            cpu.mem = clean.clone();
+            cpu.regs.r[GP] = gp;
+            cpu.mem.load(SCRIPT, &script);
+            cpu.mem.wr32(CTX + 0x94, SCRIPT);
+            cpu.mem.wr32(SOUND_SET, 0x5A5A_5A5A);
+            if cpu.call(VM, &[SCRIPT, pc as u32, CTX]) != Stop::Returned {
+                continue;
+            }
+            let mut w = legaia_engine_core::world::World::new();
+            w.audio.battle_sound_set = 0x5A5A_5A5A;
+            w.field_bytecode = script.clone();
+            w.field_pc = pc;
+            let _ = w.step_field();
+            ran += 1;
+            let (retail, port) = (cpu.mem.rd32(SOUND_SET) as i32, w.audio.battle_sound_set);
+            minus_one += u32::from(retail == -1);
+            if retail != port {
+                let op = u16::from_le_bytes([script[operand], script[operand + 1]]);
+                let e = differ.entry(format!("{op:#06x}")).or_default();
+                e.0 += 1;
+                e.1 = format!("retail {retail} port {port}");
+            }
+        }
+    }
+    eprintln!("shipped operands: {shipped:x?}");
+    let report: Vec<String> = differ
+        .iter()
+        .take(12)
+        .map(|(k, (n, ex))| format!("{k}: {n} e.g. {ex}"))
+        .collect();
+    assert!(
+        report.is_empty(),
+        "{} differ:\n{}",
+        differ.len(),
+        report.join("\n")
+    );
+    assert!(ran > 100 && minus_one > 10, "{ran} {minus_one}");
+}

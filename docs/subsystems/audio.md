@@ -959,8 +959,10 @@ configuration.
 #### The battle sound set picks the fight's track
 
 Which track a fight plays is the field script's choice, not the formation's.
-Op `0x35` sub-op `7` stores `_DAT_8007B880` - its operand, or `-1` for an
-operand byte of `0xFF` (`0x801E01DC..0x801E0208`) - and the scene map-init
+Op `0x35` sub-op `7` stores `_DAT_8007B880` - its operand as a signed
+halfword, or `-1` when the operand's high byte is `0xFF` (`lbu v1,0x1(s6)`
+over the little-endian halfword, `0x801E01DC..0x801E0208`; the shipped
+operands are `0..=8` and `0xFFFF`) - and the scene map-init
 `FUN_8003AEB0` zeroes it on every entry (`0x8003B4F8`). The battle intro
 `FUN_801CF5BC` reads it: phase 2 loads battle bundle `0x36F + N` for `N >= 0`
 (`0x370` for `N = 0` when `DAT_8007B64B` is set) and nothing for `-1`, and the
