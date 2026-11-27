@@ -224,7 +224,9 @@ pub fn run_engine_listening_through_door(
 
 /// Ticks a door replay may take to land in the captured scene: a walk-on
 /// door's fade and load, or a cutscene record run to its scene change.
-const DOOR_REPLAY_DEADLINE: u64 = 3_000;
+/// `concend`'s `P2[0]` into `town0d` waits `3293` frames on its own
+/// `WaitFrames` ops before its forty-odd boxes are paged.
+const DOOR_REPLAY_DEADLINE: u64 = 8_000;
 
 /// Land the card load in the door's scene, take the door into
 /// `retail.scene` and tick until the session holds it.

@@ -8881,6 +8881,7 @@ expected_game_mode = 0x03
 expected_active_scene = "town0d"
 ram_poked = ["system flag 0x4C8 set, 0x3F2 and 0x6C2 cleared (concend_field_door_hop's portal arm), before this state"]
 topics = ["field", "story beat", "town0d", "Rim Elm", "cutscene", "dialog", "fade"]
+arrival = { from = "concend", door = 0 }
 
 [[scenarios]]
 label = "town0d_mei_closeup"

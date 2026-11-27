@@ -3824,6 +3824,14 @@ both `credits_edbylon_*_pcsx`). The vignettes after `edbylon` are several parked
 `World::dialogue_owns_input` counts a modal cutscene record's box as it
 counts the other channels'.
 
+`town0d_arrival_narration` is the same shape on a cutscene. `concend`'s `P2[0]` raises sub-op 6
+(`35 00 00 06`) ahead of its scene change into `town0d`, and the narration there selects `2016`
+with sub-op 9 and holds the commit, so retail still plays `concend`'s `2041` under the word `2016`
+(flags `0x9`: bit 0 pending, bit 3 settled). Seeded through the cutscene
+(`arrival = { from = "concend", door = 0 }`), the engine's own door logic keeps `2041` too; a card
+load into `town0d` starts `2016` at once. The record waits `3293` frames on its own `WaitFrames`
+ops, so the replay's deadline is long enough for it.
+
 A record's side-band request is history of the same kind. `conc3`'s entry
 requests `2116` (`36 01 80 44 08`), the inn's `P2[9]` requests `2070` at `+0xCD`, and the
 ceremony `P2[10]` keys its runtime rows (`0x201` .. `0x214`, category `3`) out of
