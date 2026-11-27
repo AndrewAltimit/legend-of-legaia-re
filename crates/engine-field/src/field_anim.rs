@@ -577,6 +577,24 @@ impl FieldPlayerAnim {
         Some(pose)
     }
 
+    /// Stand the player on scene record `record` at `cursor`, as a save
+    /// state's clip words hold it, when that record's clip is the one bound
+    /// ([`Self::resolve_scene_clip`]), and return that pose. `None`
+    /// otherwise. The retail comparison's image child only.
+    pub fn seat_scene_clip(&mut self, record: u16, cursor: u32, clamp: bool) -> Option<PoseFrame> {
+        let (r, clip) = self.scene_clip.as_mut()?;
+        if *r != record {
+            return None;
+        }
+        clip.set_cursor(cursor, clamp);
+        let pose = clip.current_pose();
+        self.scene_record = Some(record);
+        self.playing_scene = Some(record);
+        self.playing_slot = None;
+        self.last_pose = Some(pose.clone());
+        Some(pose)
+    }
+
     /// The settle tail's pick for this frame: a party-bank slot, or `None`
     /// when the pick did not land in the leader's bank (the scene-sentinel
     /// clip, a zero clip), which falls back to the motion-derived pair.

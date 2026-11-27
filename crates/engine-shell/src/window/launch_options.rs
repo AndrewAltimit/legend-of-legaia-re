@@ -484,7 +484,8 @@ pub struct ScreenshotConfig {
     pub seat_object_clips: Vec<legaia_engine_capture::field_seeds::ObjectClipSeed>,
     /// `LEGAIA_SEAT_PLAYER_CLIP=<record>:<clip>:<cursor>:<flags>:<rate>`: the
     /// player's clip words (`legaia_parity::retail_compare::retail_player_clip`),
-    /// stood on the capture frame (`World::seed_player_clip`).
+    /// stood on the capture frame (`World::seed_player_clip`); `<record>` is
+    /// `0` for a party-bank clip, `1` for a scene record.
     pub seat_player_clip: Option<legaia_engine_capture::field_seeds::ObjectClipSeed>,
     /// `LEGAIA_SEAT_MORPHS=<fields>`: a retail state's live VDF morph
     /// envelopes (`legaia_parity::retail_compare::retail_morphs`), written

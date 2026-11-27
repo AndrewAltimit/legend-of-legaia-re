@@ -372,10 +372,13 @@ impl PlayWindowApp {
                     );
                 }
                 if let Some(c) = sc.seat_player_clip {
-                    self.session
-                        .host
-                        .world
-                        .seed_player_clip(c.clip, c.cursor, c.flags, c.rate);
+                    self.session.host.world.seed_player_clip(
+                        c.clip,
+                        c.cursor,
+                        c.flags,
+                        c.rate,
+                        c.record == 1,
+                    );
                 }
                 for &(record, byte) in &sc.seat_object_flags {
                     self.session.host.world.seed_object_draw_flags(record, byte);

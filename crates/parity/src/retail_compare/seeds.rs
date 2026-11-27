@@ -730,16 +730,25 @@ fn object_clips_back(ram: &[u8], lag_frames: u16) -> Vec<ObjectClipSeed> {
         .collect()
 }
 
-/// The player's party-bank clip words as the displayed frame stood them. The
-/// player's node ticks through its own handler `FUN_801D2298`, so
+/// The player's clip words as the displayed frame stood them. The player's
+/// node ticks through its own handler `FUN_801D2298`, so
 /// [`retail_object_clips`] does not list it, and a seat stands it idle; a
 /// capture the pad was running holds the run clip `3` mid-stride
 /// (`+0x10 & PARTY_BANK_FLAG` selects the bank, `lw v0,0x10(s0)` at
-/// `0x80020534`). `None` for a clip outside the party bank.
+/// `0x80020534`). `record` is `0` for a party-bank clip and `1` for one of
+/// the scene's own records (the bit down: `dream`'s Noa on scene clip `6`).
 pub fn retail_player_clip(ram: &[u8]) -> Option<ObjectClipSeed> {
     let p = game_anchors::player_ptr(ram)?;
-    if game_anchors::u32_at(ram, p + 0x10) & legaia_engine_field::field_player_clip::PARTY_BANK_FLAG
-        == 0
+    let scene = game_anchors::u32_at(ram, p + 0x10)
+        & legaia_engine_field::field_player_clip::PARTY_BANK_FLAG
+        == 0;
+    // A scene clip is seated only on a player standing still (`+0x14` /
+    // `+0x18` where the tick began, `+0x1C` / `+0x20`): a script walking the
+    // player (`credits_rimelm_walkaway_pcsx`) draws its pose beside a
+    // position the seat does not take back to the displayed frame.
+    if scene
+        && (game_anchors::u16_at(ram, p + 0x14) != game_anchors::u16_at(ram, p + 0x1C)
+            || game_anchors::u16_at(ram, p + 0x18) != game_anchors::u16_at(ram, p + 0x20))
     {
         return None;
     }
@@ -761,7 +770,7 @@ pub fn retail_player_clip(ram: &[u8]) -> Option<ObjectClipSeed> {
         ),
     );
     (1..0x100).contains(&clip).then_some(ObjectClipSeed {
-        record: 0,
+        record: u16::from(scene),
         clip: clip as u8,
         cursor,
         flags,
