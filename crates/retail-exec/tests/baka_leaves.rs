@@ -650,13 +650,31 @@ mod widgets {
         cpu.mem.load(OVERLAY_BASE, &overlay);
         cpu.stub(0x8003_D2C4, 0);
         let hud = parse_baka_hud(&overlay).expect("widgets");
+        // Every shipped record's scale is positive, so the `cell * scale`
+        // rounding fix-ups (`0x801D6100`, `0x801D6134`) are never taken.
+        assert!(hud.iter().all(|w| w.scale > 0));
         let mut rng = Rng(0x5749_4447);
         let mut mirrored = 0;
         for round in 0..50_000 {
             let id = rng.below(hud.len() as u32);
             let (x, y) = (rng.below(400) as i16 - 40, rng.below(300) as i16 - 30);
-            let brightness = [0, 0x80, 0xFF, 0x100, rng.below(0x200) as i32][rng.below(5) as usize];
-            let size = [0x1000, 0x800, 0x2000, rng.below(0x3000) as i32][rng.below(4) as usize];
+            // Negative brightness and size take the emitter's round-toward-zero
+            // fix-ups (`bgez` over `addiu 0xFF` / `0xFFF` ahead of each `sra`).
+            let brightness = [
+                0,
+                0x80,
+                0xFF,
+                0x100,
+                rng.below(0x200) as i32,
+                -(rng.below(0x200) as i32),
+            ][rng.below(6) as usize];
+            let size = [
+                0x1000,
+                0x800,
+                0x2000,
+                rng.below(0x3000) as i32,
+                -(rng.below(0x3000) as i32),
+            ][rng.below(5) as usize];
             let mirror = rng.below(4) == 0;
             cpu.mem.wr32(PACKETS, PACKET);
             cpu.mem.wr32(MIRROR, u32::from(mirror));

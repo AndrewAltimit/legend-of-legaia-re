@@ -1,0 +1,83 @@
+# Interpreter-wide coverage rows: field VM, menus, minigames, shops, item apply, title, save, text.
+
+[[arm]]
+entry = "0x801D7518"
+image = "abfabb59516ea7ff"
+range = "0x801D7634..0x801D767C"
+verdict = "unported"
+reason = "PROT 0897 transition sweep, move-VM actor with +0x5A == 3 and +0xA4 > 0x10: the keyframe buffer re-alloc (FUN_80017888 of +0xA4 * +0xA6, then FUN_8005842C into +0xA0); sweep_actor reports the arm (move_vm_arm) and the engine allocates no PSX actor scratch."
+
+[[arm]]
+entry = "0x801D7518"
+image = "abfabb59516ea7ff"
+range = "0x801D76A0..0x801D77B4"
+verdict = "unported"
+reason = "PROT 0897 transition sweep, move-VM actor with +0x5A == 6: the six-column vertex copy from the +0x48 keyframe table into a fresh +0x4C buffer; raw buffer plumbing the port reports as move_vm_arm and does not model."
+
+[[arm]]
+entry = "0x800319A8"
+range = "0x80031A20..0x80031A74"
+verdict = "unported"
+reason = "Window destroy: the frees of the node's text buffer (+0x18, skipped for style < 2, 0xD and 0x11), +0x24 and +0x2C sub-objects through FUN_80017B94; MenuWidgetState keeps no PSX heap, so only the unlink is compared."
+
+[[arm]]
+entry = "0x800319A8"
+range = "0x80031AB0..0x80031AC0"
+verdict = "unported"
+reason = "Window destroy: the list-head free once only the sentinel is left (FUN_80017B94, then gp+0x148 = 0); the port's list has no sentinel node to free and reads empty either way."
+
+[[arm]]
+entry = "0x801E791C"
+image = "610af0846ca9fd6f"
+range = "0x801E7954..0x801E7954"
+verdict = "unreachable"
+reason = "PROT 0898 escape roll: the loop-entry test of the battle context (*0x8007BD24) +0, the party count; a battle the escape command runs in always seats at least one party member and one monster, so the count is never zero."
+
+[[arm]]
+entry = "0x801E791C"
+image = "610af0846ca9fd6f"
+range = "0x801E7A3C..0x801E7A3C"
+verdict = "unreachable"
+reason = "PROT 0898 escape roll: the loop-entry test of the battle context (*0x8007BD24) +1, the monster count; a battle the escape command runs in always seats at least one party member and one monster, so the count is never zero."
+
+[[arm]]
+entry = "0x801E791C"
+image = "610af0846ca9fd6f"
+range = "0x801E7B90..0x801E7B90"
+verdict = "unreachable"
+reason = "PROT 0898 escape roll: the loop-entry test of the battle context (*0x8007BD24) +0, the party count; a battle the escape command runs in always seats at least one party member and one monster, so the count is never zero."
+
+[[arm]]
+entry = "0x801E791C"
+image = "610af0846ca9fd6f"
+range = "0x801E7E3C..0x801E7E3C"
+verdict = "unreachable"
+reason = "PROT 0898 escape roll: the loop-entry test of the battle context (*0x8007BD24) +0, the party count; a battle the escape command runs in always seats at least one party member and one monster, so the count is never zero."
+
+[[arm]]
+entry = "0x801E791C"
+image = "610af0846ca9fd6f"
+range = "0x801E7EF0..0x801E7EF0"
+verdict = "unreachable"
+reason = "PROT 0898 escape roll: the loop-entry test of the battle context (*0x8007BD24) +0, the party count; a battle the escape command runs in always seats at least one party member and one monster, so the count is never zero."
+
+[[arm]]
+entry = "0x801E791C"
+image = "610af0846ca9fd6f"
+range = "0x801E7F14..0x801E7F14"
+verdict = "unreachable"
+reason = "PROT 0898 escape roll: the loop-entry test of the battle context (*0x8007BD24) +0, the party count, re-read inside the outer party loop; a battle the escape command runs in always seats at least one party member and one monster, so the count is never zero."
+
+[[arm]]
+entry = "0x801D5ED0"
+image = "3ca017e44535b38f"
+range = "0x801D6100..0x801D6100"
+verdict = "unreachable"
+reason = "PROT 0976 HUD quad emitter: the round-toward-zero fix-up of cell width * record scale (lw 0(record)); every one of the 51 shipped widget records has a positive scale, which the differential asserts, so the product is never negative."
+
+[[arm]]
+entry = "0x801D5ED0"
+image = "3ca017e44535b38f"
+range = "0x801D6134..0x801D6134"
+verdict = "unreachable"
+reason = "PROT 0976 HUD quad emitter: the same fix-up for the cell height * record scale; positive on every shipped widget record."
