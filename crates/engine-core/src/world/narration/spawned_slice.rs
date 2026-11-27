@@ -515,6 +515,7 @@ impl World {
                             );
                         panel.substitutions = host.world.dialog_substitutions(&tl.bytecode);
                         host.world.apply_dialog_window_format(&mut panel);
+                        host.world.seat_opening_pager_call(&mut panel);
                         host.world.cutscene.card = None;
                         tl.dialog = Some(panel);
                         host.world.field_vm.dialog_claims += 1;

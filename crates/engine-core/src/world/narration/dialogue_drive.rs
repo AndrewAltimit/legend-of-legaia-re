@@ -395,6 +395,7 @@ impl World {
                     );
                     panel.substitutions = host.world.dialog_substitutions(&id.bytecode);
                     host.world.apply_dialog_window_format(&mut panel);
+                    host.world.seat_opening_pager_call(&mut panel);
                     // The panel types the whole packed box (up to 3 rows), so
                     // every row lead counts as shown for the wrap detector,
                     // not just the first.

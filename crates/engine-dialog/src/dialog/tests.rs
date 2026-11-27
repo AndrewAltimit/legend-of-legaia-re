@@ -735,3 +735,41 @@ fn a_resumed_box_with_a_full_window_scrolls_first() {
         crate::dialog_window::WindowPhase::ScrollIn
     );
 }
+
+/// A box the SM opens on a game frame takes its opening call on the next
+/// frame (`seat_pager_phase(1)` at step `2`), and a confirm on the vsync of
+/// that call is spent on it: state `2` reads no press, so the page goes on
+/// typing at the typing pace. A confirm on the next call completes it.
+#[test]
+fn a_press_on_the_opening_call_is_spent_and_the_page_types_on() {
+    let inline = vec![
+        0x1F, b'a', b'b', b'c', b'd', b'e', b'f', b'g', b'h', 0x00, 0x21,
+    ];
+    let mut panel = OwnedDialogPanel::from_inline_dialog(&inline).unwrap();
+    panel.seat_pager_phase(1);
+    let mut auto = 0i16;
+    // The SM's frame's second vsync: no pager call.
+    panel.tick_at_auto(2, &mut auto);
+    assert_eq!(panel.pacer().counter, 0, "no call before the next frame");
+    // The next frame: the opening call, and a confirm on its vsync.
+    panel.tick_at_auto(2, &mut auto);
+    assert_eq!(panel.pacer().counter, 1, "the opening call");
+    assert!(!panel.confirm_while_typing(), "state 2 reads no press");
+    for _ in 0..2 {
+        panel.tick_at_auto(2, &mut auto);
+    }
+    assert_eq!(
+        panel.window().map(|w| w.speed),
+        Some(crate::dialog_window::SPEED_TYPE)
+    );
+    assert!(!panel.is_waiting_for_input());
+    // A confirm on a typing call's vsync latches the skip.
+    assert!(panel.confirm_while_typing());
+    for _ in 0..2 {
+        panel.tick_at_auto(2, &mut auto);
+    }
+    assert_eq!(
+        panel.window().map(|w| w.speed),
+        Some(crate::dialog_window::SPEED_SKIP)
+    );
+}

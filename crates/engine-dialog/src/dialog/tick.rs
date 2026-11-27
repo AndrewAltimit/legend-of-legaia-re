@@ -190,6 +190,11 @@ impl OwnedDialogPanel {
         let dt = self.frame_step.max(1);
         let run = self.vsync_phase == 0;
         self.vsync_phase = (self.vsync_phase + 1) % dt;
+        self.opening_call_now = run
+            && self
+                .window
+                .as_ref()
+                .is_some_and(|w| w.typing_row().is_some() && w.pacer.setup);
         if self.done {
             self.state = PanelState::Done;
             return self.state;
@@ -267,6 +272,12 @@ impl OwnedDialogPanel {
     /// or this is a plain-MES panel.
     pub fn confirm_while_typing(&mut self) -> bool {
         if self.done || self.waiting_for_input || self.menu_active {
+            return false;
+        }
+        // The press this vsync's opening call read: state `2` takes none,
+        // and the next call sees no fresh edge (`0x801D84D0` reads the
+        // frame's newly pressed bits), so retail types the page on.
+        if std::mem::take(&mut self.opening_call_now) {
             return false;
         }
         match self.window.as_ref() {

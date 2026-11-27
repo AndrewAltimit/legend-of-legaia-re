@@ -74,6 +74,10 @@ pub struct OwnedDialogPanel {
     /// A confirm press the next pager call sees
     /// ([`Self::confirm_while_typing`]).
     pub(super) press_latch: bool,
+    /// This vsync's pager call was a box's opening call (state `2`), which
+    /// reads no press: a confirm on the same vsync is spent on it
+    /// ([`Self::confirm_while_typing`]).
+    pub(super) opening_call_now: bool,
     /// The page ended on a picker open byte and waits in state `0x19` for
     /// the press that opens the menu ([`Self::advance_page`]). Box path only.
     pub(super) menu_pending: bool,
@@ -143,6 +147,7 @@ impl OwnedDialogPanel {
             window: None,
             page_rows: Vec::new(),
             press_latch: false,
+            opening_call_now: false,
             menu_pending: false,
             menu_opens_at_wait: false,
             auto_pressed: false,
@@ -220,6 +225,17 @@ impl OwnedDialogPanel {
         let mut panel = Self::new(bytes, seg_lead + 1);
         panel.seed_box_at_lead(seg_lead);
         panel
+    }
+
+    /// Seat the pager call phase of a box the dialog SM reached on this
+    /// vsync: `phase` vsyncs of the game frame are left before the pager's
+    /// next call ([`Self::tick`] runs a call when its phase reads `0`). The
+    /// SM that sets the box's state runs after the frame's pager call, so the
+    /// box's opening call is the next frame's, not the next vsync's.
+    ///
+    /// REF: FUN_801D84D0, FUN_80039B7C
+    pub fn seat_pager_phase(&mut self, phase: u8) {
+        self.vsync_phase = phase;
     }
 
     /// The box the pager goes on drawing after the press that left this
