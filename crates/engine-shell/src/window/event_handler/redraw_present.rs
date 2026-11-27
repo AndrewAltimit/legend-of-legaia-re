@@ -159,8 +159,108 @@ pub(super) fn capture_sweep_frame<'a>(
             }
         }
         if last_tick.is_some_and(|lt| tick_no >= lt) {
+            flush_capture_audio();
             std::process::exit(0);
         }
+    }
+}
+
+/// `LEGAIA_CAPTURE_AUDIO_WAV=<path>`: the mix of a `--screenshot-every`
+/// sweep, for media made from the sweep's frames (the teaser,
+/// `scripts/site-media/teaser.py`). The director runs over a device-less
+/// output (`run.rs` raises the detach), and each sim tick pulls
+/// one tick of the mix, `SPU_INTERNAL_RATE / 60` stereo frames, from the
+/// first tick on: tick `N` of the sweep starts at frame `N * 735` of the WAV,
+/// so the frames and the sound line up by their tick numbers alone. The WAV
+/// (44.1 kHz stereo) is written when the sweep exits.
+struct CaptureAudio {
+    path: std::path::PathBuf,
+    pcm: Vec<i16>,
+    last_tick: u64,
+}
+
+static CAPTURE_AUDIO: std::sync::Mutex<Option<CaptureAudio>> = std::sync::Mutex::new(None);
+
+/// The `LEGAIA_CAPTURE_AUDIO_WAV` path, when a run records its mix.
+fn capture_audio_path() -> Option<std::path::PathBuf> {
+    std::env::var_os("LEGAIA_CAPTURE_AUDIO_WAV")
+        .filter(|v| !v.is_empty())
+        .map(std::path::PathBuf::from)
+}
+
+/// Write the recorded mix ([`CaptureAudio`]), if a run records one.
+pub(super) fn flush_capture_audio() {
+    let Ok(mut slot) = CAPTURE_AUDIO.lock() else {
+        return;
+    };
+    let Some(rec) = slot.take() else {
+        return;
+    };
+    let rate = legaia_engine_audio::SPU_INTERNAL_RATE;
+    let data = (rec.pcm.len() * 2) as u32;
+    let mut out = Vec::with_capacity(44 + rec.pcm.len() * 2);
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&(36 + data).to_le_bytes());
+    out.extend_from_slice(b"WAVEfmt ");
+    out.extend_from_slice(&16u32.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&2u16.to_le_bytes());
+    out.extend_from_slice(&rate.to_le_bytes());
+    out.extend_from_slice(&(rate * 4).to_le_bytes());
+    out.extend_from_slice(&4u16.to_le_bytes());
+    out.extend_from_slice(&16u16.to_le_bytes());
+    out.extend_from_slice(b"data");
+    out.extend_from_slice(&data.to_le_bytes());
+    for s in &rec.pcm {
+        out.extend_from_slice(&s.to_le_bytes());
+    }
+    match std::fs::write(&rec.path, out) {
+        Ok(()) => println!(
+            "[ok] capture audio {} ({} ticks)",
+            rec.path.display(),
+            rec.last_tick
+        ),
+        Err(e) => eprintln!("capture audio: write {}: {e}", rec.path.display()),
+    }
+}
+
+impl PlayWindowApp {
+    /// Pull this redraw's ticks of the mix into the [`CaptureAudio`] recording.
+    pub(super) fn record_capture_audio(&self) {
+        use legaia_engine_audio::AudioSink as _;
+        let Some(director) = self.session.bgm.as_ref() else {
+            return;
+        };
+        let Ok(mut slot) = CAPTURE_AUDIO.lock() else {
+            return;
+        };
+        if slot.is_none() {
+            let Some(path) = capture_audio_path() else {
+                return;
+            };
+            *slot = Some(CaptureAudio {
+                path,
+                pcm: Vec::new(),
+                last_tick: 0,
+            });
+        }
+        let Some(rec) = slot.as_mut() else {
+            return;
+        };
+        let ticks = self.tick_no.saturating_sub(rec.last_tick);
+        if ticks == 0 {
+            return;
+        }
+        rec.last_tick = self.tick_no;
+        let per_tick = (legaia_engine_audio::SPU_INTERNAL_RATE / 60) as u64;
+        let pcm = &mut rec.pcm;
+        director.audio().with_core(|core| {
+            for _ in 0..ticks * per_tick {
+                let (l, r) = core.next_frame();
+                pcm.push(l);
+                pcm.push(r);
+            }
+        });
     }
 }
 
