@@ -5665,7 +5665,14 @@ and the whole film `.976`, cues `1.000` (one pass an arm, `.331`). Grade
   Replayed at the band's head, both clips ran out ahead of arm 1 and Songi's wind-up
   was gone from the frame. Hyper Crush's arm-4 counter `0x801F817C` steps once a pass,
   a battle frame (`ModuleCamState::opens_pass`): retail's six passes run about 25 vsyncs
-  of game clock, and counted once a vsync the arm left in 8.
+  of game clock, and counted once a vsync the arm left in 8. The arm drains the module
+  word `0x801F8174` by `scalar * step` on every pass, its sixth included (the `subu` at
+  `0x801F7260` sits ahead of the pass test at `0x801F72D4`), and arm 5's countdown runs
+  on from what it leaves. The sixth pass hands over on its opening tick, so the port
+  drains the pass's rest there (`ModuleCountdown::drain_rest`); without it arm 5 held a
+  pass longer than retail's, every ribbon ring of arms 5 and 6 stood a pass behind, and
+  `battle_retona_songi_hyper_crush_mid_cast` read `.913` (arm 6 `.765`) where it reads
+  `.991` (`.986`).
 - **0942 `0xAA`'s party swirl**
   (`World::dark_typhoon_party_swirl`). Arm 2's pass copies each party seat's plane
   pair into `0x801F88C4 + 8 * seat`. Arm 3's pass clears the pull `0x801F88B8` and
