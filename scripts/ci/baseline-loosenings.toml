@@ -2049,3 +2049,47 @@ changes = [
   ["shortcuts/walked/seed_9/box_face", 1, 2],
   ["shortcuts/walked/seed_9/touch_far", 1, 2],
 ]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "Wave 60 draws what retail draws in battle: the battle intro init parts (FUN_801CE8CC), the cast clip effect re-seat each frame (FUN_801DEA50) and the census counted on the dispatcher leaves cull rules; gl draws +2%, wasm bytes +3%, native allocs +3.6% per frame, play gzip +13524 bytes. Measured by the wave 60 full gate."
+changes = [
+  ["counts/browser/battle/enhanced/gl_draws_per_frame", 185.05, 189.04],
+  ["counts/browser/battle/enhanced/wasm_bytes_per_frame", 117206, 120916],
+  ["counts/browser/battle/retail/gl_draws_per_frame", 154.82, 157.88],
+  ["counts/browser/battle/retail/wasm_bytes_per_frame", 113958, 117537],
+  ["counts/browser/cast/enhanced/gl_draws_per_frame", 130.63, 133.34],
+  ["counts/browser/cast/enhanced/wasm_bytes_per_frame", 107790, 109934],
+  ["counts/browser/cast/retail/gl_draws_per_frame", 108.47, 110.56],
+  ["counts/browser/cast/retail/wasm_bytes_per_frame", 102119, 104414],
+  ["counts/bundle/play_gzip_bytes", 5280467, 5293991],
+  ["counts/native/battle/enhanced/allocs_per_frame", 1290.7, 1337.8],
+  ["counts/native/battle/retail/allocs_per_frame", 1265.2, 1312.6],
+  ["counts/native/summon_cast/enhanced/allocs_per_frame", 1307.9, 1354.1],
+  ["counts/native/summon_cast/retail/allocs_per_frame", 1287.3, 1333.6],
+]
+
+[[loosening]]
+file = "scripts/replays/full_game_baseline.toml"
+reason = "Wave 60 moves field and battle timing onto retail (player tick ahead of the field scripts, NPC stream order, door touch from the last probe, camera glide on the next frame, the six-tick mode-8 hold and the walked roll store lead), which re-deals the ladder streams; every run still reaches 35/35. Ceilings are the wave 60 full gate measurements."
+changes = [
+  ["shortcuts/walked/default/box_face", 2, 3],
+  ["shortcuts/walked/default/examine_face", 26, 28],
+  ["shortcuts/walked/default/examine_far", 31, 34],
+  ["shortcuts/walked/default/examine_seat", 4, 5],
+  ["shortcuts/walked/default/restore_xz", 47, 51],
+  ["shortcuts/walked/seed_10/restore_xz", 45, 46],
+  ["shortcuts/walked/seed_11/restore_xz", 45, 46],
+  ["shortcuts/walked/seed_12/restore_xz", 45, 46],
+  ["shortcuts/walked/seed_15/examine_face", 24, 26],
+  ["shortcuts/walked/seed_15/examine_far", 28, 31],
+  ["shortcuts/walked/seed_15/restore_xz", 45, 48],
+  ["shortcuts/walked/seed_16/restore_xz", 45, 46],
+  ["shortcuts/walked/seed_3/restore_xz", 45, 46],
+  ["shortcuts/walked/seed_4/restore_xz", 45, 46],
+  ["shortcuts/walked/seed_5/box_face", 2, 3],
+  ["shortcuts/walked/seed_5/restore_xz", 45, 47],
+  ["shortcuts/walked/seed_6/restore_xz", 45, 46],
+  ["shortcuts/walked/seed_8/restore_xz", 45, 46],
+  ["shortcuts/walked/seed_9/restore_xz", 45, 46],
+]
