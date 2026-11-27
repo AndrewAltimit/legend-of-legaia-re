@@ -142,7 +142,9 @@ impl BattleActorDrawPlan {
 
     /// Whether the body takes the tint pass's cue (`cue_far` / `cue_ir0`)
     /// this frame, given its render flag. The pointed-at monster's flag `5`
-    /// carries the cursor's own pulse (`battle_action::cursor_cue`). The dim
+    /// takes it like any body: the tint SM leaves the stamped neutral word
+    /// `0x20080200` in place (`battle_action::cursor_cue`), so the body draws
+    /// on it at the stamped weight and does not pulse. The dim
     /// flag `0xC8` takes the pass's own arm 1 (`0x8004A948`), colour
     /// `0x010101` at weight `0x1000`: PROT 0918's arm 16 raises it on
     /// Kemaro's victim (`+0x04 = 0x401004`), and retail draws the body as a
@@ -159,9 +161,7 @@ impl BattleActorDrawPlan {
     /// pass re-tints, so the body takes the cue at the fade's kept weight
     /// `0x1000` - drawn whole in the stamp's grey.
     pub fn tint_cue_applies(&self, render_flag: u8) -> bool {
-        use legaia_engine_battle_vm::battle_action as ba;
-        render_flag != ba::CURSOR_FLAG_SELECTED
-            && (render_flag != 2 || self.semi_mode().is_some() || self.grey_stamped)
+        render_flag != 2 || self.semi_mode().is_some() || self.grey_stamped
     }
 
     /// The GTE `IR0` as the hosts' `DrawCue.max_ir0` (`0x1000` = `1.0`).
@@ -172,20 +172,16 @@ impl BattleActorDrawPlan {
     /// The constant per-draw cue a battle body takes this frame, as
     /// `(far colour, max IR0)`, `None` for no cue - the one precedence both
     /// hosts stage: the tint pass's word when it applies
-    /// ([`Self::tint_cue_applies`]), else the target cursor's pulse
-    /// (`battle_action::cursor_cue`) on the cursor's two flags. `plan` is the
-    /// body's [`World::battle_actor_draw_plan`], `None` with no plan (the
-    /// cursor still pulses). The native window used to stage the cursor and
+    /// ([`Self::tint_cue_applies`]), else the target cursor's dim
+    /// (`battle_action::cursor_cue`). `plan` is the body's
+    /// [`World::battle_actor_draw_plan`], `None` with no plan (the dimmed
+    /// monsters still dim). The native window used to stage the cursor and
     /// then overwrite it, the page to test the tint first and fall through:
     /// the same answer by two routes.
-    pub fn body_cue(
-        plan: Option<&Self>,
-        render_flag: u8,
-        display_frames: u64,
-    ) -> Option<([f32; 3], f32)> {
+    pub fn body_cue(plan: Option<&Self>, render_flag: u8) -> Option<([f32; 3], f32)> {
         match plan {
             Some(p) if p.tint_cue_applies(render_flag) => Some((p.cue_far(), p.cue_ir0())),
-            _ => legaia_engine_battle_vm::battle_action::cursor_cue(render_flag, display_frames),
+            _ => legaia_engine_battle_vm::battle_action::cursor_cue(render_flag),
         }
     }
 
@@ -917,7 +913,10 @@ mod tests {
         let world = battle_world();
         let mut p = world.battle_actor_draw_plan(0, None, 4.0, false).unwrap();
         assert!(p.tint_cue_applies(0));
-        assert!(!p.tint_cue_applies(5), "cursor flag keeps its own cue");
+        assert!(
+            p.tint_cue_applies(5),
+            "the pointed-at flag draws on its word: no arm of the tint SM pulses it"
+        );
         assert!(p.tint_cue_applies(200), "cursor dim: the pass's own arm");
         p.draw_colour &= 0x7FFF_FFFF;
         assert!(!p.tint_cue_applies(2), "opaque fade: no cue");

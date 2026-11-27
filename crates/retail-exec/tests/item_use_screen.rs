@@ -56,6 +56,7 @@ const TIMER: u32 = 0x801E_46D0;
 const BUSY: u32 = 0x8007_BB80;
 const LIST_ROW: u32 = 0x8007_BB88;
 const FRAME_STEP: u32 = 0x1F80_0393;
+const EDGE: u32 = 0x8007_B874;
 
 /// Where a use leaves the screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -68,6 +69,8 @@ enum Landing {
     List,
     /// The bag is empty: back to the command window.
     Command,
+    /// The target rows were backed out of.
+    Cancelled,
 }
 
 fn items(sub: &FieldMenuSubsession) -> &legaia_engine_menus::pause_screens::PauseItemsSession {
@@ -90,17 +93,30 @@ fn the_apply_screens_use_what_retail_uses_and_land_where_it_lands() {
     for va in [VM, WINDOW_TICK, PREVIEW] {
         cpu.stub(va, 0);
     }
-    cpu.hook(PICKER, |r, _| r.r[V0] = 1);
+    // The target picker answers "confirmed", or "cancelled" on a cancel round.
+    let answer = Rc::new(std::cell::Cell::new(1u32));
+    let a = answer.clone();
+    cpu.hook(PICKER, move |r, _| r.r[V0] = a.get());
     let cues: Rc<RefCell<Vec<(u32, u32)>>> = Rc::default();
     for entry in [CUE, SFX] {
         let c = cues.clone();
         cpu.hook(entry, move |r, _| c.borrow_mut().push((entry, r.r[A0])));
     }
+    // The menu's confirm and cancel masks the notice's press reads.
+    cpu.mem.wr32(0x8008_46D0, 0x40);
+    cpu.mem.wr32(0x8008_46D4, 0x20);
     cpu.mem.wr32(0x8008_4594, 3);
     cpu.mem.load(0x8008_4598, &[0, 1, 2]);
 
     let table = ItemEffectTable::from_scus(&scus).expect("item effects");
     let mut world = World::default();
+    // The window-8 template the art-learned notice is composed from: disc
+    // text, which the World takes from the menu overlay as a scene installs it.
+    world.menu.notify_template =
+        legaia_engine_menus::pause_screens::notify_template_from_menu_overlay(
+            &disc.read_entry(899).expect("PROT 0899"),
+        );
+    assert!(world.menu.notify_template.is_some());
     world.set_item_catalog(ItemCatalog::vanilla());
     world.set_item_effects(table.clone());
     world.set_accessory_passives(AccessoryPassives::from_disc(
@@ -118,6 +134,7 @@ fn the_apply_screens_use_what_retail_uses_and_land_where_it_lands() {
     let mut rng = Rng(0x4954_5553);
     let mut seen = std::collections::BTreeMap::<(bool, Landing), u32>::new();
     let mut failures = Vec::new();
+    let mut notices = 0u32;
     for round in 0..3_000 {
         let id = usable[rng.below(usable.len() as u32) as usize];
         let e = table.effect(id).unwrap();
@@ -226,7 +243,45 @@ fn the_apply_screens_use_what_retail_uses_and_land_where_it_lands() {
         if on_target != Some(target) {
             continue;
         }
+        // An eighth of the single-target rounds back out of the target rows:
+        // the picker's "cancelled" returns to the Use list, sub-screen 6
+        // (`0x801D83DC`, `0x801D8490`), with nothing used.
+        if !all && rng.below(8) == 0 {
+            press(&mut sub, &mut world, PadButton::Circle);
+            answer.set(2);
+            cpu.mem.wr32(SCREEN, 8);
+            cpu.mem.wr32(STEP, 1);
+            cpu.mem.wr32(BUSY, 0);
+            cues.borrow_mut().clear();
+            assert_eq!(cpu.call(SINGLE, &[]), Stop::Returned, "round {round}");
+            answer.set(1);
+            let rbag: Vec<(u8, u8)> = (0..256u32)
+                .map(|i| (cpu.mem.rd8(BAG + i * 2), cpu.mem.rd8(BAG + i * 2 + 1)))
+                .collect();
+            let port_list =
+                !items(&sub).target_select() && items(&sub).focus == PauseItemsFocus::List;
+            if cpu.mem.rd32(SCREEN) != 6
+                || !port_list
+                || rbag.as_slice() != world.party.inventory.slots()
+            {
+                failures.push(format!(
+                    "round {round}: item {id:#04x} cancel: retail screen {} port {:?} {:?}",
+                    cpu.mem.rd32(SCREEN),
+                    items(&sub).focus,
+                    items(&sub).inner.state
+                ));
+            }
+            *seen.entry((all, Landing::Cancelled)).or_default() += 1;
+            continue;
+        }
         press(&mut sub, &mut world, PadButton::Cross);
+        // The notice the use raised (a spell's level-up, window 7, or an
+        // art learned, window 8), which the hosts take off `World::menu` and
+        // hold the pad on.
+        let raised =
+            legaia_engine_menu_runtime::field_menu_dispatch::take_raised_notices(&mut world);
+        let port_notice =
+            raised.spell_level_notice.is_some() || raised.art_learned_notice.is_some();
         let port_landing = {
             let s = items(&sub);
             if s.target_select() {
@@ -247,12 +302,48 @@ fn the_apply_screens_use_what_retail_uses_and_land_where_it_lands() {
         cpu.mem.wr32(STEP, 1);
         let routine = if all { ALL } else { SINGLE };
         let mut retail = None;
+        let mut retail_notice = false;
         for _ in 0..6 {
             let step = cpu.mem.rd32(STEP);
             // The level-up notice waits for a press; it is the notice's own
             // window, and the use behind it is what is compared.
+            // Phase 4 (`0x801D8574..0x801D85C8`): the notice the applier
+            // raised (`_DAT_8007BB78` moved off `0xFF`) holds on the busy word
+            // and then on a confirm or cancel press, which cues `0x36` and
+            // closes it.
             if !all && step == 4 {
-                cpu.mem.wr32(STEP, 5);
+                retail_notice = true;
+                cpu.mem.wr32(EDGE, 0x40);
+                cpu.mem.wr32(BUSY, 1);
+                assert_eq!(cpu.call(routine, &[]), Stop::Returned);
+                assert_eq!(
+                    cpu.mem.rd32(STEP),
+                    4,
+                    "round {round}: the notice waits on the busy word"
+                );
+                cpu.mem.wr32(BUSY, 0);
+                cpu.mem.wr32(EDGE, 0);
+                assert_eq!(cpu.call(routine, &[]), Stop::Returned);
+                assert_eq!(
+                    cpu.mem.rd32(STEP),
+                    4,
+                    "round {round}: the notice waits on a press"
+                );
+                let before = cues.borrow().len();
+                cpu.mem.wr32(EDGE, [0x40, 0x20][rng.below(2) as usize]);
+                assert_eq!(cpu.call(routine, &[]), Stop::Returned);
+                cpu.mem.wr32(EDGE, 0);
+                // The press runs on into the consume (`0x801D85C4..`): phase
+                // 7 while the stack lasts, 6 (the exhaustion timer) when not.
+                assert!(
+                    matches!(cpu.mem.rd32(STEP), 6 | 7),
+                    "round {round}: the press closes the notice"
+                );
+                assert!(
+                    cues.borrow()[before..].contains(&(SFX, 0x36)),
+                    "round {round}: {:x?}",
+                    cues.borrow()
+                );
                 continue;
             }
             if (all && step == 5) || (!all && step == 6) {
@@ -324,6 +415,13 @@ fn the_apply_screens_use_what_retail_uses_and_land_where_it_lands() {
                 break;
             }
         }
+        if !all && retail_notice != port_notice {
+            failures.push(format!(
+                "{what}: notice retail {retail_notice} port {port_notice}"
+            ));
+            continue;
+        }
+        notices += u32::from(retail_notice);
         let got = cues.borrow().clone();
         let want_sfx = (SFX, 0x25);
         if !got.contains(&want_sfx) {
@@ -342,8 +440,10 @@ fn the_apply_screens_use_what_retail_uses_and_land_where_it_lands() {
             .collect::<Vec<_>>()
             .join("\n")
     );
-    eprintln!("{seen:?}");
+    eprintln!("{seen:?} notices {notices}");
+    assert!(notices > 5, "{notices} notices");
     for key in [
+        (false, Landing::Cancelled),
         (false, Landing::Again),
         (false, Landing::List),
         (true, Landing::Again),

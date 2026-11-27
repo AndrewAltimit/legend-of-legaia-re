@@ -595,14 +595,19 @@ impl World {
     /// position and nothing more, so without this pass those actors slide
     /// along in their idle pose.
     ///
-    /// Called once per field tick, immediately before
-    /// [`Self::tick_field_player_anim`], so it sees every position any earlier
-    /// step in the frame committed.
+    /// Called once per field tick in the player's tick, immediately before
+    /// [`Self::tick_field_player_anim`]: it sees the player's own step of this
+    /// tick and every position the scripts, legs and walkers committed after
+    /// the player's tick last frame, which is where retail's player tick
+    /// (the first node of the first actor list) stands.
     ///
     /// A slot appearing for the first time (an actor seated mid-scene by a
     /// timeline, or the frame after a scene load) seeds the snapshot and is
     /// NOT reported as moving - its arrival is a placement, not a step.
     pub(crate) fn detect_field_actor_motion(&mut self) {
+        /// World units (Manhattan) past which a player's move in one tick is
+        /// a placement: a walk or run step is `4..=48` a frame.
+        const PLAYER_PLACEMENT_JUMP: i32 = 256;
         self.locomotion.actor_moving.clear();
         let player_slot = self.player_actor_slot;
         // The player reads from its move_state (the locomotion commits
@@ -616,7 +621,16 @@ impl World {
         if let (Some(slot), Some(pos)) = (player_slot, player_pos) {
             seen[usize::from(slot)] = true;
             match self.locomotion.motion_prev.insert(slot, pos) {
-                Some(prev) if prev != pos => {
+                // A jump past any walk or run step is a placement (an entry
+                // seat, a warp), not a step: the detection runs ahead of the
+                // scripts that seat the player, so it sees their seat on the
+                // next tick.
+                Some(prev)
+                    if prev != pos
+                        && (i32::from(prev.0) - i32::from(pos.0)).abs()
+                            + (i32::from(prev.1) - i32::from(pos.1)).abs()
+                            < PLAYER_PLACEMENT_JUMP =>
+                {
                     moved_player = true;
                     self.locomotion.actor_moving.insert(slot);
                 }
@@ -753,12 +767,91 @@ impl World {
         }
     }
 
+    /// Whether the player's clip tick has latched its end flag
+    /// (`+0x62 & 0x100`, `FUN_800204F8` `0x800206E4..0x8002072C`) - what a
+    /// record's `AD F8 08` spin reads. The player's tick leads the frame, so
+    /// a record sees the latch on the frame the clip lands.
+    pub(crate) fn player_clip_end_latched(&self) -> bool {
+        self.player_actor_slot
+            .and_then(|s| self.actors.get(usize::from(s)))
+            .is_some_and(|a| a.move_state.local_flags & legaia_engine_vm::actor_tick::CLIP_END != 0)
+    }
+
+    /// Clear the player's end latch, as the consumer call of a clip poke
+    /// does before it steps the new clip.
+    pub(crate) fn clear_player_clip_end_latch(&mut self) {
+        if let Some(a) = self
+            .player_actor_slot
+            .and_then(|s| self.actors.get_mut(usize::from(s)))
+        {
+            a.move_state.local_flags &= !legaia_engine_vm::actor_tick::CLIP_END;
+        }
+    }
+
+    /// A record's `A2 F8 <id>` poke that binds a **party-bank** clip on the
+    /// player. Over a scene clip retail binds it at the op with the cursor at
+    /// `0` and draws that frame (a PCSX-Redux film of the town01 opening: the hand-down's
+    /// end pokes the idle base, and the same frame reads `+0x5E = 2`,
+    /// `+0x68 = 0`); the player's own tick steps it from the next frame.
+    /// Without the seat the clip waited for the next frame's settle and drew
+    /// the scene clip before for one more frame.
+    pub(crate) fn seat_player_poked_party_clip(
+        &mut self,
+        pick: &legaia_engine_field::field_player_clip::SettleClipPick,
+    ) {
+        if !self.clock.game_tick_live {
+            return;
+        }
+        let Some(slot) = self.player_actor_slot else {
+            return;
+        };
+        let Some(anim) = self.locomotion.player_anim.as_mut() else {
+            return;
+        };
+        let Some(bank_slot) =
+            legaia_engine_field::field_player_clip::party_bank_slot(pick, anim.leader)
+        else {
+            return;
+        };
+        // Over a bank clip the pick binds and steps on the poke frame: the
+        // same film's `1500` reads `+0x68 = 8` on the frame a landed walk's
+        // idle base binds, and `kor5`'s walk film the same on its `P2[5]`
+        // walk's end. Only a pick that changes the slot.
+        let (source, id, _, _) = anim.playing_clip();
+        if source != "scene" {
+            if source == "bank" && id == bank_slot {
+                return;
+            }
+            let grid = self.clock.script_frame_delta();
+            if grid > 0 {
+                self.tick_field_player_anim_scaled(grid);
+            }
+            return;
+        }
+        let Some(actor) = self.actors.get_mut(usize::from(slot)) else {
+            return;
+        };
+        let clamp = actor.move_state.local_flags & legaia_engine_vm::actor_tick::CLIP_CLAMP != 0;
+        if let Some(pose) = anim.seat_bank_clip(bank_slot, 0, clamp) {
+            actor.pose_frame = Some(pose);
+        }
+    }
+
     /// One field-frame advance of the player's locomotion animation: pick
     /// idle vs walk off the movement flag the locomotion step just set, emit
     /// the active clip's frame into the player actor's `pose_frame`. Called
     /// by [`World::tick`]'s field branch right after
     /// [`World::step_field_locomotion`].
     pub(crate) fn tick_field_player_anim(&mut self) {
+        // On the game-frame grid, as the NPC actors' clips step
+        // (`World::tick_actor_anims`).
+        let grid = self.clock.script_frame_delta();
+        self.tick_field_player_anim_scaled(grid);
+    }
+
+    /// [`Self::tick_field_player_anim`] for a tick crediting `grid` vsyncs
+    /// (`0` re-emits the last pose, or pays a bind step a held tick owes).
+    pub(crate) fn tick_field_player_anim_scaled(&mut self, grid: u16) {
         let Some(slot) = self.player_actor_slot else {
             return;
         };
@@ -771,7 +864,7 @@ impl World {
             return;
         };
         anim.set_clip_rate(self.locomotion.player_clip_rate);
-        let (pose, flags) = anim.tick_with_flags(actor.move_state.local_flags);
+        let (pose, flags) = anim.tick_scaled(actor.move_state.local_flags, grid);
         actor.move_state.local_flags = flags;
         actor.pose_frame = Some(pose);
     }
@@ -780,14 +873,33 @@ impl World {
     /// retail comparison's image child captures: which frame of the run a
     /// pad-driven capture stands on is walk history the seat never replayed.
     /// `clip` is retail's `+0x5C`, record `clip - 1` of the party bank; one
-    /// outside the leader's seven records is left alone.
-    pub fn seed_player_clip(&mut self, clip: u8, cursor: i16, flags: u16, rate: i16) {
+    /// outside the leader's seven records is left alone. With `scene` (the
+    /// player's party-bank bit down) it names record `clip - 1` of the
+    /// scene's own bundle, seated when the player is playing that record.
+    pub fn seed_player_clip(&mut self, clip: u8, cursor: i16, flags: u16, rate: i16, scene: bool) {
         let Some(slot) = self.player_actor_slot else {
             return;
         };
         let Some(anim) = self.locomotion.player_anim.as_mut() else {
             return;
         };
+        if scene {
+            let clamp = flags & legaia_engine_vm::actor_tick::CLIP_CLAMP != 0;
+            let Some(pose) = u16::from(clip)
+                .checked_sub(1)
+                .and_then(|record| anim.seat_scene_clip(record, cursor.max(0) as u32, clamp))
+            else {
+                return;
+            };
+            if rate != 0 {
+                self.locomotion.player_clip_rate = rate;
+            }
+            if let Some(actor) = self.actors.get_mut(slot as usize) {
+                actor.move_state.local_flags = flags;
+                actor.pose_frame = Some(pose);
+            }
+            return;
+        }
         let first = anim.leader * legaia_engine_field::field_player_clip::BANK_STRIDE;
         let Some(bank_slot) = u16::from(clip)
             .checked_sub(1)

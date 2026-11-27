@@ -134,6 +134,14 @@ impl Camera {
         self.last_display_frame = vsyncs;
 
         let gliding = if let Some(mv) = self.mover.as_mut() {
+            // A mover the walk had already passed when it was linked steps
+            // from the next frame (`FUN_8002519C` reads the next pointer
+            // before each tick, `0x800251D8`).
+            let dt = if std::mem::take(&mut self.mover_first_step_waits) {
+                0
+            } else {
+                dt
+            };
             let arrived = mv.tick(dt);
             mv.store_frame(
                 &mut self.globals.0,

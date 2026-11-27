@@ -1,0 +1,57 @@
+# Menu overlays and their screens: the pause menu, shops, the save and title screens, the game-over overlay.
+
+[[arm]]
+entry = "0x801CE844"
+image = "e82eb55f5ed1664f"
+range = "0x801CE928..0x801CEA64"
+verdict = "unported"
+reason = "PROT 0902 game-over init, phases 1 and 2: the gameover.pak load's fork on _DAT_8007B8C2 (dev host FUN_8003E6BC or CD FUN_8003EB98) and the [tag][...] pak walk handing kind-1 chunks to FUN_800198E0 and kind-2 to FUN_80026B4C; host asset installation the port replaces with its own loader (engine-menus gameover_banner keeps only the letter stager, its module doc)"
+
+[[arm]]
+entry = "0x80030104"
+image = "d18a18435540d92d"
+range = "0x80030138..0x80030138"
+verdict = "unported"
+reason = "the list-node allocator's text path: a window still holding a node at +0x18 has it heap-freed (FUN_80017B94) and +0x18 / +0x14 cleared before the new buffer; the engine keeps no PSX heap and its per-screen window models replace the node (list_alloc's REPLACED-BY)"
+
+[[arm]]
+entry = "0x80030104"
+image = "d18a18435540d92d"
+range = "0x8003015C..0x8003015C"
+verdict = "unported"
+reason = "the text path's FUN_80017888 failure exit (return 0 with the node unset); the engine has no PSX heap to exhaust, so list_alloc has no failure answer"
+
+[[arm]]
+entry = "0x80030104"
+image = "d18a18435540d92d"
+range = "0x800301E8..0x800301E8"
+verdict = "unported"
+reason = "the list path's FUN_80017888 failure exit (out word 0, nothing seeded); the engine has no PSX heap to exhaust, so list_alloc has no failure answer"
+
+[[arm]]
+entry = "0x80030104"
+image = "d18a18435540d92d"
+range = "0x8003022C..0x8003022C"
+verdict = "unported"
+reason = "the list path's free of the window's previous node (FUN_80017B94, then +0x18 / +0x14 cleared); the engine keeps no PSX heap and its per-screen window models replace the node (list_alloc's REPLACED-BY)"
+
+[[arm]]
+entry = "0x8002C69C"
+image = "7ebef8d398069a6b"
+range = "0x8002F9E4..0x8002F9E4"
+verdict = "unported"
+reason = "the window emitter's kind-6 fill: each tile's width clipped to what is left of the row (min(tile w, right - x), 0x8002F9D4..0x8002F9EC) before the SPRT is linked; the port lays the fill as one rect (dialog_window_fill_rect) and emits no tiles, so the clip has no counterpart and window_emitter compares the rect"
+
+[[arm]]
+entry = "0x801E06C0"
+image = "a9697f6884de16a3"
+range = "0x801E0798..0x801E07C0"
+verdict = "unported"
+reason = "the save grid's focus gate: the focused cell draws dimmed (mode 3) and without its hand while the directory rescan request _DAT_801F0224 is up or the title tick's sub-mode _DAT_801F0204 is 0x0C / 0x0D (the load and save notices); slot_preview_grid_draws_at has no such input and always lights the focused cell. save_grid deals both words and compares the open case (mode 0 and the hand at the port's cursor)"
+
+[[arm]]
+entry = "0x801E06C0"
+image = "a9697f6884de16a3"
+range = "0x801E0804..0x801E0864"
+verdict = "unported"
+reason = "the grid's return value: the drawer's per-cell answer through the jump table at 0x801CF31C and the confirm mask 0x44 pick the slot or 0x80 into fp, which the routine returns; its one caller on the disc (jal at 0x801DFD94, PROT 0899) discards v0, so nothing consumes it and the port has no counterpart"

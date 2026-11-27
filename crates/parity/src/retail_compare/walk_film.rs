@@ -97,7 +97,17 @@ impl WalkFilm {
     pub(super) fn run(&self, session: &mut NativeSession, retail: &RetailObs) -> Result<()> {
         crate::retail_compare::seat_host_camera(&mut session.camera);
         // The lead's clip players, as a play host binds them.
+        // It also hands the session's headless frame tail the scene's clip
+        // banks (`SceneHost::headless_clip_banks`), so the clip cues drain as
+        // a play host drains them: the player's scene picks resolve and an
+        // NPC re-target (an ambient walker's walk / stand switch) binds.
+        // `LEGAIA_RC_NO_CUE_DRAIN=1` keeps the old bank-less drain.
         legaia_engine_session::scene_actors::bind_scene_actors(&mut session.host);
+        let no_cue_drain = std::env::var_os("LEGAIA_RC_NO_CUE_DRAIN").is_some();
+        if no_cue_drain {
+            session.host.headless_clip_banks = None;
+        }
+        let mut bound_scene = session.host.world.active_scene_label.clone();
         // `LEGAIA_RC_PORT_PAD=1` (lane W) runs the port's default pad and
         // walk delivery instead of the retail pipeline the seed pins: the pad
         // on the vsync it is pressed, the overworld step paid out a vsync at
@@ -142,6 +152,12 @@ impl WalkFilm {
         // columns read how the pose moves from retail's. A harness seat;
         // `LEGAIA_RC_NO_CLIP_SEAT=1` leaves the seed's phases.
         if std::env::var_os("LEGAIA_RC_NO_CLIP_SEAT").is_none() {
+            // A placement the state holds on another clip than the seed's
+            // entry bound (an ambient walker its stream stood back on its
+            // standing move, `town01`'s villagers on `11` where the entry
+            // bound the walk `12`) is bound to the state's clip first, so
+            // the cursor seat below lands on it.
+            seat_npc_clip_ids(session, retail);
             for c in &retail.object_clips_ram {
                 session.host.world.seed_object_prop_clip(
                     usize::from(c.record),
@@ -150,6 +166,17 @@ impl WalkFilm {
                     c.flags,
                     c.rate,
                 );
+            }
+        }
+        // A placed object the state holds collision-exempt (a door the player
+        // pushed open, `+0x10 & 3`) stops blocking from the film's first
+        // step. A harness seat; `LEGAIA_RC_NO_EXEMPT_SEAT=1` keeps the seed's.
+        if std::env::var_os("LEGAIA_RC_NO_EXEMPT_SEAT").is_none() {
+            for &(record, bits) in &retail.object_exempt {
+                session
+                    .host
+                    .world
+                    .seed_object_prop_exempt(usize::from(record), bits);
             }
         }
         if std::env::var_os("LEGAIA_RC_PART_DIAG").is_some() {
@@ -441,6 +468,12 @@ impl WalkFilm {
             // (`World::retail_frame_pad`) runs as it does in play.
             session.host.world.set_pad(pad);
             session.tick()?;
+            // A scene change binds the new scene's actors, as a play host
+            // does on entry.
+            if !no_cue_drain && session.host.world.active_scene_label != bound_scene {
+                legaia_engine_session::scene_actors::bind_scene_actors(&mut session.host);
+                bound_scene = session.host.world.active_scene_label.clone();
+            }
             if depart_seat.is_some() && session.host.world.clock.game_tick_fired {
                 depart_spent += i32::from(session.host.world.clock.frame_step);
             }
@@ -767,6 +800,53 @@ enum PendingFogWalk {
 fn seat_frame_accums(world: &mut legaia_engine_core::world::World, accum: u8) {
     world.clock.actor_vsync_accum = accum;
     world.ambient.clut_vsync_accum = accum;
+}
+
+/// Bind each MAN placement whose world-owned clip is not the state's
+/// (`ObjectClipSeed::clip`) to the state's clip, from the bank the scene's
+/// actors were bound from (`SceneHost::headless_clip_banks`), and latch it
+/// as the playing move (`+0x5E`) the ambient walker's requests compare
+/// against. A harness seat.
+fn seat_npc_clip_ids(session: &mut NativeSession, retail: &RetailObs) {
+    let Some(banks) = session.host.headless_clip_banks.clone() else {
+        return;
+    };
+    let world = &mut session.host.world;
+    for c in &retail.object_clips_ram {
+        let Some(slot) = world
+            .field_vm
+            .channels
+            .iter()
+            .find(|ch| !ch.object_bind && usize::from(ch.ctx.script_id) == usize::from(c.record))
+            .and_then(|ch| u8::try_from(ch.placement_index).ok())
+        else {
+            continue;
+        };
+        let Some(&special) = banks.targets.get(&slot) else {
+            continue;
+        };
+        let Some(bound) = world.npcs.clip_cursors.get(&slot).map(|k| k.anim_id) else {
+            continue;
+        };
+        if bound == c.clip || c.clip == 0 {
+            continue;
+        }
+        let bank = if world.npc_clip_party_bank(slot, special) {
+            banks.locomotion_anm.as_ref()
+        } else {
+            banks.scene_anm.as_ref()
+        };
+        let Some(player) = bank.and_then(|b| {
+            legaia_engine_field::field_anim::FieldClipPlayer::from_record(
+                b,
+                usize::from(c.clip) - 1,
+            )
+        }) else {
+            continue;
+        };
+        world.bind_npc_clip_cursor(slot, c.clip, &player);
+        world.npcs.clip_current.insert(slot, c.clip);
+    }
 }
 
 #[cfg(test)]

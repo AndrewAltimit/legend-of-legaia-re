@@ -158,9 +158,10 @@ fn concnow_mirror_image_plays_the_players_clip() {
                 (30..=38).contains(&tx) && (90..=110).contains(&tz),
                 "player left the mirror rect at ({tx}, {tz})"
             );
-            if i < 4 {
+            if i < 6 {
                 // A clip switch rebinds the image on the tail of the
-                // frame; give it the frame after to pick the cursor up.
+                // frame; give it the game frame after (the player's clip
+                // steps on the frame grid) to pick the cursor up.
                 continue;
             }
             let (clip, cursor) = player_clip(&host);
@@ -180,7 +181,18 @@ fn concnow_mirror_image_plays_the_players_clip() {
                 clip,
                 "the image plays the player's clip"
             );
-            let step = image.rate.max(1) as u32;
+            // Within one game frame's step: the player's clip steps on the
+            // frame grid (`FUN_800204F8` once a frame, times the frame step),
+            // and the image copies the cursor the frame before it.
+            let player_step = host
+                .world
+                .locomotion
+                .player_anim
+                .as_ref()
+                .and_then(|a| a.playing_step())
+                .unwrap_or(1);
+            let step = player_step.max(image.rate.max(1) as u32)
+                * u32::from(host.world.clock.frame_step.max(1));
             let d = (image.cursor.max(0) as u32).abs_diff(cursor);
             let span = u32::from(image.frames) * 16;
             assert!(

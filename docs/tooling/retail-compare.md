@@ -1403,6 +1403,13 @@ started from:
   replays that arm's op-`0x35` words first
   (`man_field_scripts::walk_spawn_scores`: the last start within eight
   instructions of the `44`, through `World::replay_field_bgm_words`).
+  A stop or pause counts as a start, and a start straight after one keeps
+  it: `garmel`'s entry returns from the Zeto fight with `35 00 00 02` ahead
+  of `44 41` (record 14, Zeto's defeat), and `kor5`'s returns from Gaza's
+  with `35 00 00 02`, the park word `35 00 10 01` and `44 2A` (`P2[5]`).
+  The park loads nothing, so the score stays stopped; replayed without the
+  stop, both resumes sounded the entry's own track over a silent scene
+  (`garmel_zeto_defeat_pre_line`, `kor5_p2_5_pre_raise`).
   A start counts only when no branch from elsewhere in the record joins
   between it and the spawn: `koin3`'s entry picks `2055` or `2018` on a box
   test and both arms meet at `+0x16C` ahead of the `0x59B` test that spawns

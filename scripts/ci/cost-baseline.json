@@ -11,22 +11,22 @@
   "browser": {
    "battle": {
     "enhanced": {
-     "gl_draws_per_frame": 185.05,
-     "wasm_bytes_per_frame": 117206
+     "gl_draws_per_frame": 189.04,
+     "wasm_bytes_per_frame": 120916
     },
     "retail": {
-     "gl_draws_per_frame": 154.82,
-     "wasm_bytes_per_frame": 113958
+     "gl_draws_per_frame": 157.88,
+     "wasm_bytes_per_frame": 117537
     }
    },
    "cast": {
     "enhanced": {
-     "gl_draws_per_frame": 130.63,
-     "wasm_bytes_per_frame": 107790
+     "gl_draws_per_frame": 133.34,
+     "wasm_bytes_per_frame": 109934
     },
     "retail": {
-     "gl_draws_per_frame": 108.47,
-     "wasm_bytes_per_frame": 102119
+     "gl_draws_per_frame": 110.56,
+     "wasm_bytes_per_frame": 104414
     }
    },
    "town01": {
@@ -52,30 +52,30 @@
   },
   "bundle": {
    "gzip_bytes": 7426399,
-   "play_gzip_bytes": 5280467
+   "play_gzip_bytes": 5293993
   },
   "native": {
    "battle": {
     "enhanced": {
      "alloc_kb_per_frame": 4485.7,
-     "allocs_per_frame": 1290.7,
+     "allocs_per_frame": 1337.8,
      "draws_per_frame": 342
     },
     "retail": {
      "alloc_kb_per_frame": 4485.6,
-     "allocs_per_frame": 1265.2,
+     "allocs_per_frame": 1312.6,
      "draws_per_frame": 342
     }
    },
    "summon_cast": {
     "enhanced": {
      "alloc_kb_per_frame": 4607.8,
-     "allocs_per_frame": 1307.9,
+     "allocs_per_frame": 1354.1,
      "draws_per_frame": 342
     },
     "retail": {
      "alloc_kb_per_frame": 4608.2,
-     "allocs_per_frame": 1287.3,
+     "allocs_per_frame": 1333.6,
      "draws_per_frame": 342
     }
    },

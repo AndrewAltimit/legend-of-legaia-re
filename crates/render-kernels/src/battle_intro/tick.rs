@@ -35,7 +35,16 @@ impl BattleIntro {
         {
             return frame.clone();
         }
-        if self.style == IntroStyle::ScatterParticles {
+        // The spin-up runs on the same cadence: a PCSX-Redux run of the style
+        // reads clocks `0, 2, 6, 9, 12, ...` (step `3` from the third frame),
+        // and its particle kernel integrates per call, so one call per unit
+        // spreads the field further out and dims it (mean patch distance
+        // `53` px at clock `36` against retail's `~39`, colour `88` against
+        // `~115`); one call per three units lands on retail's packets.
+        if matches!(
+            self.style,
+            IntroStyle::ScatterParticles | IntroStyle::SpinUpParticles
+        ) {
             let step = i16::from(SCATTER_FRAME_STEP);
             let target = elapsed.max(0) - elapsed.max(0) % step;
             let mut e = match self.last_frame.as_ref() {
@@ -96,7 +105,10 @@ impl BattleIntro {
         // ([`Self::update_spinup_display`]).
         if matches!(
             self.style,
-            IntroStyle::Curtain | IntroStyle::SpinUpParticles | IntroStyle::ScatterParticles
+            IntroStyle::Curtain
+                | IntroStyle::SpinUpParticles
+                | IntroStyle::ScatterParticles
+                | IntroStyle::Swirl
         ) {
             self.curtain_trail_prims(&mut out.prims);
         }
@@ -143,6 +155,7 @@ impl BattleIntro {
                 let ring = emit && style.spin_up && emit_spinup_ring(ring_phase, &mut out.prims);
                 out.style_drawn = drawn || ring;
                 if style.spin_up || style.stamp_field_16 {
+                    self.pending_display_frames = self.pending_display_frames.saturating_add(1);
                     self.pending_particles.clear();
                     self.pending_particles
                         .extend_from_slice(&out.prims[particles_from..]);
@@ -196,12 +209,47 @@ impl BattleIntro {
                 let tick = swirl::tick_swirl(mesh, &mut self.clock, frame_step, prev_clock);
                 if tick.late_wash {
                     out.prims.push(wash_prim(swirl::LATE_WASH_RGB));
+                    self.pending_wash_5 = self
+                        .pending_wash_5
+                        .saturating_add(SCATTER_DISPLAY_DECAY_5 * u16::from(frame_step));
                 }
+                let bands_from = out.prims.len();
                 if emit {
                     for d in &tick.draws {
                         let band = d.first_vertex / swirl::VERTS_PER_BAND;
                         out.style_drawn |= emit_swirl_band(mesh, zs[band], d, &mut out.prims);
                     }
+                }
+                // The swirl draws over the never-cleared display too: its
+                // bands cover it early, and once they thin out (the late
+                // wash's phase) what they no longer redraw fades by the same
+                // drain the scatter's wash takes, leaving the init's
+                // expanding discs their trails.
+                self.pending_display_frames = self.pending_display_frames.saturating_add(1);
+                self.pending_particles.clear();
+                self.pending_particles
+                    .extend_from_slice(&out.prims[bands_from..]);
+            }
+        }
+
+        // The init's parts tick with the actor list every frame and draw
+        // through the actor walk, over the style's packets (they link at
+        // their own depth, nearer than the particle buckets). On a display
+        // model they land with the frame's particles, so they trail as the
+        // rest of the never-cleared display does.
+        if let Some(parts) = self.parts.as_mut() {
+            parts.step(frame_step);
+            if elapsed != 0 {
+                let from = out.prims.len();
+                parts.emit(&mut out.prims);
+                out.style_drawn |= out.prims.len() > from;
+                let modelled = match &self.set {
+                    WorkingSet::Particles { style, .. } => style.spin_up || style.stamp_field_16,
+                    WorkingSet::Swirl { .. } => true,
+                    _ => false,
+                };
+                if modelled {
+                    self.pending_particles.extend_from_slice(&out.prims[from..]);
                 }
             }
         }

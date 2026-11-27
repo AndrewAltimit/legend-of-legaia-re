@@ -89,10 +89,21 @@ const {
 
 let wasmMod = null;
 
+const WASM_LOADING = 'Loading patcher (WASM) ...';
+
+/* The page's own helpers (the equipment and price tables, the texture scan)
+ * load the patcher as soon as a disc is in, with no run behind them, so the
+ * loading line gives way to a ready line once the module is up, rather than standing
+ * under the Patch button for the rest of the visit as if it were still
+ * loading. A line some other step has written since is left alone. */
 async function ensureWasm(setStatus) {
   if (wasmMod) return wasmMod;
-  setStatus('Loading patcher (WASM) ...');
+  setStatus(WASM_LOADING);
   wasmMod = await window.LegaiaWasm.load();
+  const statusEl = document.getElementById('rom-status');
+  if (statusEl && statusEl.textContent === WASM_LOADING) {
+    setStatus('Ready. Pick a preset (or any toggle), then Patch & download.');
+  }
   return wasmMod;
 }
 

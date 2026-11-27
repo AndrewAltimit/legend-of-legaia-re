@@ -291,18 +291,27 @@ impl FieldClipPlayer {
         pose
     }
 
-    /// Emit the current pose, then advance one clip tick `scale` vsyncs long
-    /// under the actor's control word `flags` (`actor+0x62`) - retail's
-    /// cursor rules: restart, hold, reverse, and the clamp that stops a
-    /// one-shot on its last position instead of wrapping it. Returns the pose
-    /// and the word the tick leaves (the end latch `0x100` raised on the tick
-    /// the cursor reaches an end, a restart request consumed).
+    /// Advance one clip tick `scale` vsyncs long under the actor's control
+    /// word `flags` (`actor+0x62`) - retail's cursor rules: restart, hold,
+    /// reverse, and the clamp that stops a one-shot on its last position
+    /// instead of wrapping it - then emit the pose the cursor stands on.
+    /// Returns the pose and the word the tick leaves (the end latch `0x100`
+    /// raised on the tick the cursor reaches an end, a restart request
+    /// consumed).
+    ///
+    /// The order is retail's: the actor tick binds a new clip (cursor `0`),
+    /// seats a restart request (`0x800205F8..0x80020630`) and steps the
+    /// cursor (`0x8002064C..0x80020690`) in one call, and the frame's draw
+    /// reads `+0x68` after it. So a clip's first drawn frame is already one
+    /// step in (a PCSX-Redux film of the town01 opening binds Vahn's scene
+    /// record 45 at cursor `8`), and a restart under the reverse bit draws
+    /// from the last frame less one step (`136` on the same film), never
+    /// from the cursor the request replaces.
     ///
     /// REF: FUN_800204F8 (`legaia_engine_vm::actor_tick::clip_cursor_tick`)
     pub fn tick_with(&mut self, scale: u16, flags: u16) -> (PoseFrame, u16) {
-        let pose = self.current_pose();
         let flags = self.advance_with(scale, flags);
-        (pose, flags)
+        (self.current_pose(), flags)
     }
 
     /// The advance half of [`Self::tick_with`].
@@ -481,6 +490,9 @@ pub struct FieldPlayerAnim {
     last_pose: Option<PoseFrame>,
     /// Ticks the current pick has waited unresolved.
     scene_wait: u8,
+    /// The vsyncs of a game frame whose tick held for a scene pick's clip,
+    /// taken by the tick that plays it ([`Self::tick_scaled`]).
+    owed: u16,
     /// Whether the last tick re-emitted [`Self::last_pose`].
     holding: bool,
     /// The player's clip rate `actor+0x6A` the picked clip steps at: the
@@ -507,6 +519,7 @@ impl FieldPlayerAnim {
             scene_refused: None,
             last_pose: None,
             scene_wait: 0,
+            owed: 0,
             holding: false,
             clip_rate: CLIP_RATE as i16,
         }
@@ -560,6 +573,24 @@ impl FieldPlayerAnim {
         self.scene_record = None;
         self.playing_scene = None;
         self.walking = slot == legaia_actor_formats::character_pack::LOCOMOTION_WALK_SLOT;
+        self.last_pose = Some(pose.clone());
+        Some(pose)
+    }
+
+    /// Stand the player on scene record `record` at `cursor`, as a save
+    /// state's clip words hold it, when that record's clip is the one bound
+    /// ([`Self::resolve_scene_clip`]), and return that pose. `None`
+    /// otherwise. The retail comparison's image child only.
+    pub fn seat_scene_clip(&mut self, record: u16, cursor: u32, clamp: bool) -> Option<PoseFrame> {
+        let (r, clip) = self.scene_clip.as_mut()?;
+        if *r != record {
+            return None;
+        }
+        clip.set_cursor(cursor, clamp);
+        let pose = clip.current_pose();
+        self.scene_record = Some(record);
+        self.playing_scene = Some(record);
+        self.playing_slot = None;
         self.last_pose = Some(pose.clone());
         Some(pose)
     }
@@ -733,6 +764,60 @@ impl FieldPlayerAnim {
     ///
     /// REF: FUN_800204F8
     pub fn tick_with_flags(&mut self, flags: u16) -> (PoseFrame, u16) {
+        self.tick_scaled(flags, 1)
+    }
+
+    /// Whether a tick held this game frame for a scene pick whose clip has
+    /// since resolved: the frame's bind-and-step is still owed
+    /// ([`Self::tick_scaled`] with `scale` `0` pays it).
+    pub fn bind_step_due(&self) -> bool {
+        self.owed > 0
+            && self
+                .scene_record
+                .is_some_and(|r| self.scene_clip.as_ref().is_some_and(|(c, _)| *c == r))
+    }
+
+    /// Whether a script picked a scene clip after this frame's tick ran (a
+    /// seat or a poke writing the player's `+0x5C`) whose clip is resolved
+    /// but not yet bound: retail's op binds and steps it in the same frame
+    /// (the op calls `FUN_800204F8`).
+    pub fn script_pick_due(&self) -> bool {
+        self.owed == 0
+            && !self.holding
+            && self.scene_record.is_some_and(|r| {
+                self.playing_scene != Some(r)
+                    && self.scene_clip.as_ref().is_some_and(|(c, _)| *c == r)
+            })
+    }
+
+    /// [`Self::tick_with_flags`] on the game-frame grid: `scale` is the
+    /// vsyncs this tick's game frame credits (the world clock's
+    /// `script_frame_delta`), and a tick that credits none - a vsync between
+    /// two game frames - changes nothing and re-emits the last pose. Retail
+    /// runs the player's anim tick `FUN_800204F8` once a game frame from the
+    /// actor-list walk and multiplies its step by the frame step
+    /// (`mult a0,v0` at `0x80020660`), as it does every NPC's: a PCSX-Redux
+    /// film of the town01 opening steps Vahn's cursor `8` on every second
+    /// vsync at frame step `2`. Stepping half that every vsync drew each
+    /// pose a vsync after retail and latched a one-shot's end a vsync late.
+    ///
+    /// REF: FUN_800204F8
+    pub fn tick_scaled(&mut self, flags: u16, scale: u16) -> (PoseFrame, u16) {
+        let scale = scale.saturating_add(std::mem::take(&mut self.owed));
+        if scale == 0
+            && let Some(pose) = self.last_pose.clone()
+        {
+            // A pick made between two frames binds on the next one; until
+            // then the body holds the pose it had.
+            if self
+                .scene_record
+                .is_some_and(|r| self.playing_scene != Some(r))
+            {
+                self.holding = true;
+            }
+            return (pose, flags);
+        }
+        let scale = scale.max(1);
         // A scene pick a script made this tick binds in retail at once, but
         // its clip is loaded from the host's scene bundle in the frame tail
         // that follows ([`Self::resolve_scene_clip`]). Falling through to the
@@ -748,6 +833,10 @@ impl FieldPlayerAnim {
         {
             self.scene_wait += 1;
             self.holding = true;
+            // The frame the pick binds on steps it in retail; the clip
+            // resolves in this frame's tail, so its first tick takes the
+            // frame's step with its own.
+            self.owed = scale;
             self.moved_this_frame = false;
             self.pad_drove_this_frame = false;
             return (pose, flags);
@@ -756,12 +845,12 @@ impl FieldPlayerAnim {
             self.scene_wait = 0;
         }
         self.holding = false;
-        let (pose, flags) = self.tick_picked(flags);
+        let (pose, flags) = self.tick_picked(flags, scale);
         self.last_pose = Some(pose.clone());
         (pose, flags)
     }
 
-    fn tick_picked(&mut self, flags: u16) -> (PoseFrame, u16) {
+    fn tick_picked(&mut self, flags: u16, scale: u16) -> (PoseFrame, u16) {
         let moved = std::mem::take(&mut self.moved_this_frame);
         let pad_drove = std::mem::take(&mut self.pad_drove_this_frame);
         // A move nobody's pad made (a script walked the player) plays the
@@ -773,7 +862,9 @@ impl FieldPlayerAnim {
         } else if pad_drove {
             self.script_walk_hold = 0;
         } else {
-            self.script_walk_hold = self.script_walk_hold.saturating_sub(1);
+            self.script_walk_hold = self
+                .script_walk_hold
+                .saturating_sub(u8::try_from(scale).unwrap_or(u8::MAX));
         }
         let script_walking = !pad_drove && self.script_walk_hold > 0;
         let moving = moved || script_walking;
@@ -790,7 +881,7 @@ impl FieldPlayerAnim {
             self.playing_scene = Some(record);
             self.playing_slot = None;
             clip.set_rate(self.clip_rate);
-            return clip.tick_with(1, flags);
+            return clip.tick_with(scale, flags);
         }
         if self.playing_scene.take().is_some() {
             // Leaving the scene clip: the next pick restarts from frame 0.
@@ -815,7 +906,7 @@ impl FieldPlayerAnim {
                 clip.rewind();
             }
             clip.set_rate(self.clip_rate);
-            return clip.tick_with(1, flags);
+            return clip.tick_with(scale, flags);
         }
         if self.playing_slot.take().is_some() {
             // Leaving the bank: the pair restarts from the edge below.
@@ -829,18 +920,20 @@ impl FieldPlayerAnim {
                 self.idle.rewind();
             }
         }
-        let pose = if self.walking {
-            self.walk.tick()
+        let clip = if self.walking {
+            &mut self.walk
         } else {
-            self.idle.tick()
+            &mut self.idle
         };
-        (pose, flags)
+        clip.advance(u32::from(scale));
+        (clip.current_pose(), flags)
     }
 }
 
-/// Ticks [`FieldPlayerAnim`]'s motion-derived walk outlives a script-made
-/// move: one game frame of two vsyncs, so a script stepping the player every
-/// other vsync reads as one continuous walk.
+/// Vsyncs [`FieldPlayerAnim`]'s motion-derived walk outlives a script-made
+/// move (each tick spends its scale): one game frame of two vsyncs, so a
+/// script stepping the player every other vsync reads as one continuous
+/// walk.
 pub const SCRIPT_WALK_HOLD: u8 = 2;
 
 /// Ticks [`FieldPlayerAnim`] holds its last pose for a scene pick whose clip
@@ -1130,9 +1223,10 @@ mod tests {
             seen.push(pose.bone_outputs[0].0[0]);
             latched.push(flags & CLIP_END != 0);
         }
-        // Frames 0 / 10 / 20 once, then frame 2 held; the latch lands on the
-        // tick the cursor reaches the end and stays up while it rests there.
-        assert_eq!(seen, vec![0, 10, 20, 20, 20, 20, 20, 20]);
+        // Bound and stepped in one tick: frames 1 / 2, then frame 2 held; the
+        // latch lands on the tick the cursor reaches the end and stays up
+        // while it rests there.
+        assert_eq!(seen, vec![10, 20, 20, 20, 20, 20, 20, 20]);
         assert_eq!(
             latched,
             vec![false, false, true, true, true, true, true, true]
@@ -1140,14 +1234,44 @@ mod tests {
         // The next pick (the script's `A2 F8 02`) hands back to locomotion.
         anim.select_scene_record(None);
         flags &= !CLIP_CLAMP;
-        assert_eq!(anim.tick_with_flags(flags).0.bone_outputs[0].0[0], 100);
+        assert_eq!(anim.tick_with_flags(flags).0.bone_outputs[0].0[0], 110);
         // Unclamped, the same poke loops.
         anim.select_scene_record(Some(0));
         anim.bind_scripted(0, clip);
         let seen: Vec<i16> = (0..5)
             .map(|_| anim.tick_with_flags(0).0.bone_outputs[0].0[0])
             .collect();
-        assert_eq!(seen, vec![0, 10, 20, 0, 10]);
+        assert_eq!(seen, vec![10, 20, 0, 10, 20]);
+    }
+
+    /// A scripted clip bound with restart and reverse raised (the town01
+    /// opening's hand-down) draws from its last frame less one step on the
+    /// bind tick: retail seats the request and steps before the draw, so the
+    /// clip's frame 0 never shows between the pose before and the reversed
+    /// playback.
+    #[test]
+    fn a_reversed_restart_draws_the_last_frame_on_the_bind_tick() {
+        use legaia_engine_vm::actor_tick::{CLIP_RESTART, CLIP_REVERSE};
+        let bundle = synth_bundle();
+        let mut idle = FieldClipPlayer::from_record(&bundle, 1).unwrap();
+        let mut walk = FieldClipPlayer::from_record(&bundle, 0).unwrap();
+        idle.set_step(16);
+        walk.set_step(16);
+        let mut anim = FieldPlayerAnim::new(idle, walk);
+        anim.set_clip_rate(16);
+        anim.select_scene_record(Some(0));
+        anim.bind_scripted(0, FieldClipPlayer::from_record(&bundle, 0).unwrap());
+        let mut flags = CLIP_CLAMP | CLIP_REVERSE | CLIP_RESTART;
+        let mut seen = Vec::new();
+        for _ in 0..5 {
+            let (pose, out) = anim.tick_with_flags(flags);
+            flags = out;
+            seen.push(pose.bone_outputs[0].0[0]);
+        }
+        assert_eq!(flags & CLIP_RESTART, 0, "the request is consumed");
+        // Seated on frame 2 and stepped back in the bind tick: frames 1 / 0,
+        // then held on frame 0; never the cursor the request replaced.
+        assert_eq!(seen, vec![10, 0, 0, 0, 0]);
     }
 
     /// The ledge hop's take-off clip is the pick on frames the arc - not the
@@ -1171,10 +1295,11 @@ mod tests {
             flags = out;
             seen.push(pose.bone_outputs[0].0[0] as u8);
         }
-        // Two frames at step 8: 0, 0, 10, then held on frame 1.
+        // Two frames at step 8, bound and stepped in one tick: 0, 10, then
+        // held on frame 1.
         let hop = (HOP * 100) as u8;
-        assert_eq!(&seen[..4], &[hop, hop, hop + 10, hop + 10]);
-        assert!(seen[3..].iter().all(|&t| t == hop + 10), "{seen:?}");
+        assert_eq!(&seen[..3], &[hop, hop + 10, hop + 10]);
+        assert!(seen[1..].iter().all(|&t| t == hop + 10), "{seen:?}");
         // A standing pick under a script walk: the walk, without a rewind on
         // the vsync between two steps.
         anim.select_retail_slot(Some(LOCOMOTION_IDLE_SLOT));
@@ -1224,26 +1349,28 @@ mod tests {
         idle.set_step(16);
         walk.set_step(16);
         let mut anim = FieldPlayerAnim::new(idle, walk);
-        // Standing: idle record (tag 100+).
-        assert_eq!(anim.tick().bone_outputs[0].0[0], 100);
+        // Standing: idle record (tag 100+), each tick drawn after its step.
         assert_eq!(anim.tick().bone_outputs[0].0[0], 110);
-        // Move (a pad walk): walk record restarts at frame 0 (tag 0+).
-        anim.moved_this_frame = true;
-        anim.pad_drove_this_frame = true;
-        assert_eq!(anim.tick().bone_outputs[0].0[0], 0);
+        assert_eq!(anim.tick().bone_outputs[0].0[0], 100);
+        // Move (a pad walk): walk record restarts at frame 0 and steps in
+        // the same tick (tag 0+).
         anim.moved_this_frame = true;
         anim.pad_drove_this_frame = true;
         assert_eq!(anim.tick().bone_outputs[0].0[0], 10);
+        anim.moved_this_frame = true;
+        anim.pad_drove_this_frame = true;
+        assert_eq!(anim.tick().bone_outputs[0].0[0], 20);
         // The pad step still owns the frame it stands still on.
         anim.pad_drove_this_frame = true;
-        // Release: idle restarts at frame 0.
-        assert_eq!(anim.tick().bone_outputs[0].0[0], 100);
+        // Release: idle restarts at frame 0, stepped once.
+        assert_eq!(anim.tick().bone_outputs[0].0[0], 110);
         assert!(!anim.walking);
     }
 
     /// The tick a script makes a scene pick, its clip is not loaded yet (the
     /// host resolves it in the frame tail): the body holds its pose rather
-    /// than flashing the motion pair, then the clip starts at frame 0. A pick
+    /// than flashing the motion pair, then the clip starts with the bind
+    /// tick's step owed. A pick
     /// nothing resolves falls back to the pair after the hold.
     #[test]
     fn an_unresolved_scene_pick_holds_the_last_pose() {
@@ -1260,10 +1387,11 @@ mod tests {
         anim.select_scene_record(Some(1));
         assert_eq!(anim.tick().bone_outputs[0].0[0], held, "held, not the pair");
         anim.resolve_scene_clip(&scene);
+        // Frame 1: the held bind tick's step and the tick's own.
         assert_eq!(
             anim.tick().bone_outputs[0].0[0],
-            100,
-            "scene record 1, frame 0"
+            110,
+            "scene record 1, two steps in"
         );
         // Never resolved: the hold runs out and the pair takes over.
         anim.select_scene_record(Some(7));

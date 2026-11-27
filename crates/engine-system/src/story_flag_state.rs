@@ -35,10 +35,20 @@ pub struct StoryFlagState {
     /// from RAM `0x80084340` never reaches scratchpad, so the bitmap
     /// and this word are not mirror copies of each other.
     pub story_flags: u32,
-    /// Full 512-byte story-flag bitmap mirroring retail RAM
-    /// `0x80085600..0x80085800` (SC block offset `0x14C0`). This is the
-    /// narrative-progress bitmap the SC block persists, separate from
-    /// the per-mode scratchpad word [`StoryFlagState::story_flags`].
+    /// The SC block's window at offset `0x14C0`, mirroring retail RAM
+    /// `0x80085600..`, carried for the save and load only. In retail the
+    /// window is not a flag array of its own: its first `0x158` bytes are
+    /// record slot 3's tail (`0x80085344 + 0x2BC..0x414`, Terra's template
+    /// record), and from `+0x158` on it is the system-flag bank
+    /// [`StoryFlagState::system_flags`] holds live. No retail code addresses
+    /// `0x80085600..0x80085758` by a static `lui` pair or base offset (a
+    /// register-tracking sweep of `SCUS_942.54` and every PROT entry finds
+    /// none); every flag access is `FUN_8003CE08` / `FUN_8003CE34` /
+    /// `FUN_8003CE64` (base `0x80085758`, byte `idx >> 3`) or op `4C 32`'s
+    /// clear of the bank. So no script can see the two vectors part: the
+    /// bank is read and written through `system_flags` alone, and the save
+    /// folds it back into this window at `+0x158`
+    /// (`engine-save-state`'s `save_full` / `load_story_flags`).
     ///
     /// Empty (`vec![]`) when the engine hasn't been booted from a retail
     /// SC block; populated via `World::load_full` when a retail-shaped

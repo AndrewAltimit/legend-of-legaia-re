@@ -264,7 +264,7 @@ where it was; `Delete` on the row puts all of them back on *Enhanced*.
 | Enhancements | See-through walls | `legaia-options.toml` | `F4` | on |
 | Enhancements | Smooth motion: cameras, walking, townsfolk and their animations, and the map screen move every frame (off = `--no-smooth-motion`) | `launcher.toml` | - | on |
 | Enhancements | Living ground pulse (off = `--no-entry-pulse`) | `launcher.toml` | - | on |
-| Enhancements | Heal numbers (off = `--no-heal-numerals`) | `launcher.toml` | - | on |
+| Enhancements | Heal numbers (on = `--heal-numerals`) | `launcher.toml` | - | off |
 | Play | Free-angle movement | `legaia-options.toml` | `R` | on |
 | Play | Action movement: Square jumps (twice in the air), R2 dashes (`--action-movement`) | `launcher.toml` | - | off |
 | Play | Instant controls: a press acts on the frame it lands (off = `--no-instant-controls`) | `launcher.toml` | - | on |

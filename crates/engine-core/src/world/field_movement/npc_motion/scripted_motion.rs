@@ -77,6 +77,7 @@ impl World {
     pub(crate) fn carry_npc_run_anim(&mut self, slot: u8, move_id: u8) {
         if move_id != 0 && self.npcs.clip_current.get(&slot) != Some(&move_id) {
             self.npcs.anim_cues.insert(slot, (1, move_id, Vec::new()));
+            self.npcs.poked_cues.remove(&slot);
         }
     }
 
@@ -98,6 +99,7 @@ impl World {
     pub(crate) fn seat_npc_run_anim(&mut self, slot: u8, move_id: u8) {
         if move_id != 0 {
             self.npcs.anim_cues.insert(slot, (1, move_id, Vec::new()));
+            self.npcs.poked_cues.insert(slot);
         }
     }
 

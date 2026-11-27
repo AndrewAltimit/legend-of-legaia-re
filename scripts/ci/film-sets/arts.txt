@@ -20,3 +20,4 @@ ropeway_gala_flying_knee_mid --physical --state battle_ropeway_party_gala_flying
 ropeway_noa_sonic_javelin_open --physical --state battle_ropeway_party_noa_sonic_javelin_open --hit-trace --strike-deal
 ropeway_vahn_slash_kick_mid --physical --state battle_ropeway_party_vahn_slash_kick_mid --hit-trace --strike-deal
 rikuroa_vahn_seru_absorb --physical --state battle_rikuroa_party_vahn_seru_absorb_strike --hit-trace --strike-deal --tail 200
+jou_gala_heavens_drop_h6 --physical --state jou_gala_heavens_drop_strike_h6 --hit-trace --strike-deal

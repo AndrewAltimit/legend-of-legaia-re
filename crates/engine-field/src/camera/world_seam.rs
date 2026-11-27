@@ -100,6 +100,13 @@ pub trait CameraWorld {
     /// (`FrameClock::credited_frames`), which is what the mover's clock
     /// reads.
     fn credited_frames(&self) -> u64;
+    /// Take whether the op-`0x45` glide being routed was staged by a context
+    /// the frame's actor-list walk has no node after
+    /// ([`crate::camera_rig::CameraRig::glide_arm_after_walk`]): its mover,
+    /// allocated fresh, takes no step until the next frame.
+    fn take_glide_arm_after_walk(&mut self) -> bool {
+        false
+    }
     /// Display frames so far, one a world tick
     /// (`FrameClock::display_frames`): the vsync clock the follow ease
     /// banks toward its next pass on.

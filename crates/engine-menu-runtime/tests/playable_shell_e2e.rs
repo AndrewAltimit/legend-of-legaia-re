@@ -107,10 +107,15 @@ fn encounter_trigger_resolves_to_formation_def() {
     // Force a triggering step.
     let triggered = w.on_field_step();
     assert!(triggered, "fully-saturated rate should always trigger");
-    // Tick the transition timer - `transition_frames=0` means the
-    // session moves Idle → Transition → Triggered after one tick.
-    w.tick_encounter();
-    let roll = w.drain_encounter_formation().expect("triggered formation");
+    // Tick through the mode-8 load window; with `transition_frames=0`
+    // the session reaches Triggered as the window closes.
+    let roll = (0..16)
+        .find_map(|_| {
+            // The load window holds before the roll drains (`ENCOUNTER_JOLT_VSYNCS`).
+            w.tick_encounter();
+            w.drain_encounter_formation()
+        })
+        .expect("triggered formation");
     assert_eq!(roll.formation_id, 1);
 
     let formation = w
@@ -225,8 +230,13 @@ fn full_loop_title_then_encounter_then_battle_then_save_then_load() {
 
     // 3. Step → trigger.
     assert!(w.on_field_step(), "guaranteed trigger");
-    w.tick_encounter();
-    let roll = w.drain_encounter_formation().expect("triggered");
+    let roll = (0..16)
+        .find_map(|_| {
+            // The load window holds before the roll drains (`ENCOUNTER_JOLT_VSYNCS`).
+            w.tick_encounter();
+            w.drain_encounter_formation()
+        })
+        .expect("triggered");
     assert_eq!(roll.formation_id, 1);
 
     // 4. Resolve a battle session against the formation.

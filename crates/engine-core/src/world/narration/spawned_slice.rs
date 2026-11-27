@@ -325,7 +325,7 @@ impl World {
         // through on the next visit.
         // REF: FUN_800204F8 (0x800206E4..0x8002072C)
         if let Some(width) = tl.player_clip_wait.take() {
-            if tl.player_clip_ticks > 0 {
+            if tl.player_clip_ticks > 0 && !self.player_clip_end_latched() {
                 tl.player_clip_wait = Some(width);
                 self.field_vm.channels = channels;
                 self.field_vm.stepping_view.clear();
@@ -1279,6 +1279,18 @@ impl World {
                             }
                             _ => 0,
                         };
+                        // The op's consumer call binds and steps the clip
+                        // before the record's next op: the step it takes is
+                        // one off the countdown, and the stale end latch of
+                        // the clip before is cleared (`andi v0,v1,0xfeff`
+                        // at `0x80020638`).
+                        if host.world.clock.game_tick_live {
+                            tl.player_clip_ticks = tl
+                                .player_clip_ticks
+                                .saturating_sub(u32::from(host.world.clock.frame_step.max(1)));
+                        }
+                        host.world.clear_player_clip_end_latch();
+                        host.world.seat_player_poked_party_clip(&pick);
                         // Cue the scripted player clip: the windowed host
                         // resolves scene-ANM record `move_id - 1` and plays
                         // it once over idle/walk (live-pinned: the town01
@@ -1353,7 +1365,10 @@ impl World {
                     }
                     // End-latch spin on the player (`AD F8 08`): park while
                     // the poked scene-bank clip is still playing.
-                    if op == 0x2D && tl.bytecode.get(pc + 2) == Some(&8) && tl.player_clip_ticks > 0
+                    if op == 0x2D
+                        && tl.bytecode.get(pc + 2) == Some(&8)
+                        && tl.player_clip_ticks > 0
+                        && !host.world.player_clip_end_latched()
                     {
                         if pc < tl.visited.len() {
                             tl.visited[pc] = true;

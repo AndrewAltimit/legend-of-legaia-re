@@ -235,7 +235,7 @@ pub fn script_ramp_ticks(ticks: u16) -> i32 {
 /// truncating (toward-zero) divide. Reproduces `0x80036E00..0x80036E50`:
 /// `subu`, `mult` / `mflo` and `addu` all wrap in 32 bits, so a product past
 /// `i32` keeps its low word rather than saturating.
-pub(super) fn lerp_remaining(start: i32, end: i32, remaining: i32, total: i32) -> i32 {
+pub fn lerp_remaining(start: i32, end: i32, remaining: i32, total: i32) -> i32 {
     if total == 0 {
         return end;
     }
@@ -258,7 +258,7 @@ pub(super) fn lerp_remaining(start: i32, end: i32, remaining: i32, total: i32) -
 /// floors, so a decreasing green or blue lane lands one below the plain-byte
 /// lerp whenever the quotient has a fraction: start `0`, end `10`, one third
 /// remaining gives red `7` but green `6`. The result's top byte is zero.
-pub(super) fn rgb_lerp(start: i32, end: i32, remaining: i32, total: i32, finished: bool) -> i32 {
+pub fn rgb_lerp(start: i32, end: i32, remaining: i32, total: i32, finished: bool) -> i32 {
     if finished {
         return end;
     }

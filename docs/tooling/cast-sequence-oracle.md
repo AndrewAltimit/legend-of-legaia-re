@@ -546,6 +546,17 @@ second clip and every melee roll are
 a draw, so a strike film wants `--strike-deal`, or it scores another hand: Thermo's
 strike lands clip `7` twice on the engine's stream where retail's second is `8`.
 
+A party art's film can also open on another target. The replay plays the capture's
+earlier rounds on plain Attacks, and a harvest's opening rounds sat out on Spirit, so
+the replay's swings can kill the monster the capture holds standing, and the acting
+seat's art lands on the next one: `jou_gala_heavens_drop_strike_h6`'s Gala struck slot
+`4` where retail's strikes slot `3`, the camera stood some `950` units of yaw off, and the
+film read `.764`. The driver reads the two sides' first body rows, and when the target's
+live pair parts by more than a body's width on a party film it records the engine side
+again with the other members on Spirit (the drive's `spare`); `engine-spare.txt` in the
+film directory remembers it. Re-recorded, the film reads `.946` and its camera is retail's
+through the strike states. A harness seat.
+
 Two more seats stand the gate on the state's own instant rather than on the
 still's. The capture's clip seeds (`LEGAIA_SEAT_BATTLE_CLIPS`) put each body on
 the displayed frame, two passes older than the RAM, which is right for the still
@@ -2638,6 +2649,20 @@ Three things the table and the recordings behind it say about the frame-cost mod
   `legaia_engine_scene_host::battle_link_census` does on every host
   ([the census](../subsystems/battle-stage-camera.md#the-census)); with
   `LEGAIA_DIAG_GPU_COST=<path>` the window logs it by class beside its own count.
+
+**How much of the image gap is the step.** Filming the enemy set with
+`--retail-steps` (each engine frame on the recording's own step, a harness seat)
+lifts its image mean from `.962` to `.977`, and the bottom rows close almost
+entirely: Zeto's Poisonous Bubbles `.883` to `.989`, Ironman's Jagged Earth `.893`
+to `.981`, Orb's Jewel Beam `.927` to `.963`, Kemaro's strike `.897` to `.970`. Each
+loses on one slipped frame. Retail runs a `0x2B` (or `0x20`) frame one vsync longer
+than the engine (Ironman's `730` and `766`-hblank frames take four vsyncs where the
+engine prices `722` and `720`; Zeto's takes three at `535` where the engine's reads
+`508`), and every later frame boundary then sits a vsync off retail's. On a
+close-up shot that one vsync is the whole loss: the camera, the bodies and the
+module's parts agree on the game clock, and the pairs that score `.45` are the
+ones where the engine has flipped and retail has not. The rows that stay low under
+the seat are where to look for drawn content (grade `capture`).
 
 ## Reading the report
 

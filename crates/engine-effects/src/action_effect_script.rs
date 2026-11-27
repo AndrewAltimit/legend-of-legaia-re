@@ -81,31 +81,28 @@
 //! installs it (`World::step_actor_effect_script` →
 //! `World::casting.move_fx_streak`), and the render layer projects the streak
 //! billboard from it (`legaia_render_kernels::afterimage`, drawn by the native
-//! window's screen-FX pass). What is still **not** modelled is the stepper's
-//! function-head sibling, retail's `0x801DEA50..0x801DEBEC` prologue - whose
-//! semantics are now pinned from the disassembly even though the port carries
-//! no seat for them:
+//! window's screen-FX pass). The stepper's function-head sibling, retail's
+//! `0x801DEA50..0x801DEBEC` prologue, is the follow-the-actor handle:
 //!
 //! * `ctx[+0x1028]` is a **single tracked part handle**, installed by the
-//!   table arm for codes `0xA` / `0x2D` / `0x2E` (`0x801df1b8..0x801df1e8`),
-//!   which also stash the record's *raw, unrotated* XYZ at
-//!   `ctx[+0x1184/+0x1186/+0x1188]`.
+//!   table arm for the substituted codes `0xA` / `0x2D` / `0x2E`
+//!   ([`FOLLOW_HANDLE_CODES`], `0x801df198..0x801df1e8`), which also stash
+//!   the record's *raw, unrotated* XYZ at `ctx[+0x1184/+0x1186/+0x1188]`.
 //! * The prologue is **not** target-seeking integration. Each call it first
 //!   drops the handle when the part's `+0x10` flags carry bit `3`
 //!   (`0x801dea88..0x801deaac` - the part retired), then, only while the
 //!   stepped actor is the context's active actor (`ctx[+0x13]`,
-//!   `0x801deabc`), it **re-seats** the part at the actor: position
-//!   `+0x14/+0x16/+0x18` = actor `+0x34..+0x3B`, `y -= ctx[+0x1186]`, and
-//!   x/z offset by the stashed legs rotated through the sin/cos LUTs at the
-//!   **current** facing `+ 0x800` (`0x801deae0..0x801debe4`). So the
-//!   spawned effect *follows the acting actor* frame by frame (a dash drags
-//!   its projectile along); the per-target `+0x1144` quads feed the separate
-//!   `+0x0E`-list spawns, not this handle.
-//! * The engine's table-form spawns are seated once at spawn position and
-//!   never re-seated: `BattleEffectSpawn` carries no raw-offset channel and
-//!   the spawned `SummonScene` is not identified back to its record, so the
-//!   follow-the-actor motion has no carrier yet. The streak block reads
-//!   `+0x1144` only as a projection input.
+//!   `0x801deabc`), it **re-seats** the part at the actor ([`follow_reseat`]):
+//!   position `+0x14/+0x16/+0x18` = actor `+0x34..+0x3B`, `y -= ctx[+0x1186]`,
+//!   and x/z offset by the stashed legs rotated through the sin/cos LUTs at
+//!   the **current** facing `+ 0x800` (`0x801deae0..0x801debe4`). So the
+//!   spawned effect *follows the acting actor* frame by frame: a cast clip's
+//!   ray burst (code `0xA`, record `0x801F55F8`) rides along as Songi steps
+//!   through Hyper Wave.
+//! * Port: [`EffectSpawn::legs`] carries the raw record XYZ, the queued
+//!   `world::BattleEffectSpawn` its `follow_legs` for a handle code, the
+//!   staged scene `SummonScene::follow_legs`, and `World::step_actor_effect_script`
+//!   runs the prologue ahead of the walk.
 //!
 //! A second prologue lane: `ctx[+0x263]` non-zero consumes the whole call -
 //! it clears the flag and bumps the actor's `+0x1F5` **and** `+0x1F6`
@@ -422,6 +419,39 @@ pub fn move_power_record_offset(map: &[u8], action: u8) -> Option<usize> {
     Some(id * MOVE_POWER_STRIDE)
 }
 
+/// The substituted table codes whose spawned part becomes the
+/// `ctx[+0x1028]` follow handle (`li v0,0xa` / `0x2d` / `0x2e` against `s0`
+/// at `0x801DF19C..0x801DF1B0`). `s0` is the code after
+/// [`table_effect_code`]'s substitution.
+pub const FOLLOW_HANDLE_CODES: [u8; 3] = [0x0A, 0x2D, 0x2E];
+
+/// Where the stepper's prologue re-seats the follow handle: the actor's
+/// position with `y` less the raw `+4` leg and the raw `+2` / `+6` legs
+/// rotated at `(facing + 0x800) & 0xFFF` - the four-read rotation of
+/// [`rotate_offset`] under [`FacingBias::Half`], on the record's **unscaled**
+/// legs. Each coordinate is stored as a halfword (`sh`), so it wraps.
+///
+/// PORT: FUN_801DEA50 (`0x801DEAE0..0x801DEBE4`)
+pub fn follow_reseat<L: RotationLut>(
+    lut: &L,
+    world: (i32, i32, i32),
+    facing: u16,
+    legs: [i16; 3],
+) -> [i16; 3] {
+    let (dx, dz) = rotate_offset(
+        lut,
+        facing,
+        FacingBias::Half,
+        i32::from(legs[0]),
+        i32::from(legs[2]),
+    );
+    [
+        (world.0 + dx) as i16,
+        (world.1 - i32::from(legs[1])) as i16,
+        (world.2 + dz) as i16,
+    ]
+}
+
 /// The committed anim id (`actor[+0x1D9]`) the table arm's code substitution
 /// keys on - the dynamic art slot the anim commit remaps an art clip onto.
 pub const TABLE_ART_SLOT: u8 = 0x11;
@@ -486,6 +516,10 @@ pub struct EffectSpawn {
     /// running `s7` after this record); [`TABLE_SCALE_SEED`] for the direct
     /// form, which does not touch it.
     pub table_scale: u16,
+    /// The record's raw `+2` / `+4` / `+6` legs, unscaled and unrotated: what
+    /// a follow-handle code stashes at `ctx[+0x1184..+0x1188]`
+    /// ([`FOLLOW_HANDLE_CODES`], [`follow_reseat`]).
+    pub legs: [i16; 3],
 }
 
 /// What one call of the stepper decided.
@@ -1154,6 +1188,7 @@ pub fn step_effect_script<L: RotationLut>(
                 direct: rec.is_direct(),
                 at,
                 table_scale,
+                legs: [rec.off_x, rec.off_y, rec.off_z],
             });
         }
         out.cursor += 1;
@@ -1219,6 +1254,22 @@ mod tests {
             b[o + 6..o + 8].copy_from_slice(&z.to_le_bytes());
         }
         b
+    }
+
+    #[test]
+    fn follow_reseat_is_the_half_turn_rotation_on_raw_legs() {
+        let lut = retail_rotation_lut();
+        let legs = [-40i16, 81, 32];
+        for facing in [0u16, 0x400, 0x7CF, 0xC00] {
+            let (dx, dz) = rotate_offset(lut, facing, FacingBias::Half, -40, 32);
+            assert_eq!(
+                follow_reseat(lut, (279, -189, -556), facing, legs),
+                [(279 + dx) as i16, -270, (-556 + dz) as i16],
+            );
+        }
+        // Halfword stores wrap.
+        assert_eq!(follow_reseat(lut, (0x7FFF, 0, 0), 0, [0, -1, 0])[1], 1);
+        assert_eq!(FOLLOW_HANDLE_CODES, [0x0A, 0x2D, 0x2E]);
     }
 
     #[test]

@@ -1972,16 +1972,17 @@ node's build (`FUN_80028158`, `6386` cycles and `59` a segment), which is the si
 `.38` a child the engine's Earthquake frames fall short by. Grade `capture` for the costs,
 inference for the shortfall's owner.
 
-**The three opt-in terms on this clock.** `WorldToggles::battle_me_decode_cost` prices an
-art commit's `"ME"` keyframe decode (`FUN_8002B28C`): real CPU work, `95` to `122` hblanks
+**Three terms on this clock that the line does not hold.** `WorldToggles::battle_me_decode_cost`
+(on by default) prices an art commit's `"ME"` keyframe decode (`FUN_8002B28C`): real CPU
+work, `95` to `122` hblanks
 on the commit passes of Noa's Frost Breath, Gala's Thunder Punch and Vahn's Slash Kick, at
 `2.27` cycles an instruction with its data accesses where `frame_clock::me_decode_work`
-charges `2` over `2152` cycles an hblank, `13%` low. `battle_effect_walk_cost` prices the
+charges `2` over `2152` cycles an hblank, `13%` low. `battle_effect_walk_cost` (opt-in) prices the
 walker's branches: real, the in-frame visits read the random-walk fit within `5%` (a step
 `150` against `157` and `166`, an overrun advance `150` against `149`, a draw `665` against
 `652`, a sweep `4446` against `4243`), and the flat price it replaces runs about `.9` a child
 over these for a child that lives. `frame_clock::CYCLES_PER_HBLANK` (`2172`) is the
-video clock's hblank, `1.2%` longer than PCSX-Redux's `2146.3`. `battle_arts_shout_cd` prices
+video clock's hblank, `1.2%` longer than PCSX-Redux's `2146.3`. `battle_arts_shout_cd` (opt-in) prices
 a CD read's polls, whose length is the emulator's CD timing and no instruction count: the
 interpreter takes no CD interrupt and cannot read it, so it stays the `--cd-trace`
 recordings' measurement. Grade `capture`.
@@ -2103,8 +2104,9 @@ leaves' rules:
 
 The step agreement over all four reads `.960`, `.935`, `.956` and `.962`. The census line
 loses on every set with retail's counts under it: its `.200` a link was fitted on the float
-rules' counts. So the leaves' rules ride the derived pricing only, and the census line keeps
-the float rules by default. The derived pricing on them takes the enemy casts (image over
+rules' counts, and a one-price refit on the leaves' counts reads no better (arts rms `38`
+against `29`): what retail spends is not one price a link. The census therefore prices the
+leaves' counts unit by unit ([below](#priced-unit-by-unit)). The derived pricing on them takes the enemy casts (image over
 the line's, every cue, camera `2.50` to `2.11`, Kor's Gaza's Astral Slash back to `1.0`,
 Zenoir's Fire Claw back to the line's `.9165`, Rogue Wind's `.9327` against `.9312`), the
 arts' image and cues, the Seru frames and the overall step agreement, but not the strikes
@@ -2113,6 +2115,36 @@ Its strike bands now read retail's counts, and their frames price within a few p
 either side of the recordings' (Devil Pump's `0x1F` `629` against `643`, Orb's `698`
 against `679`, Ironman's `658` against `670`); the Done band (`0x51`) still reads `16`
 hblanks under. So it stays opt-in.
+
+<a id="priced-unit-by-unit"></a>
+
+**Priced unit by unit.** On the leaves' rules the census's count is retail's: over
+Tri-Somersault's and Gala's Chain's `--gpu-cost` recordings its linked primitives land
+within `20` of the GPU table's on every frame, where the float rules ran `-55` to `+310`
+apart as the shots closed in (Tri-Somersault's camera pulls in over frames `1514..1521` and
+retail stops drawing some `440` body primitives off screen; the float rules, which send no
+body primitive to the off-screen test, kept all but `110`). What the frame costs is then
+read per unit: `frame_clock::leaf_frame_work` prices each primitive by fate and topology
+(about `.13` hblanks linked or off screen, `.03` to `.05` culled), each dispatcher object
+(`.6`), each ghost draw (`.7` over its primitives), each visible grid cell (`.29`), each
+swept-band packet (`1.26`) and ground-shadow packet (`.44`), with the effects' tick price
+at `.43` of its old weight, over a base of `34` and `74` more while the backdrop draws.
+The constants are a least-squares fit on the unpolled census-priced frames of the arts,
+strike and enemy film sets against their PCSX-Redux recordings. With each set held out of
+the fit in turn, the frame cost reads rms `24` / `14` / `30` hblanks against the one-price
+line's `30` / `27` / `39`, and the step right on `.956` / `.982` / `.920` of frames against
+`.926` / `.967` / `.905`. Grade `capture`; the per-unit prices are a fit, not instruction
+counts (the derived pricing holds those).
+
+It is what lands the Super Arts' edge frames on retail's step together: Tri-Somersault's
+one-ghost frame `1521` prices `707` (retail `692`, the line `721`), Gala's Chain's commit
+pass `719` (retail `717`, the line `723`), Dragon Fangs' two-ghost frames `709..717`
+(retail `685..707`, the line `724..734`). Port: `WorldToggles::battle_census_retail_culls`,
+on by default (`LEGAIA_CENSUS_RETAIL_CULLS=0` restores the float rules and the line). The
+film sets move: arts `.9517` to `.9656` (Tri-Somersault `.817` to `.939`, Gala's Chain back
+to `.992` / `.994`, Vahn's Chain `.966` / `.982`, Dragon Fangs `.868` to `.890`), strikes
+`.9849` to `.9882` with none down (Kemaro `.897` to `.970`, Mush Mush `.897` to `.953`),
+enemy casts `.9620` to `.9634`.
 
 **The three opt-in terms under the derived pricing.** The `"ME"` decode and the walker's
 branches are the derived pricing's own terms (`derived_cost::me_decode_cycles`,
@@ -2828,7 +2860,15 @@ SpecialStarter by the `sltiu 0x1B` branch to `0x8004BC4C`). The reader and its c
 `FUN_8002A9CC` run `512` instructions a decoded part-frame: run in the retail interpreter
 over every `readef.DAT` entry, each sits within `4%` of that (`retail-exec`'s
 `the_archive_reader_costs_its_part_frames`), so a `13`-frame Gala art costs about `93`
-hblanks at PCSX-Redux's two cycles an instruction and a `28`-frame Vahn art `200`. A
+hblanks at PCSX-Redux's two cycles an instruction and a `28`-frame Vahn art `200`. Entry
+by entry the count follows the codec's selector arms: a literal value costs about `75`
+instructions, a delta `82` or `95`, a lone nibble `96` or `97`, so the per-part-frame
+figure spreads `495` to `520` with each stream's mix, and a fit on the arms
+(`me_archive::reader_steps`) reads every compressed entry within `0.1%`
+(`the_archive_reader_costs_its_selector_arms`). The port prices a commit on its own
+entry's count, and on the law only for a clip that did not come from a compressed entry.
+Gala's two chain arts run `520` and `508` an instruction a part-frame, `94` and `92`
+hblanks. A
 `--cd-trace` recording of Dragon Fangs puts the first art's commit pass inside the reader
 for its first `100` hblanks, ahead of the shout's `CdlSetloc`; the SpecialStarter's voice is
 dispatched from the banner block before the decode, which is why Frost Breath's seek lands
@@ -2836,15 +2876,36 @@ dispatched from the banner block before the decode, which is why Frost Breath's 
 passes read `60..120` hblanks over their census without the term. Port:
 `frame_clock::me_decode_work`, added by `World::commit_staged_battle_anim_at_boundary` and
 taken by the pass's push, behind `WorldToggles::battle_me_decode_cost`
-(`LEGAIA_BATTLE_ME_DECODE=1`), off by default. On, Tri-Somersault reads `.767` to `.816` and
-its cues `.964` to `1.000`, Slash Kick `.911` to `.979`, but the arts mean falls `.9454` to
-`.9423` and the camera `1.46` to `1.94` px. The Gala chain films fall (`.99` to `.94`) on a
-knife edge: their art pass prices `722` where retail's reads `717`, the census `4` over
-retail's base, which tips the ring to step `4`; from there the port's voiced frames run a
-vsync past retail's (`9` against `8`) and the line covers one pass fewer. Closing a pass's
-polls where the read ends, and opening a shout's polls after its commit's decode, do not
-recover it (Sonic Javelin `.942` to `.828`). Grade `disassembly` for the call and the
-instruction count, `capture` for the films.
+(`LEGAIA_BATTLE_ME_DECODE`), on by default.
+
+The term is what keeps a Super Art's camera on retail's. Tri-Somersault's first commit
+pass (frame `1510` of `battle_jou_party_vahn_tri_somersault_super_open`'s recording) costs
+`818` where its neighbours cost `677` to `701`; the port prices it `808` with the term and
+`701` without, which runs the pass at step `3` where retail's runs `4`. A step-`3` pass
+moves Vahn's root motion three quarters as far, so he stands `4` units short of retail's
+pair for the rest of the art. His heading tracks the bearing from his live pair to the
+target's body pair, the per-art attack camera's yaw is that heading's negation, and the
+short pair drifted the camera `11` to `34` units behind retail's by the second slow
+motion and `120` behind through `0x1F` / `0x20`. With the term the camera reads retail's
+through the strike states' ends. Over the arts films the mean goes `.9478` to `.9517`:
+Tri-Somersault `.752` to `.817`, Super Ironhead `.900` to `.964`, Vahn's Chain `.900` to
+`.956` (late) and `.926` to `.971` (open). On the one-price census line three films fall
+on a knife edge of its base: Gala's Chain (`.99` to `.93`), whose commit pass prices `723`
+where retail's reads `717` and tips to step `4`, Dragon Fangs, whose two-ghost frames price
+`724` to `734` against retail's `685` to `707`, and Tornado Flame. On the leaves' counts
+priced unit by unit ([below](#priced-unit-by-unit)) the same frames price `719` and `709`
+to `717`, retail's step, and the arts read `.9656`.
+
+Tri-Somersault's other edge is a ghost frame: the first frame outside the arts voice's
+polls that draws one ghost costs `692` on retail and `721` on the one-price line, its base
+`27` over retail's there because the float rules keep the body primitives retail's closing
+shot stops drawing; the leaves' counts price it `707`, step `3`, and the film reads `.939`.
+The ghosts themselves are priced right on either: the `--ghost-trace` recordings' one-ghost steps (Tri-Somersault,
+Vahn's Chain, Dragon Fangs, the frames where only the ghost count changes) cost `91` to
+`129` hblanks, `105` on the mean, against the census's `103` to `110` for a party member's
+ghost; pricing a party ghost at a flat `90` lifted Tri-Somersault and Dragon Fangs and cost
+Vahn's Chain as much. Grade `disassembly` for the call and the instruction count,
+`capture` for the films.
 
 **A party member's ghosts.** The Super Arts' slow motion and the chain finishers draw two
 ghosts of the acting member. PCSX-Redux recordings of the three Super Arts on a full party

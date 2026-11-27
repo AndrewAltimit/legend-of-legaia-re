@@ -229,6 +229,9 @@ pub struct AudioState {
     /// The battle intro's init keyed off the field track (`FUN_801CE8CC`,
     /// sound set `0`) and the attach at its completion is still owed.
     pub(crate) bgm_keyed_off_for_intro: bool,
+    /// The intro init's audio half has run for the transition in flight
+    /// (`World::silence_field_audio_for_intro`); cleared outside a transition.
+    pub(crate) intro_audio_silenced: bool,
     /// `true` while the battle track is playing (set by
     /// `World::swap_to_battle_bgm`, cleared by
     /// `World::restore_field_bgm`). Guards against double-swap / spurious
@@ -467,6 +470,7 @@ impl AudioState {
             battle_sound_set: 0,
             field_bgm_resume: None,
             bgm_keyed_off_for_intro: false,
+            intro_audio_silenced: false,
             battle_bgm_active: false,
             minigame_bgm_resume: None,
             minigame_bgm_active: false,

@@ -98,11 +98,11 @@ credits = 4
 # reload replays its stretch's shortcuts, so a row counts its stream's reloads.
 
 [shortcuts.walked.default]
-box_face = 2
-examine_face = 26
-examine_far = 31
-examine_seat = 4
-restore_xz = 47
+box_face = 3
+examine_face = 28
+examine_far = 34
+examine_seat = 5
+restore_xz = 51
 touch_far = 2
 touch_seat = 9
 
@@ -111,7 +111,7 @@ box_face = 2
 examine_face = 24
 examine_far = 28
 examine_seat = 4
-restore_xz = 45
+restore_xz = 46
 touch_far = 2
 touch_seat = 9
 
@@ -120,16 +120,16 @@ box_face = 2
 examine_face = 24
 examine_far = 28
 examine_seat = 4
-restore_xz = 45
+restore_xz = 46
 touch_far = 2
 touch_seat = 9
 
 [shortcuts.walked.seed_5]
-box_face = 2
+box_face = 3
 examine_face = 24
 examine_far = 28
 examine_seat = 4
-restore_xz = 45
+restore_xz = 47
 touch_far = 2
 touch_seat = 9
 
@@ -138,7 +138,7 @@ box_face = 2
 examine_face = 24
 examine_far = 28
 examine_seat = 4
-restore_xz = 45
+restore_xz = 46
 touch_far = 2
 touch_seat = 9
 
@@ -156,7 +156,7 @@ box_face = 2
 examine_face = 24
 examine_far = 28
 examine_seat = 4
-restore_xz = 45
+restore_xz = 46
 touch_far = 2
 touch_seat = 9
 
@@ -165,7 +165,7 @@ box_face = 2
 examine_face = 24
 examine_far = 28
 examine_seat = 4
-restore_xz = 45
+restore_xz = 46
 touch_far = 2
 touch_seat = 9
 
@@ -174,7 +174,7 @@ box_face = 2
 examine_face = 24
 examine_far = 28
 examine_seat = 4
-restore_xz = 45
+restore_xz = 46
 touch_far = 2
 touch_seat = 9
 
@@ -183,7 +183,7 @@ box_face = 2
 examine_face = 24
 examine_far = 28
 examine_seat = 4
-restore_xz = 45
+restore_xz = 46
 touch_far = 2
 touch_seat = 9
 
@@ -192,7 +192,7 @@ box_face = 2
 examine_face = 24
 examine_far = 28
 examine_seat = 4
-restore_xz = 45
+restore_xz = 46
 touch_far = 2
 touch_seat = 9
 
@@ -216,10 +216,10 @@ touch_seat = 9
 
 [shortcuts.walked.seed_15]
 box_face = 2
-examine_face = 24
-examine_far = 28
+examine_face = 26
+examine_far = 31
 examine_seat = 4
-restore_xz = 45
+restore_xz = 48
 touch_far = 2
 touch_seat = 9
 
@@ -228,7 +228,7 @@ box_face = 2
 examine_face = 24
 examine_far = 28
 examine_seat = 4
-restore_xz = 45
+restore_xz = 46
 touch_far = 2
 touch_seat = 9
 

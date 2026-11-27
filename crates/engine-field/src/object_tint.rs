@@ -30,21 +30,22 @@ pub enum ObjectRampSlot {
 }
 
 /// One live tween on an object-bind actor, keyed by the actor's flat record
-/// index (`+0x50`) and the word it moves.
+/// index (`+0x50`) and the word it moves: a slot of the property-ramp pool
+/// `FUN_8003C5F0` installs and `FUN_80036D80` ticks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ObjectSlotRamp {
     /// The object channel's script id (flat partition-0 record).
     pub record: u16,
     /// The word tweened.
     pub slot: ObjectRampSlot,
-    /// The word when the tween was scheduled.
+    /// The word when the tween was scheduled (`slot+0x08`).
     pub start: i32,
-    /// The tween's end value.
+    /// The tween's end value (`slot+0x0C`).
     pub end: i32,
-    /// Length in frames.
-    pub total: u16,
-    /// Frames stepped so far.
-    pub elapsed: u16,
+    /// Length in frames (`slot+0x10`), never rewritten.
+    pub total: i32,
+    /// The countdown (`slot+0x14`).
+    pub remaining: i32,
 }
 
 /// A compass walk (`37` / `41`) parked on an object-bind actor's own
@@ -74,32 +75,61 @@ pub struct ObjectGlideLeg {
     pub frames: u32,
 }
 
-/// A straight line from `start` to `end` after `elapsed` of `total` frames,
-/// landing exactly on `end`.
-fn lerp(start: i32, end: i32, elapsed: u16, total: u16) -> i32 {
-    if elapsed >= total || total == 0 {
-        return end;
+/// One visit of the ramp ticker `FUN_80036D80` to a slot: the countdown
+/// drops by `step` (`_DAT_1F800393`), and at or below zero the slot stores
+/// its end value and retires; otherwise it stores
+/// `end + (start - end) * remaining / total`, truncated toward zero
+/// (`0x80036DD4..0x80036E50`), or the packed-colour lanes of kind 3
+/// (`0x80036E54..0x80036F60`). Returns `(value, finished)`.
+///
+/// The countdown is the script's ticks word read signed (`FUN_8003CE9C`), so a
+/// `0x8000..` count lands on the end value at the first visit.
+// REF: FUN_80036D80
+pub fn ramp_visit(
+    start: i32,
+    end: i32,
+    total: i32,
+    remaining: &mut i32,
+    step: i32,
+    colour: bool,
+) -> (i32, bool) {
+    use legaia_engine_motion_vm::ambient_motion::{lerp_remaining, rgb_lerp};
+    *remaining = remaining.wrapping_sub(step);
+    if *remaining <= 0 {
+        (end, true)
+    } else if colour {
+        (rgb_lerp(start, end, *remaining, total, false), false)
+    } else {
+        (lerp_remaining(start, end, *remaining, total), false)
     }
-    start + (end - start) * i32::from(elapsed) / i32::from(total)
 }
 
 impl ObjectSlotRamp {
-    /// The word's value after [`Self::elapsed`] frames. A colour tween moves
-    /// each 8-bit channel on its own line.
-    pub fn value(&self) -> i32 {
-        match self.slot {
-            ObjectRampSlot::TintColour => {
-                let mut out = 0u32;
-                for sh in [0u32, 8, 16] {
-                    let a = (self.start as u32 >> sh) & 0xFF;
-                    let b = (self.end as u32 >> sh) & 0xFF;
-                    let c = lerp(a as i32, b as i32, self.elapsed, self.total) as u32 & 0xFF;
-                    out |= c << sh;
-                }
-                out as i32
-            }
-            _ => lerp(self.start, self.end, self.elapsed, self.total),
+    /// A tween of `ticks` frames (the script word, read signed).
+    pub fn new(record: u16, slot: ObjectRampSlot, start: i32, end: i32, ticks: u16) -> Self {
+        let total = legaia_engine_motion_vm::ambient_motion::script_ramp_ticks(ticks);
+        Self {
+            record,
+            slot,
+            start,
+            end,
+            total,
+            remaining: total,
         }
+    }
+
+    /// Step the tween `step` frames: the word's new value and whether the
+    /// tween has landed ([`ramp_visit`]). A colour tween moves the packed
+    /// `0xBBGGRR` lanes and stores a word whose top byte is zero.
+    pub fn visit(&mut self, step: i32) -> (i32, bool) {
+        ramp_visit(
+            self.start,
+            self.end,
+            self.total,
+            &mut self.remaining,
+            step,
+            self.slot == ObjectRampSlot::TintColour,
+        )
     }
 }
 
@@ -115,13 +145,25 @@ pub enum ActorTintKey {
     Object(u16),
 }
 
-/// One straight-line tween of a tint word.
+/// One tween of a tint word: a ramp-pool slot ([`ramp_visit`]).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct TintRamp {
     pub start: i32,
     pub end: i32,
-    pub total: u16,
-    pub elapsed: u16,
+    pub total: i32,
+    pub remaining: i32,
+}
+
+impl TintRamp {
+    fn new(start: i32, end: i32, ticks: u16) -> Self {
+        let total = legaia_engine_motion_vm::ambient_motion::script_ramp_ticks(ticks);
+        Self {
+            start,
+            end,
+            total,
+            remaining: total,
+        }
+    }
 }
 
 /// A character's draw tint: `+0x74` colour (`0xBBGGRR`) and `+0x78` blend
@@ -135,7 +177,11 @@ pub struct ActorTint {
 }
 
 impl ActorTint {
-    /// Apply one op-`4C 81` (see `World::set_actor_tint`).
+    /// Apply one op-`4C 81` (see `World::set_actor_tint`): `ticks == 0`
+    /// writes both words; otherwise a zero current blend takes the colour at
+    /// once, a non-zero current and new blend tween the colour (pool kind 3),
+    /// and the blend always tweens (kind 2, from the `lhu` of `+0x78` to the
+    /// operand's signed halfword) - `0x801E1FE0..0x801E2060`.
     pub fn set(&mut self, colour: u32, blend: u16, ticks: u16) {
         if ticks == 0 {
             *self = Self {
@@ -151,43 +197,29 @@ impl ActorTint {
             self.colour_ramp = None;
         }
         if tween_colour {
-            self.colour_ramp = Some(TintRamp {
-                start: self.colour as i32,
-                end: colour as i32,
-                total: ticks,
-                elapsed: 0,
-            });
+            self.colour_ramp = Some(TintRamp::new(self.colour as i32, colour as i32, ticks));
         }
-        self.blend_ramp = Some(TintRamp {
-            start: i32::from(self.blend),
-            end: i32::from(blend),
-            total: ticks,
-            elapsed: 0,
-        });
+        self.blend_ramp = Some(TintRamp::new(
+            i32::from(self.blend),
+            i32::from(blend as i16),
+            ticks,
+        ));
     }
 
-    /// Step the running tweens one frame.
+    /// Step the running tweens one frame (one ticker visit at frame step 1).
     pub fn tick(&mut self) {
         if let Some(r) = self.colour_ramp.as_mut() {
-            r.elapsed = r.elapsed.saturating_add(1);
-            let v = ObjectSlotRamp {
-                record: 0,
-                slot: ObjectRampSlot::TintColour,
-                start: r.start,
-                end: r.end,
-                total: r.total,
-                elapsed: r.elapsed,
-            }
-            .value();
+            let (v, done) = ramp_visit(r.start, r.end, r.total, &mut r.remaining, 1, true);
             self.colour = v as u32 & 0x00FF_FFFF;
-            if r.elapsed >= r.total {
+            if done {
                 self.colour_ramp = None;
             }
         }
         if let Some(r) = self.blend_ramp.as_mut() {
-            r.elapsed = r.elapsed.saturating_add(1);
-            self.blend = lerp(r.start, r.end, r.elapsed, r.total) as u16;
-            if r.elapsed >= r.total {
+            let (v, done) = ramp_visit(r.start, r.end, r.total, &mut r.remaining, 1, false);
+            // Kind 2: the `sh` keeps the low halfword.
+            self.blend = v as u16;
+            if done {
                 self.blend_ramp = None;
             }
         }
@@ -219,32 +251,36 @@ mod tests {
 
     #[test]
     fn tween_lands_on_its_end_value() {
-        let mut r = ObjectSlotRamp {
-            record: 28,
-            slot: ObjectRampSlot::Height8E,
-            start: 700,
-            end: 0,
-            total: 23,
-            elapsed: 0,
-        };
-        assert_eq!(r.value(), 700);
-        r.elapsed = 11;
-        assert!(r.value() < 700 && r.value() > 0);
-        r.elapsed = 23;
-        assert_eq!(r.value(), 0);
+        let mut r = ObjectSlotRamp::new(28, ObjectRampSlot::Height8E, 700, 0, 23);
+        let (v, done) = r.visit(11);
+        assert!(v < 700 && v > 0 && !done);
+        // `end + (start - end) * remaining / total`, truncated: 12/23 of 700.
+        assert_eq!(v, 700 * 12 / 23);
+        assert_eq!(r.visit(12), (0, true));
     }
 
     #[test]
-    fn colour_tween_moves_each_channel_alone() {
-        let r = ObjectSlotRamp {
-            record: 1,
-            slot: ObjectRampSlot::TintColour,
-            start: 0x00_00_FF,
-            end: 0xFF_00_00,
-            total: 2,
-            elapsed: 1,
+    fn a_negative_ticks_word_lands_at_the_first_visit() {
+        let mut r = ObjectSlotRamp::new(1, ObjectRampSlot::Scale72, 0, 0x1000, 0xFFF0);
+        assert_eq!(r.visit(1), (0x1000, true));
+        let mut t = ActorTint {
+            colour: 0x10,
+            blend: 0x800,
+            ..Default::default()
         };
-        assert_eq!(r.value(), 0x7F_00_80);
+        t.set(0x80, 0x1000, 0x8000);
+        t.tick();
+        assert_eq!((t.colour, t.blend), (0x80, 0x1000));
+        assert!(t.colour_ramp.is_none() && t.blend_ramp.is_none());
+    }
+
+    #[test]
+    fn colour_tween_moves_each_lane_as_the_ticker_does() {
+        let mut r = ObjectSlotRamp::new(1, ObjectRampSlot::TintColour, 0x00_00_FF, 0xFF_00_00, 2);
+        // Red runs on the plain byte, blue on the byte scaled by 256 and
+        // masked: one half remaining gives red 0x7F and blue 0x7F.
+        assert_eq!(r.visit(1), (0x7F_00_7F, false));
+        assert_eq!(r.visit(1), (0xFF_00_00, true));
     }
 
     /// The fade-in idiom (`4C 81 .. 00 10 00 00` then `.. 00 00 24 00`):

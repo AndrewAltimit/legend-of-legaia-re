@@ -122,10 +122,11 @@ fn talk_in_entry_box(session: &mut NativeSession, slot: u8) -> Option<Run> {
             box_stands(&tiles, dispatch_tile(nx, nz))
         );
     }
-    for t in box_stands(&tiles, dispatch_tile(nx, nz)) {
-        if claimed.contains(&t) {
-            continue;
-        }
+    let stands: Vec<(u8, u8)> = box_stands(&tiles, dispatch_tile(nx, nz))
+        .into_iter()
+        .filter(|t| !claimed.contains(t))
+        .collect();
+    for &t in &stands {
         let back = player_xz(session);
         if pad_hand() {
             let goal = (i16::from(t.0), i16::from(t.1));
@@ -145,7 +146,12 @@ fn talk_in_entry_box(session: &mut NativeSession, slot: u8) -> Option<Run> {
             session.host_pad(0);
             restore_player_xz(session, at);
         }
-        let r = talk_from_box(session, slot, t);
+        let others: Vec<(u8, u8)> = if pad_hand() {
+            stands.iter().copied().filter(|&o| o != t).collect()
+        } else {
+            Vec::new()
+        };
+        let r = talk_from_box(session, slot, t, &others);
         if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
             eprintln!(
                 "      [box-talk] P1[{slot}] at {:?} from box tile {t:?} (stood {:?}) -> {r:?}",

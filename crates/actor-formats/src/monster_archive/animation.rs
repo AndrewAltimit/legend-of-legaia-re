@@ -138,6 +138,11 @@ pub struct VariantTrack {
     /// clip with no such entry tail (monster archive entries, Vahn / Gala /
     /// Terra's records).
     pub windows: [u8; ENTRY_VARIANT_WINDOWS_LEN],
+    /// The instructions the `"ME"` archive reader `FUN_8002B28C` runs to
+    /// decode this stream out of its compressed entry
+    /// ([`crate::me_archive::reader_steps`]): what an art commit's decode
+    /// costs its pass. `0` = not read from a compressed `"ME"` entry.
+    pub stream_decode_steps: u32,
 }
 
 impl VariantTrack {
@@ -435,6 +440,7 @@ pub fn parse_animation_stream(
         variant_track: VariantTrack {
             stream_parts: part_count.min(u8::MAX as usize) as u8,
             windows: [0; ENTRY_VARIANT_WINDOWS_LEN],
+            stream_decode_steps: 0,
         },
     })
 }

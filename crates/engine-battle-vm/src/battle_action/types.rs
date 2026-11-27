@@ -815,13 +815,19 @@ impl BattleActor {
     /// `hp != hp_display` with a zero accumulator - the absorbing state that
     /// parks the action SM at `0x51` forever (see [`crate::battle_hp_bar`]).
     ///
-    /// No-op when the host does not animate bars (`hp_display == None`),
-    /// matching [`Self::accumulate_hp_bar`].
+    /// An unarmed readout (`hp_display == None`, a seat no hit has moved
+    /// yet) is armed first at the figure it showed before the restore, live
+    /// HP less `delta`: retail's `+0x172` is seeded at battle load, so it
+    /// always stands on the pre-restore value when the seed lands, and the
+    /// ramp then counts the restore up a quarter of the debt a frame (a
+    /// Healing Leaf on a seat at `300` reads `350`, `388`, `416` .. `500`
+    /// in a retail capture). Arming at live HP instead would show the
+    /// restored figure at once.
     ///
     /// REF: FUN_800402F4 (kernel + `// PORT:` tag in `battle_hp_bar`)
     pub fn assign_hp_bar(&mut self, delta: i16) {
         if self.hp_display.is_none() {
-            return;
+            self.hp_display = Some(self.hp.wrapping_sub(delta as u16));
         }
         self.hp_bar_pending = crate::battle_hp_bar::assign_pending(delta);
     }

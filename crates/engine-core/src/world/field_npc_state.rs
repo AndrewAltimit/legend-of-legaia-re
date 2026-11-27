@@ -298,6 +298,14 @@ pub struct FieldNpcState {
     /// write: `placement_index -> (count, move_id, extra bytes)`. The hosts
     /// drain these each frame and re-target the NPC's clip player.
     pub anim_cues: std::collections::HashMap<u8, (u8, u8, Vec<u8>)>,
+    /// The slots whose pending [`Self::anim_cues`] entry a script op raised
+    /// with its consumer call (`22` / `A2` ExecMove, the `4C 51` seat), as
+    /// opposed to an ambient stream's unforced `+0x5C` request. The op binds
+    /// and steps the clip (`jal 0x800204F8`) and the actor's own tick steps
+    /// it again later in the walk, so a clip the hosts bind at the cue drain
+    /// takes two steps on the poke frame
+    /// ([`crate::world::World::drain_field_anim_cues`]).
+    pub poked_cues: std::collections::BTreeSet<u8>,
     /// Each field actor's op-`0x4B` VDF morph lanes and ramp envelope, keyed
     /// by owner (a placement slot or a bound object's flat record), in the
     /// retail actor layout (`+0x6C` count, `+0xA0` weights, `+0xB0`
@@ -433,6 +441,7 @@ impl FieldNpcState {
             looks: Default::default(),
             animate: false,
             anim_cues: std::collections::HashMap::new(),
+            poked_cues: std::collections::BTreeSet::new(),
             morphs: std::collections::BTreeMap::new(),
             object_pack_slots: std::collections::BTreeMap::new(),
             morph_dirty: std::collections::BTreeSet::new(),

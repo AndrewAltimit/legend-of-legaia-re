@@ -68,15 +68,15 @@ impl HostPad for NativeSession {
     fn host_pad(&mut self, pad: u16) {
         watch_flags(self);
         // The opening's intro hand-off (`claim_tick`'s `PrologueSkip`, retail
-        // `FUN_801D1344`): once the opening chain arms it, a Cross edge ends
-        // the opening on both play hosts, whatever holds the field's pad -
-        // the hosts read the raw edge ahead of the neutral-pad rule. The
-        // headless tick never takes it, so the gate does, as the hosts do.
+        // `FUN_801D1344`): once the opening chain arms it, a held Select ends
+        // the opening on both play hosts. The headless tick never takes it.
         //
         // The hand watches the opening, as a player who wants to see it
-        // does: it presses no Cross while the hand-off is armed, so the
-        // ladder plays the whole chain. `LEGAIA_FGL_SKIP_OPENING=1` presses
-        // through instead, and the first press takes the hosts' skip.
+        // does: it never holds Select, and it presses no Cross while the
+        // hand-off is armed, so the ladder plays the whole chain at the
+        // narration's own pace. `LEGAIA_FGL_SKIP_OPENING=1` lets the hand's
+        // presses through instead, and the gate takes the hand-off on the
+        // first Cross (a ladder shortcut standing in for the hosts' Select).
         let armed = {
             let w = &self.host.world;
             w.flags.story_flags & legaia_engine_core::world::PROLOGUE_HANDOFF_FLAG != 0

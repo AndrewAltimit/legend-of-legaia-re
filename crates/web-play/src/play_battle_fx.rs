@@ -1041,8 +1041,8 @@ impl LegaiaRuntime {
     /// render words across the monster slots while the command picker points
     /// at an enemy row; this is the native redraw's *consumption* of them,
     /// resolved engine-side so both hosts saturate the same depth-cue ramp:
-    /// the pointed-at monster pulses bright (`far = white`, phase from the
-    /// world's own frame counter), the rest sit dim (`far = black`,
+    /// the pointed-at monster draws on its stamped neutral word (no pulse:
+    /// the tint SM has no arm for flag `5`), the rest sit dim (`far = black`,
     /// `max_ir0 = 0.55`). The `model_scale` channel is the body's render
     /// node scale `+0x72` (`BattleActor::render_scale`, `1.0` but on a cast
     /// module's creature), never the actor `+0xC` word: that is the render
@@ -1054,7 +1054,6 @@ impl LegaiaRuntime {
         let (Some(br), Some(host)) = (self.battle_render.as_ref(), self.scene_host.host()) else {
             return Vec::new();
         };
-        let frame = host.world.clock.display_frames;
         let mut out = Vec::with_capacity(br.actor_slots().len() * 6);
         for actor_idx in br.actor_slots() {
             let b = host.world.actors.get(actor_idx).map(|a| &a.battle);
@@ -1073,7 +1072,7 @@ impl LegaiaRuntime {
             // black silhouette; its zero-lanes end is the draw gate in
             // `play_battle_actor_transforms`.
             //
-            // Tint word first, else the cursor's pulse: the one precedence
+            // Tint word first, else the cursor's dim: the one precedence
             // (`BattleActorDrawPlan::body_cue`) the native draw pass stages.
             let plan = self.battle_draw_plan(actor_idx);
             // The model-scale lane: the render node's `+0x72`
@@ -1084,7 +1083,6 @@ impl LegaiaRuntime {
                 legaia_engine_core::world::BattleActorDrawPlan::body_cue(
                     plan.as_ref(),
                     b.render_flag,
-                    frame,
                 )
             }) {
                 Some((far, max_ir0)) => {

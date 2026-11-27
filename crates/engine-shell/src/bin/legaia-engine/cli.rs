@@ -1273,11 +1273,21 @@ pub(crate) enum Cmd {
         /// default; `--retail` holds it off.
         #[arg(long, default_value_t = false)]
         no_hp_readout_guard: bool,
-        /// No heal numerals: a battle restore (an item, the Grails, Final
-        /// Heal, a heal cast) rolls the HP figure up with no number over its
-        /// patient, as retail does. The heal-coloured numeral is an
-        /// enhancement, on by default; `--retail` holds it off.
+        /// Heal numerals: a battle restore (an item, the Grails, Final Heal,
+        /// a heal cast) throws a green number over its patient. Retail throws
+        /// none and only rolls the HP figure up, which is the default. Not
+        /// retail; `--retail` holds it off.
         #[arg(long, default_value_t = false)]
+        heal_numerals: bool,
+        /// The old opt-out from when the heal numerals shipped on, kept so a
+        /// script still passing it parses: it asks for the default and
+        /// changes nothing.
+        #[arg(
+            long,
+            hide = true,
+            default_value_t = false,
+            conflicts_with = "heal_numerals"
+        )]
         no_heal_numerals: bool,
         /// No Stoned-seat rescale: Iota's exit leaves a Stoned monster at
         /// the shrunken scale its sweep left it on, as retail does. The
@@ -1553,7 +1563,7 @@ pub(crate) enum Cmd {
                 "no_entry_pulse", "no_occlusion_fade", "no_volumetric_fog", "no_ssao", "smart_monsters",
                 "arts_saved_list", "no_smooth_motion", "load_pauses", "no_instant_controls",
                 "no_shiny_seru", "flee_exp", "exp_rate", "no_fortress_encounter_fix", "no_tetsu_spar_fix", "jewel_fix",
-                "no_hp_readout_guard", "no_heal_numerals", "no_stone_scale_fix", "spirit_ap", "damage_ap", "seru_catch_rate",
+                "no_hp_readout_guard", "heal_numerals", "no_stone_scale_fix", "spirit_ap", "damage_ap", "seru_catch_rate",
                 "enemy_attack_count", "enemy_stat_scale", "equipment_drops", "save_anywhere",
                 "action_movement"]
         )]
@@ -1939,6 +1949,23 @@ mod locomotion_flag_tests {
                 "{old} must not parse"
             );
         }
+    }
+
+    /// `--heal-numerals` opts in; the retired `--no-heal-numerals` still
+    /// parses (it asks for the default) but not beside the opt-in, and
+    /// `--retail` refuses the opt-in.
+    #[test]
+    fn heal_numerals_opt_in_and_the_retired_opt_out_parses() {
+        let parse = |args: &[&str]| {
+            let mut argv = vec!["legaia-engine", "play-window"];
+            argv.extend_from_slice(args);
+            Cli::try_parse_from(argv)
+        };
+        assert!(parse(&["--heal-numerals"]).is_ok());
+        assert!(parse(&["--no-heal-numerals"]).is_ok());
+        assert!(parse(&["--retail", "--no-heal-numerals"]).is_ok());
+        assert!(parse(&["--heal-numerals", "--no-heal-numerals"]).is_err());
+        assert!(parse(&["--retail", "--heal-numerals"]).is_err());
     }
 
     /// `--map` needs `--expansion`, `--spawn` needs a map, and `--expansion`

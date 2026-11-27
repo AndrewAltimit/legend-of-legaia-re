@@ -755,12 +755,14 @@ fn a_venom_tick_throws_its_damage_numeral() {
 /// Life Grail (record `+0xF8 & 0x20`) restores at the round-open tick. Retail
 /// throws no numeral: the ticker's ring push is the drain's alone, and the
 /// applier call that follows (`0x801E77A8`) pushes nothing, so the HP figure
-/// rolls up on its readout word. The heal-numeral enhancement (on by default)
-/// throws the heal-coloured `200`; `pin_retail` silences it.
+/// rolls up on its readout word. The heal-numeral enhancement (off by
+/// default) throws the heal-coloured `200` when turned on; `pin_retail`
+/// silences it.
 #[test]
 fn a_life_grail_tick_numeral_follows_the_heal_numeral_knob() {
-    let fx = |retail: bool| {
+    let fx = |numerals: bool, retail: bool| {
         let mut world = life_grail_world();
+        world.toggles.heal_numerals = numerals;
         if retail {
             world.toggles.pin_retail();
         }
@@ -769,13 +771,14 @@ fn a_life_grail_tick_numeral_follows_the_heal_numeral_knob() {
         assert_eq!(world.battle_ctx.readout_pushes, 0, "never a ring push");
         world.drain_battle_hit_fx()
     };
-    let on = fx(false);
+    assert!(fx(false, false).is_empty(), "off by default, as retail");
+    let on = fx(true, false);
     assert_eq!(on.len(), 1, "{on:?}");
     assert_eq!(
         (on[0].target_slot, on[0].amount, on[0].is_heal),
         (0, 200, true)
     );
-    assert!(fx(true).is_empty(), "retail throws no numeral");
+    assert!(fx(true, true).is_empty(), "retail throws no numeral");
 }
 
 fn life_grail_world() -> World {

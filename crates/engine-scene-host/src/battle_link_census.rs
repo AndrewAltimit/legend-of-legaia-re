@@ -1022,6 +1022,17 @@ impl crate::scene_host::SceneHost {
         let count = battle_link_count(&self.world, geom, &mut self.battle_link_scratch);
         self.battle_link_last = count;
         self.world.note_linked_polys(count.total());
+        self.world
+            .note_link_classes(legaia_engine_battle_loop::frame_clock::LinkClasses {
+                stage: count.stage,
+                grid: count.grid,
+                bodies: count.bodies,
+                ghosts: count.ghosts,
+                shadows: count.shadows,
+                effects: count.effects,
+                sprites: count.sprites,
+                trails: count.trails,
+            });
         self.world.note_floor_clip_walk(count.floor_clip_walk);
         self.world.note_derived_units(count.units);
         // `LEGAIA_DIAG_CENSUS_FATES=<file>`: each count's stage and body

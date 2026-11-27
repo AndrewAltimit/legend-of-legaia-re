@@ -569,6 +569,12 @@ fn seed_and_settle_cut(
                     eprintln!("script gate met t={t}: {}", g.trace(&session.host.world));
                 }
                 met_at = Some(t);
+                // The wait as far along as retail's, not past it
+                // (`ScriptGate::seat_wait`); `LEGAIA_RC_NO_WAIT_SEAT=1` keeps
+                // the engine's count.
+                if std::env::var_os("LEGAIA_RC_NO_WAIT_SEAT").is_none() {
+                    g.seat_wait(&mut session.host.world);
+                }
                 // The timed release the replay re-armed, as far along as
                 // retail's: a release retail has spent stops its track now.
                 super::retail_obs::seat_timed_release(&mut session.host.world, retail);
@@ -631,6 +637,7 @@ fn seed_and_settle_cut(
             }
             if g.drive_resume(&mut session.host, t) {
                 resumed = true;
+                super::retail_obs::seat_side_band(&mut session.host.world, retail);
                 // The resume replays the spawning arm's track words between
                 // two ticks. With no director of its own the session leaves
                 // them queued, behind a mark the route above has already

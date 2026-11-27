@@ -116,6 +116,17 @@ pub struct EncounterState {
     /// marker itself lives with the HUD, which clears it; the world only
     /// publishes the raise, as a count a HUD compares against the one it saw.
     pub hud_short_idle_raises: u32,
+    /// The intro overlay's load window (game mode `8`) still to run before
+    /// the transition's first tick: `None` outside a transition and before
+    /// the window opens, `Some(0)` once it has run. See
+    /// `World::tick_encounter`.
+    pub intro_load_hold: Option<u8>,
+    /// Field frames between a walked roll and its mode-`8` store still to
+    /// run before the load window opens (`World::hold_intro_load`): retail's
+    /// roll (`FUN_801D9E1C`) advances the encounter SM's state, and the next
+    /// frame's state `1` arm of `FUN_801DA51C` copies the formation and
+    /// stores mode `8`.
+    pub intro_store_lead: u8,
 }
 
 impl EncounterState {
@@ -135,6 +146,8 @@ impl EncounterState {
             region_setup: None,
             battle_map_define: None,
             hud_short_idle_raises: 0,
+            intro_load_hold: None,
+            intro_store_lead: 0,
         }
     }
 }

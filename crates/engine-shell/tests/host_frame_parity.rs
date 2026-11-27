@@ -105,6 +105,7 @@ const LEFT: u16 = 0x0080;
 const CROSS: u16 = 0x4000;
 const CIRCLE: u16 = 0x2000;
 const START: u16 = 0x0008;
+const SELECT: u16 = 0x0001;
 
 /// A press held over `[at, at + 4)`.
 fn tap(t: u32, at: u32, mask: u16) -> u16 {
@@ -553,6 +554,19 @@ fn confirm_pad(t: u32, _: &HostTraceFrame) -> u16 {
     if t % 40 < 3 { CROSS } else { 0 }
 }
 
+/// [`confirm_pad`], with Select held through the opening chain: the intro
+/// skip is a held Select (`legaia_engine_core::world::prologue_skip_held`),
+/// not the Cross that hurries the narration.
+fn prologue_skip_pad(t: u32, f: &HostTraceFrame) -> u16 {
+    let opening = matches!(f.scene.as_deref(), Some("opdeene" | "opstati" | "opurud"));
+    confirm_pad(t, f)
+        | if opening && f.naming.is_none() {
+            SELECT
+        } else {
+            0
+        }
+}
+
 /// Walk to the nearest villager and confirm at it: steer the lead toward
 /// the nearest field NPC (Up = +Z, Right = +X on this scene's
 /// framing), and once within reach stand and press Cross every 30 ticks.
@@ -615,7 +629,7 @@ fn opened_a_dialogue(tr: &[HostTraceFrame]) -> Result<(), String> {
 fn prologue_skip_and_naming_frames_match_across_hosts() {
     let sc = Scenario {
         scene: "opdeene",
-        pad: confirm_pad,
+        pad: prologue_skip_pad,
         ticks: 2400,
         exercised: left_the_prologue,
         arm_shop: None,
@@ -632,8 +646,10 @@ fn prologue_skip_and_naming_frames_match_across_hosts() {
 /// of every 120 ticks: the grid's hand steps once on the press and then on
 /// the window kernel's auto-repeat (`0x14` vsyncs, then every three).
 fn naming_hold_pad(t: u32, f: &HostTraceFrame) -> u16 {
+    // The opening reaches the name entry through the intro skip, a held
+    // Select ([`prologue_skip_pad`]); Cross alone stays in the chain.
     if f.naming.is_none() {
-        return confirm_pad(t, f);
+        return prologue_skip_pad(t, f);
     }
     if (10..90).contains(&(t % 120)) {
         RIGHT

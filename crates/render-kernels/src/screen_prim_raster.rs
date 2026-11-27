@@ -63,6 +63,20 @@ struct Corner {
     c: [f32; 3],
 }
 
+/// Whether a pixel whose barycentric weight `w` against the edge `e` is zero
+/// is drawn: only on a top edge (horizontal, the triangle below it) or a left
+/// edge (the triangle to its right), the top-left rule. `area` is the
+/// triangle's signed doubled area, whose sign fixes the winding.
+fn owns_edge(w: f32, e: [Corner; 2], area: f32) -> bool {
+    if w > 1e-6 {
+        return true;
+    }
+    let (dx, dy) = (e[1].x - e[0].x, e[1].y - e[0].y);
+    // Orient the edge as if the triangle were wound clockwise on screen.
+    let (dx, dy) = if area < 0.0 { (-dx, -dy) } else { (dx, dy) };
+    (dy == 0.0 && dx < 0.0) || dy > 0.0
+}
+
 fn blend(back: f32, front: f32, abr: u8) -> f32 {
     match abr & 3 {
         0 => 0.5 * back + 0.5 * front,
@@ -204,6 +218,18 @@ fn raster_into(
                     if wa < 0.0 || wb < 0.0 || wc < 0.0 {
                         continue;
                     }
+                    // A pixel centre on an edge belongs to one triangle only:
+                    // the GPU's fill rule draws a primitive's top and left
+                    // edges and leaves its bottom and right ones to the
+                    // neighbour, so a quad's diagonal and the edge two quads
+                    // share are drawn once - an additive fan would
+                    // otherwise double every seam.
+                    if !owns_edge(wa, [b, c], area)
+                        || !owns_edge(wb, [c, a], area)
+                        || !owns_edge(wc, [a, b], area)
+                    {
+                        continue;
+                    }
                     let lerp = |p: f32, q: f32, r: f32| wa * p + wb * q + wc * r;
                     let col: [f32; 3] = core::array::from_fn(|k| lerp(a.c[k], b.c[k], c.c[k]));
                     // Whether this pixel blends: an untextured semi prim
@@ -296,6 +322,57 @@ mod tests {
             display[0] & 31
         );
         assert_eq!(display[5], 0x0004, "an undrawn pixel keeps the frame");
+    }
+
+    /// An additive quad's diagonal and the edge a fan's neighbours share
+    /// are drawn once (the top-left rule): every pixel of two adjacent
+    /// squares, split along their diagonals, takes one layer.
+    #[test]
+    fn an_additive_fan_adds_each_pixel_once() {
+        let vram = vec![0u16; VRAM_W * VRAM_H];
+        let quad = |x0: i16| {
+            ScreenPrim::Flat(FlatQuad {
+                xy: [(x0, 0), (x0 + 8, 0), (x0, 8), (x0 + 8, 8)],
+                color: [64, 0, 0, 255],
+                gouraud: None,
+                semi_transparent: true,
+                abr_mode: 1,
+                ot_index: 0,
+                depth: None,
+            })
+        };
+        // A slanted pair sharing the edge (8,0)-(12,8) as well.
+        let slant = [
+            ScreenPrim::Flat(FlatQuad {
+                xy: [(20, 0), (28, 0), (20, 8), (32, 8)],
+                color: [64, 0, 0, 255],
+                gouraud: None,
+                semi_transparent: true,
+                abr_mode: 1,
+                ot_index: 0,
+                depth: None,
+            }),
+            ScreenPrim::Flat(FlatQuad {
+                xy: [(28, 0), (36, 0), (32, 8), (40, 8)],
+                color: [64, 0, 0, 255],
+                gouraud: None,
+                semi_transparent: true,
+                abr_mode: 1,
+                ot_index: 0,
+                depth: None,
+            }),
+        ];
+        let mut prims = vec![quad(0), quad(8)];
+        prims.extend(slant);
+        let mut display = vec![0u16; 320 * 240];
+        rasterize_onto_15bpp(&prims, &vram, &mut display, 320, 240);
+        let one = (64.0f32 / 255.0 * 31.0).round() as u16;
+        for y in 0..8 {
+            for x in (0..16).chain(20..40) {
+                let p = display[y * 320 + x] & 31;
+                assert!(p == one || (x >= 20 && p == 0), "({x},{y}) took {p}");
+            }
+        }
     }
 
     #[test]

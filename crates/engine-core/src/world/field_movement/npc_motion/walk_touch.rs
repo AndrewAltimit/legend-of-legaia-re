@@ -54,10 +54,22 @@ impl World {
         // object still fires its walk-touch while the player stands pressed
         // against its box, 64+ units short of the centre. The stand-inside
         // test is kept as well (a landing seated inside a box, nav drivers).
+        //
+        // The leading points stand where the step's last probe stood, not
+        // where the step ended: retail tests each 2-unit sub-step before it
+        // moves, so a step that ends one unit short of a door's box has not
+        // touched it, and the next frame's first sub-step does (and is
+        // refused). Probed from the step's end, the walk touched a pass
+        // early and the player stood short of the step retail takes:
+        // `mei_house_door_pcsx` (`10-70:UP`) steps into the doorway at vsync
+        // `12` and engages on `14` on retail.
+        // REF: FUN_801D01B0, FUN_801CFE4C, FUN_801CFC40
+        let probed = std::mem::take(&mut self.locomotion.walk_probe_from);
         let mut points: Vec<(i32, i32)> = vec![(px as i32, pz as i32)];
         for dir in Self::dirs_of_bits(self.locomotion.last_move_dir_bits) {
+            let (fx, fz) = probed[dir].unwrap_or((px, pz));
             for &(dx, dz) in &FIELD_ACTOR_PROBES[dir] {
-                points.push((px.saturating_add(dx) as i32, pz.saturating_sub(dz) as i32));
+                points.push((fx.saturating_add(dx) as i32, fz.saturating_sub(dz) as i32));
             }
         }
         // The arrival bracket lifts once the player is off the platform: no
@@ -448,10 +460,22 @@ impl World {
         };
         // The same probe fan the NPC collision test walks
         // (`Self::field_npc_dir_blocked`), plus the stand-inside point.
+        //
+        // The leading points stand where the step's last probe stood, not
+        // where the step ended: retail tests each 2-unit sub-step before it
+        // moves, so a step that ends one unit short of a door's box has not
+        // touched it, and the next frame's first sub-step does (and is
+        // refused). Probed from the step's end, the walk touched a pass
+        // early and the player stood short of the step retail takes:
+        // `mei_house_door_pcsx` (`10-70:UP`) steps into the doorway at vsync
+        // `12` and engages on `14` on retail.
+        // REF: FUN_801D01B0, FUN_801CFE4C, FUN_801CFC40
+        let probed = std::mem::take(&mut self.locomotion.walk_probe_from);
         let mut points: Vec<(i32, i32)> = vec![(px as i32, pz as i32)];
         for dir in Self::dirs_of_bits(self.locomotion.last_move_dir_bits) {
+            let (fx, fz) = probed[dir].unwrap_or((px, pz));
             for &(dx, dz) in &FIELD_ACTOR_PROBES[dir] {
-                points.push((px.saturating_add(dx) as i32, pz.saturating_sub(dz) as i32));
+                points.push((fx.saturating_add(dx) as i32, fz.saturating_sub(dz) as i32));
             }
         }
         let hit = self.npcs.ambient.keys().copied().find(|slot| {

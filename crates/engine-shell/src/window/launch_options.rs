@@ -312,6 +312,9 @@ pub struct ScreenshotConfig {
     /// What the session asked of the command surfaces' pricing
     /// (`WorldToggles::battle_surface_frame_cost`), held off with the census.
     pub leadin_surface_wanted: Option<bool>,
+    /// What the session asked of an art commit's keyframe-decode pricing
+    /// (`WorldToggles::battle_me_decode_cost`), held off with the census.
+    pub leadin_me_decode_wanted: Option<bool>,
     pub leadin_span_wanted: Option<bool>,
     /// `LEGAIA_BATTLE_DISPLAYED_SEAT=slot:x:z,...`: live pairs the captured
     /// frame stands combatants on **after** the camera is aligned on
@@ -481,7 +484,8 @@ pub struct ScreenshotConfig {
     pub seat_object_clips: Vec<legaia_engine_capture::field_seeds::ObjectClipSeed>,
     /// `LEGAIA_SEAT_PLAYER_CLIP=<record>:<clip>:<cursor>:<flags>:<rate>`: the
     /// player's clip words (`legaia_parity::retail_compare::retail_player_clip`),
-    /// stood on the capture frame (`World::seed_player_clip`).
+    /// stood on the capture frame (`World::seed_player_clip`); `<record>` is
+    /// `0` for a party-bank clip, `1` for a scene record.
     pub seat_player_clip: Option<legaia_engine_capture::field_seeds::ObjectClipSeed>,
     /// `LEGAIA_SEAT_MORPHS=<fields>`: a retail state's live VDF morph
     /// envelopes (`legaia_parity::retail_compare::retail_morphs`), written
@@ -1301,6 +1305,7 @@ impl ScreenshotConfig {
             leadin_span_law: std::env::var_os("LEGAIA_LEADIN_SPAN_LAW").is_some(),
             leadin_census_wanted: None,
             leadin_surface_wanted: None,
+            leadin_me_decode_wanted: None,
             leadin_span_wanted: None,
             battle_ground_snap: std::env::var("LEGAIA_BATTLE_GROUND_SNAP")
                 .map(|v| legaia_engine_capture::ground_snap::ground_snaps_from_env(&v))

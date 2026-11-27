@@ -968,6 +968,10 @@ pub struct BattleState {
     /// prices its work from while `WorldToggles::battle_poly_frame_cost` is
     /// up, the same on every host. `None` before the first census.
     pub linked_polys: Option<u32>,
+    /// The same census by class (`World::note_link_classes`), which the
+    /// class-priced line reads on the leaves' rules
+    /// (`frame_clock::class_frame_work`). `None` before the first census.
+    pub link_classes: Option<crate::frame_clock::LinkClasses>,
     /// The primitives the census's floor-clipped bodies walk through the
     /// full-TMD renderer (`World::note_floor_clip_walk`), priced over
     /// [`Self::linked_polys`] at
@@ -1896,6 +1900,7 @@ impl BattleState {
             frame_work: 0,
             drawn_polys: None,
             linked_polys: None,
+            link_classes: None,
             floor_clip_walk: 0,
             me_decode_cycles: 0,
             derived_units: None,

@@ -947,8 +947,8 @@ pub fn play_args_with(info: &DiscInfo, settings: &LauncherSettings) -> Vec<std::
     if settings.switches.no_stone_scale_fix {
         args.push("--no-stone-scale-fix".into());
     }
-    if settings.switches.no_heal_numerals {
-        args.push("--no-heal-numerals".into());
+    if settings.switches.heal_numerals {
+        args.push("--heal-numerals".into());
     }
     // `--flag=value`, so a negative AP is never read as a flag.
     let mut kv = |flag: &str, v: String| args.push(format!("--{flag}={v}").into());
@@ -1544,7 +1544,7 @@ fn original_state() -> (legaia_engine_menus::options::OptionsState, LauncherSett
     w.jewel_fix = false;
     w.no_hp_readout_guard = true;
     w.no_stone_scale_fix = true;
-    w.no_heal_numerals = true;
+    w.heal_numerals = false;
     w.spirit_ap = None;
     w.damage_ap = None;
     w.seru_catch_pct = None;
@@ -1799,8 +1799,8 @@ impl OptionRow {
                  and drops stay as they are."
             }
             Self::HealNumerals => {
-                "Show the amount over a character healed in battle. The original only \
-                 counts the HP figure up."
+                "Show the amount, in green, over a character healed in battle. The \
+                 original only counts the HP figure up."
             }
             Self::StoneScaleFix => {
                 "After Iota's attack, a monster turned to stone stands back at full size. \
@@ -1928,7 +1928,7 @@ impl OptionRow {
             Self::JewelFix => on_off(s.switches.jewel_fix),
             Self::HpReadoutGuard => on_off(!s.switches.no_hp_readout_guard),
             Self::StoneScaleFix => on_off(!s.switches.no_stone_scale_fix),
-            Self::HealNumerals => on_off(!s.switches.no_heal_numerals),
+            Self::HealNumerals => on_off(s.switches.heal_numerals),
             Self::BonusDrop => on_off(s.switches.equipment_drops),
             Self::SaveAnywhere => on_off(s.switches.save_anywhere),
             Self::ActionMovement => on_off(s.switches.action_movement),
@@ -2093,7 +2093,7 @@ impl OptionRow {
             Self::JewelFix => w.jewel_fix = d.jewel_fix,
             Self::HpReadoutGuard => w.no_hp_readout_guard = d.no_hp_readout_guard,
             Self::StoneScaleFix => w.no_stone_scale_fix = d.no_stone_scale_fix,
-            Self::HealNumerals => w.no_heal_numerals = d.no_heal_numerals,
+            Self::HealNumerals => w.heal_numerals = d.heal_numerals,
             Self::BonusDrop => w.equipment_drops = d.equipment_drops,
             Self::SaveAnywhere => w.save_anywhere = d.save_anywhere,
             Self::ActionMovement => w.action_movement = d.action_movement,
@@ -2205,7 +2205,7 @@ impl OptionRow {
             Self::JewelFix => s.switches.jewel_fix ^= true,
             Self::HpReadoutGuard => s.switches.no_hp_readout_guard ^= true,
             Self::StoneScaleFix => s.switches.no_stone_scale_fix ^= true,
-            Self::HealNumerals => s.switches.no_heal_numerals ^= true,
+            Self::HealNumerals => s.switches.heal_numerals ^= true,
             Self::BonusDrop => s.switches.equipment_drops ^= true,
             Self::SaveAnywhere => s.switches.save_anywhere ^= true,
             Self::ActionMovement => s.switches.action_movement ^= true,
@@ -3074,6 +3074,11 @@ mod tests {
         // A pre-switch file (disc only) still loads.
         let old: LauncherSettings = toml::from_str("disc = \"/g/l.bin\"").unwrap();
         assert!(!old.switches.psx_render && !old.switches.retail);
+        // A file stored while the heal numerals shipped on keeps its retired
+        // opt-out key; it loads, and the numerals stay off.
+        let old: LauncherSettings =
+            toml::from_str("disc = \"/g/l.bin\"\nno_heal_numerals = true").unwrap();
+        assert!(!old.switches.heal_numerals);
         // The two gameplay switches ride the args, unless `--retail` holds
         // them off (clap refuses them beside it).
         let port = LauncherSettings {
@@ -3169,13 +3174,14 @@ mod tests {
         OptionRow::JewelFix.adjust(&mut o, &mut s, 1);
         assert_eq!(OptionRow::HpReadoutGuard.value(&o, &s), "On");
         OptionRow::HpReadoutGuard.adjust(&mut o, &mut s, 1);
-        assert_eq!(OptionRow::HealNumerals.value(&o, &s), "On");
-        OptionRow::HealNumerals.adjust(&mut o, &mut s, 1);
         assert_eq!(OptionRow::HealNumerals.value(&o, &s), "Off");
+        assert!(!plain.iter().any(|a| a == "--heal-numerals"));
+        OptionRow::HealNumerals.adjust(&mut o, &mut s, 1);
+        assert_eq!(OptionRow::HealNumerals.value(&o, &s), "On");
         assert!(
             play_args_with(&info, &s)
                 .iter()
-                .any(|a| a == "--no-heal-numerals")
+                .any(|a| a == "--heal-numerals")
         );
         assert_eq!(OptionRow::SpiritAp.value(&o, &s), "32");
         assert_eq!(OptionRow::SeruCatchRate.value(&o, &s), "Original");
@@ -3228,7 +3234,10 @@ mod tests {
             ..s
         };
         let a = play_args_with(&info, &retail);
-        assert!(!a.iter().any(|x| x == "--flee-exp" || x == "--jewel-fix"));
+        assert!(
+            !a.iter()
+                .any(|x| x == "--flee-exp" || x == "--jewel-fix" || x == "--heal-numerals")
+        );
     }
 
     /// The play page's control for each launcher row, `None` where a browser

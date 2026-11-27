@@ -32,6 +32,8 @@ fn scripted_ai_monster_self_heals_when_wounded() {
     world.actors[1].battle.liveness = 1;
     world.actors[1].battle_monster_id = Some(6);
     world.rng_state = 7;
+    // The heal-numeral enhancement is opt-in; on, the heal throws its figure.
+    world.toggles.heal_numerals = true;
 
     world.take_monster_turn(1);
 

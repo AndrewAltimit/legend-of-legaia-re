@@ -902,7 +902,7 @@ div.play-vis-head { cursor: default; }
               <input type="checkbox" id="play-stone-scale-fix"> Stoned foes keep their size
             </label>
             <label class="play-dev-menu"
-                   title="A character healed in battle by an item, a Grail or a healing spell shows the amount over them. The original throws no number for a heal and only counts the HP figure up (play-window --no-heal-numerals turns it off). Not retail; Retail-faithful holds it off. Starts on the engine's default.">
+                   title="A character healed in battle by an item, a Grail or a healing spell shows the amount over them in green. The original throws no number for a heal and only counts the HP figure up (play-window --heal-numerals turns it on). Off by default; Retail-faithful holds it off.">
               <input type="checkbox" id="play-heal-numerals"> Heal numbers
             </label>
             <label class="play-dev-menu"
@@ -2112,22 +2112,12 @@ div.play-vis-head { cursor: default; }
        * canvas click. The scene's track feeds itself through the engine's
        * per-tick op-0x35 routing; a canvas click resumes it as a backstop. */
       if (typeof view._enableAudio === 'function') view._enableAudio();
-      let hint = '';
-      /* Several retail scenes - every town, including Rim Elm - carry only
-       * rate-0 encounter regions, so walking them produces no fights by
-       * design. Say so, or a quiet town reads as a broken engine. */
-      try {
-        if (typeof view.rt?.scene_rolls_encounters === 'function'
-            && !view.rt.scene_rolls_encounters()) {
-          hint = ' No random encounters in this scene (retail) - head out to a field area to fight.';
-        }
-      } catch (e) {}
       /* A pack map runs over a retail base scene: name the map, not the
        * base scene it borrows its textures from. */
       const xmap = st && st.expansion_map;
       const running = xmap ? `${xmap.name || xmap.id} (expansion map)` : (active || label);
-      statusEl.textContent =
-        `Running ${running}. Click the canvas, then walk with the arrow keys.${hint}`;
+      statusEl.textContent = runningStatus(running);
+      statusScene = (st && st.scene) || active || label;
       window.__playState = st;
       canvas.focus();
     } catch (err) {
@@ -2736,8 +2726,46 @@ div.play-vis-head { cursor: default; }
     if (el.textContent !== text) el.textContent = text;
   }
 
+  /* The status line's scene, and the line itself for a running scene. */
+  let statusScene = null;
+  function runningStatus(running) {
+    /* The New Game opening's crawl scenes take no walking: say how to skip
+     * them instead (a held Select once the first crawl is up, as on the
+     * PlayStation). */
+    if (/^op(deene|stati|urud)$/.test(running)) {
+      return `Running ${running}: the New Game opening. Hold Select (Right Shift) to skip to Rim Elm.`;
+    }
+    let hint = '';
+    /* Several retail scenes - every town, including Rim Elm - carry only
+     * rate-0 encounter regions, so walking them produces no fights by
+     * design. Say so, or a quiet town reads as a broken engine. */
+    try {
+      if (typeof view?.rt?.scene_rolls_encounters === 'function'
+          && !view.rt.scene_rolls_encounters()) {
+        hint = ' No random encounters in this scene (retail) - head out to a field area to fight.';
+      }
+    } catch (e) {}
+    return `Running ${running}. Click the canvas, then walk with the arrow keys.${hint}`;
+  }
+
   function onState(st, fps) {
     setText(hud.scene, st.scene || '-');
+    /* The game changed scene by itself (a door, the opening chain, the
+     * Select skip into Rim Elm): the status line named the scene the page
+     * entered, and its encounter hint was that scene's. Follow the game, but
+     * only over a running-scene line, never over an error or a prompt, and
+     * not on a pack map, whose name the line carries instead. */
+    /* A fight is a scene of its own for this line: the walking hint is
+     * wrong there, so it names the battle's keys and goes back to the
+     * scene's line when the fight ends. */
+    const where = st.mode === 'Battle' ? `${st.scene}|battle` : st.scene;
+    if (st.scene && statusScene && where !== statusScene && !activePackMap
+        && /^(Running |Named the hero |In a battle )/.test(statusEl.textContent)) {
+      statusScene = where;
+      statusEl.textContent = st.mode === 'Battle'
+        ? `In a battle on ${st.scene}. The arrow keys pick a command, Z confirms, X backs out.`
+        : runningStatus(st.scene);
+    }
     setText(hud.mode, st.mode);
     setText(hud.fps, fps);
     setText(hud.npcs, st.npcs);

@@ -206,6 +206,7 @@ impl World {
             anim.resolve_scene_clip(bundle);
         }
         let moves = std::mem::take(&mut self.locomotion.player_move_cues);
+        let mut poked = None;
         if let Some(bundle) = scene_bundle {
             for id in moves {
                 // Moves 1 and 2 are the locomotion walk moves the movement
@@ -218,10 +219,42 @@ impl World {
                         .filter(|c| c.bone_count() == anim.idle.bone_count())
                 {
                     anim.bind_scripted(u16::from(id) - 1, clip);
+                    poked = Some(u16::from(id) - 1);
                 }
             }
         }
+        // The poke binds and steps in the op: `A2 F8 <id>` writes `+0x5C`
+        // and calls the consumer `FUN_800204F8`, which re-points the clip,
+        // zeroes the cursor and steps it before the frame's draw. The
+        // player's own clip tick ran earlier in the frame (its node leads
+        // the actor-list walk), so the poked clip takes the frame's step
+        // here: a PCSX-Redux film of the town01 opening binds record 47 at
+        // cursor `8` on the frame record 46 latches its end (vsync `1558`).
+        // A seat (`4C 51` on the player) binds through the same consumer
+        // call, so any scene pick a script made after the tick binds here.
+        let grid = self.clock.script_frame_delta();
+        if grid > 0
+            && let Some(anim) = self.locomotion.player_anim.as_mut()
+        {
+            if let Some(record) = poked {
+                anim.select_scene_record(Some(record));
+            }
+            if poked.is_some() || anim.script_pick_due() {
+                self.tick_field_player_anim_scaled(grid);
+            }
+        }
+        // A tick that held for a scene pick whose clip resolves here owes the
+        // frame's step (`FieldPlayerAnim::bind_step_due`).
+        if self
+            .locomotion
+            .player_anim
+            .as_ref()
+            .is_some_and(|a| a.bind_step_due())
+        {
+            self.tick_field_player_anim_scaled(0);
+        }
         let drained = std::mem::take(&mut self.npcs.anim_cues);
+        let poked = std::mem::take(&mut self.npcs.poked_cues);
         let mut cues: Vec<(u8, u8)> = Vec::with_capacity(drained.len());
         for (slot, (count, base_id, frames)) in drained {
             // Retail's `+0x5E` latch: a single-move cue is a `+0x5C` write,
@@ -258,7 +291,41 @@ impl World {
             .collect::<Vec<_>>()
             .into_iter()
             .map(|(slot, base_id, r)| {
+                let was = self
+                    .npcs
+                    .clip_cursors
+                    .get(&slot)
+                    .map(|c| (c.anim_id, c.frames));
                 self.bind_npc_clip_cursor(slot, base_id, &r.player);
+                let now = self
+                    .npcs
+                    .clip_cursors
+                    .get(&slot)
+                    .map(|c| (c.anim_id, c.frames));
+                // The re-target binds and steps in one consumer call
+                // (`FUN_800204F8`, which the field-actor driver runs after
+                // the actor's stream on the same frame), before the draw: the
+                // frame's anim tick already ran on the old clip, so the new
+                // one takes this frame's step here. A PCSX-Redux walk film of
+                // `town01_npc16_dialogue_first_page` draws each villager's
+                // stand / walk switch from cursor `8` on its bind frame.
+                //
+                // A script's poke (`22` / `A2`, the `4C 51` seat) binds and
+                // steps through the op's own consumer call, and the actor's
+                // tick steps the clip again later in the same walk: the
+                // record contexts tick on list 0, ahead of the placements
+                // (list 2). So a poked clip the hosts bind here takes both
+                // steps. A walk film of `vozz_ozma_hatching_hover` reads
+                // cursor `16`, two of the clip's `8` a pass, on the pass
+                // `P2[17]`'s `CC 07 51 7B 64 80 10` seats flat `7` on party
+                // clip `16`.
+                let grid = self.clock.script_frame_delta();
+                if was != now && grid > 0 && self.field_npc_clips_advance() {
+                    self.tick_npc_clip_slot(slot, grid);
+                    if poked.contains(&slot) {
+                        self.tick_npc_clip_slot(slot, grid);
+                    }
+                }
                 r
             })
             .collect()
@@ -584,34 +651,39 @@ impl World {
         }
         let slots: Vec<u8> = self.npcs.clip_cursors.keys().copied().collect();
         for slot in slots {
-            self.adopt_live_clip_rate(slot);
-            let flags = self.npc_channel_local_flags(slot);
-            let live_rate = self
-                .npcs
-                .clip_rate_live
-                .contains(&slot)
-                .then(|| self.npc_channel_clip_rate(slot))
-                .flatten();
-            let Some(c) = self.npcs.clip_cursors.get_mut(&slot) else {
-                continue;
-            };
-            if let Some(f) = flags {
-                c.flags = f;
-            }
-            if let Some(rate) = live_rate {
-                c.rate = rate;
-            }
-            c.tick_scaled(scale);
-            let out = c.flags;
-            if flags.is_some()
-                && let Some(ch) = self
-                    .field_vm
-                    .channels
-                    .iter_mut()
-                    .find(|ch| !ch.object_bind && ch.placement_index == usize::from(slot))
-            {
-                ch.ctx.local_flags = out;
-            }
+            self.tick_npc_clip_slot(slot, scale);
+        }
+    }
+
+    /// One anim tick of NPC `slot`'s clip cursor ([`Self::tick_npc_clips_scaled`]).
+    fn tick_npc_clip_slot(&mut self, slot: u8, scale: u16) {
+        self.adopt_live_clip_rate(slot);
+        let flags = self.npc_channel_local_flags(slot);
+        let live_rate = self
+            .npcs
+            .clip_rate_live
+            .contains(&slot)
+            .then(|| self.npc_channel_clip_rate(slot))
+            .flatten();
+        let Some(c) = self.npcs.clip_cursors.get_mut(&slot) else {
+            return;
+        };
+        if let Some(f) = flags {
+            c.flags = f;
+        }
+        if let Some(rate) = live_rate {
+            c.rate = rate;
+        }
+        c.tick_scaled(scale);
+        let out = c.flags;
+        if flags.is_some()
+            && let Some(ch) = self
+                .field_vm
+                .channels
+                .iter_mut()
+                .find(|ch| !ch.object_bind && ch.placement_index == usize::from(slot))
+        {
+            ch.ctx.local_flags = out;
         }
     }
 
@@ -951,6 +1023,55 @@ mod tests {
         w.npcs.anim_cues.insert(3, (1, 5, Vec::new()));
         let out = w.drain_field_anim_cues(Some(&scene), Some(&loco), |_| Some(true));
         assert_eq!(out[0].player.frame_count(), 7, "bit down: the scene bank");
+    }
+
+    /// A re-target the frame tail binds takes the frame's step there, as
+    /// retail's consumer binds and steps in one call before the draw; a
+    /// vsync between two game frames binds it unstepped.
+    #[test]
+    fn an_npc_retarget_steps_on_the_frame_it_binds() {
+        let loco = legaia_engine_field::field_anim::synth_anm_bundle(&[(10, 4); 3]);
+        let mut w = World::new();
+        w.mode = SceneMode::Field;
+        w.clock.game_tick_live = true;
+        w.clock.frame_step = 2;
+        let party = legaia_engine_field::field_player_clip::PARTY_BANK_FLAG;
+        w.field_vm.channels.push(party_channel(3, party));
+        w.clock.game_tick_fired = true;
+        w.npcs.anim_cues.insert(3, (1, 2, Vec::new()));
+        let _ = w.drain_field_anim_cues(None, Some(&loco), |_| Some(true));
+        let c = w.npcs.clip_cursors[&3];
+        assert_eq!(c.anim_id, 2);
+        assert!(c.cursor > 0, "stepped on the bind frame: {}", c.cursor);
+        w.clock.game_tick_fired = false;
+        w.npcs.anim_cues.insert(3, (1, 3, Vec::new()));
+        let _ = w.drain_field_anim_cues(None, Some(&loco), |_| Some(true));
+        let c = w.npcs.clip_cursors[&3];
+        assert_eq!((c.anim_id, c.cursor), (3, 0), "between frames: unstepped");
+    }
+
+    /// A script's poke of a host-bound clip takes two steps at the drain (the
+    /// op's consumer call and the actor's own tick); a stream's unforced
+    /// request takes one.
+    #[test]
+    fn a_poked_npc_clip_takes_both_steps_on_its_bind_frame() {
+        let loco = legaia_engine_field::field_anim::synth_anm_bundle(&[(10, 4); 3]);
+        let mut w = World::new();
+        w.mode = SceneMode::Field;
+        w.clock.game_tick_live = true;
+        w.clock.frame_step = 2;
+        w.clock.game_tick_fired = true;
+        let party = legaia_engine_field::field_player_clip::PARTY_BANK_FLAG;
+        w.field_vm.channels.push(party_channel(3, party));
+        w.field_vm.channels.push(party_channel(4, party));
+        w.carry_npc_run_anim(3, 2);
+        w.seat_npc_run_anim(4, 2);
+        let _ = w.drain_field_anim_cues(None, Some(&loco), |_| Some(true));
+        let stream = w.npcs.clip_cursors[&3].cursor;
+        let poked = w.npcs.clip_cursors[&4].cursor;
+        assert!(stream > 0);
+        assert_eq!(poked, 2 * stream, "the poke's two steps");
+        assert!(w.npcs.poked_cues.is_empty(), "the drain spends the marks");
     }
 
     /// A clip for another skeleton never replaces a bound one: the hosts cut

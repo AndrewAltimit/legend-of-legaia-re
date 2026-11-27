@@ -108,6 +108,14 @@ pub fn bind_scene_actors(host: &mut SceneHost) -> SceneActorBinding {
     }
 
     snap_bound_actors_to_floor(host);
+    // The same banks for a headless driver's frame tail, which drains the
+    // clip cues where a play host's own tail would.
+    host.headless_clip_banks = Some(legaia_engine_scene_host::scene_host::HeadlessClipBanks {
+        scene: host.world.active_scene_label.clone(),
+        scene_anm: scene_anm.clone(),
+        locomotion_anm: locomotion_anm.clone(),
+        targets: clip_targets.clone(),
+    });
     SceneActorBinding {
         scene_anm,
         locomotion_anm,

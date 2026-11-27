@@ -445,17 +445,10 @@ impl<'m> DrawCtx<'_, 'm> {
                 // `+0x78` tint weight (`FUN_8004A908`), NOT a mesh
                 // scale; the tint rides the per-draw GTE depth-cue
                 // seam (a saturated `DrawCue` ramp = a flat blend
-                // toward the cue colour) - the pointed-at monster
-                // pulses bright, the others dim.
-                //
-                // The pulse phase is the **world display-frame**
-                // clock, not this window's redraw counter: the
-                // browser play page runs the same formula off
-                // `World::clock.display_frames`, and a redraw
-                // counter advances on frames the simulation did not
-                // take (a movie, a paused world, a resize storm), so
-                // the two hosts' cursors drifted apart the moment
-                // either host's redraw rate left its tick rate.
+                // toward the cue colour) - the others dim, and the
+                // pointed-at monster draws on its stamped neutral word
+                // (the tint SM `FUN_80050120` has no arm for flag 5, so
+                // nothing pulses it).
                 let model = app.actor_model(i);
                 // Outside battle the player's op-`4C 81` draw tint
                 // rides the same per-draw cue seam.
@@ -467,7 +460,7 @@ impl<'m> DrawCtx<'_, 'm> {
                     };
                 if in_battle {
                     let b = &actor.battle;
-                    // The cursor's cue is the engine's
+                    // The cursor's dim is the engine's
                     // (`battle_action::cursor_cue`), shared with the
                     // page's `play_battle_actor_cursor`.
 
@@ -513,8 +506,8 @@ impl<'m> DrawCtx<'_, 'm> {
                     // lanes reach zero the draw plan above skips the
                     // body (`FUN_800480D8`'s word-zero arm), as it
                     // does the summon hide. The pointed-at cursor flag
-                    // keeps its own pulse; the dim flag `0xC8` takes the
-                    // pass's own arm.
+                    // draws on its stamped neutral word; the dim flag
+                    // `0xC8` takes the pass's own arm.
                     //
                     // The cue is the whole tint pass, not only its
                     // blend arm: with no blend running retail still
@@ -525,14 +518,13 @@ impl<'m> DrawCtx<'_, 'm> {
                     // one on the outdoor stages - plus the status
                     // colours. `World::battle_actor_draw_plan`.
                     //
-                    // Tint word first, else the cursor pulse: the one
+                    // Tint word first, else the cursor dim: the one
                     // precedence `BattleActorDrawPlan::body_cue` the
                     // page's `play_battle_actor_cursor` stages too.
                     if let Some((far, max_ir0)) =
                         legaia_engine_core::world::BattleActorDrawPlan::body_cue(
                             battle_plan.as_ref(),
                             b.render_flag,
-                            app.session.host.world.clock.display_frames,
                         )
                     {
                         cue = Some(legaia_engine_render::DrawCue {

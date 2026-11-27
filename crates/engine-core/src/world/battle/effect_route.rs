@@ -74,7 +74,20 @@ impl World {
                 // a circle, and the scale the walk carried for the record
                 // (the arm's running `s7`, `table_effect_scale`).
                 let rot = [0, (s.facing as i16).wrapping_add(0x800), 0];
-                Some(self.spawn_action_table_effect_posed(s.effect, at, rot, s.table_scale))
+                let staged = self.spawn_action_table_effect_posed(s.effect, at, rot, s.table_scale);
+                // A follow-handle code replaces `ctx[+0x1028]` with the part
+                // it spawned and stashes the record's raw legs
+                // (`0x801DF198..0x801DF1E8`).
+                if let Some(legs) = s.follow_legs {
+                    let fx = &mut self.casting.active_action_fx;
+                    for scene in fx.iter_mut() {
+                        scene.follow_legs = None;
+                    }
+                    if staged && let Some(scene) = fx.last_mut() {
+                        scene.follow_legs = Some(legs);
+                    }
+                }
+                Some(staged)
             };
             out.push(RoutedEffectSpawn {
                 spawn: s,

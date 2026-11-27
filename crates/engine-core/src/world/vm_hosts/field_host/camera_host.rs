@@ -64,6 +64,8 @@ impl<'a> FieldCameraHost for FieldHostImpl<'a> {
         // APPLY composes the follow pose and glides to it over the trigger's
         // frames, or snaps (killing the mover) on a zero trigger.
         self.world.camera.state.glide_frames = i32::from(apply_trigger.max(0));
+        self.world.camera.glide_arm_after_walk =
+            apply_trigger > 0 && self.world.glide_armed_after_walk();
         // The arm composes the player's zone shot INTO the staging block the
         // beats wrote (`jal 0x801DAB90` at `0x801DF228`, `a1 = 0x801C6EA8`)
         // before committing it (`jal 0x801DE084` at `0x801DF27C`), so the

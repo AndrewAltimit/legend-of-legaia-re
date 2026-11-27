@@ -180,6 +180,35 @@ impl PlayWindowApp {
                 .leadin_surface_wanted
                 .get_or_insert(toggles.battle_surface_frame_cost);
             toggles.battle_surface_frame_cost = met && surface;
+            // An art commit's keyframe decode is held with it, but for the
+            // capture's own actor: a party art another seat commits in the
+            // lead-in moves the rounds the replay reaches its gate on
+            // (`battle_balden_orb_v2_strike` fell back to the default step's
+            // pin, `.986` to `.927`), while the acting seat's own commits
+            // ahead of a mid-art gate are the art's frames
+            // (`battle_jou_party_vahn_chain_late`, `.956` held to `.900`); a
+            // gate past the action (`battle_jou_gala_finisher_hold_retail`'s
+            // results, `.999` held to `.657` priced) holds them all.
+            let me_decode = *sc
+                .leadin_me_decode_wanted
+                .get_or_insert(toggles.battle_me_decode_cost);
+            let world = &self.session.host.world;
+            // A gate inside the acting seat's own strike loop (`0x1E..=0x20`):
+            // that action's commits ahead of it are the art's frames.
+            let acting = match sc.battle_drive.as_ref() {
+                Some(legaia_engine_capture::battle_drive::BattleDrive::Action {
+                    seat,
+                    state: 0x1E..=0x20,
+                    ..
+                }) => Some(legaia_engine_capture::battle_drive::engine_seat(
+                    *seat,
+                    world.party.party_count,
+                )),
+                _ => None,
+            };
+            let own = acting.is_some_and(|s| world.battle_ctx.active_actor == s);
+            let toggles = &mut self.session.host.world.toggles;
+            toggles.battle_me_decode_cost = (met || own) && me_decode;
             if met {
                 sc.leadin_table_cost = false;
                 // The pass the film opened on ran before the census came
@@ -818,7 +847,10 @@ impl PlayWindowApp {
                     self.battle_stage_scale(),
                 )
                 .unwrap_or((None, Vec::new()));
-            layout.1 = vec![cells];
+            // Retail's own cells, seated off a capture: always the sheet's
+            // colours (retail throws no heal numeral).
+            layout.1 =
+                vec![legaia_engine_screens::battle_value_readout::ValueRun { cells, heal: false }];
             return Some(layout);
         }
         legaia_engine_screens::battle_value_readout::battle_value_readout_layout(

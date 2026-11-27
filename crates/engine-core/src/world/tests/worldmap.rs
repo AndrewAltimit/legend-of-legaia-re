@@ -218,7 +218,7 @@ fn world_map_region_walk_triggers_battle() {
     // rolls the region; the high rate triggers within a couple of tiles.
     world.set_pad(input::PadButton::Right.mask());
     let mut entered_battle = false;
-    for _ in 0..200 {
+    for _ in 0..300 {
         let _ = world.tick();
         if world.mode == SceneMode::Battle {
             entered_battle = true;

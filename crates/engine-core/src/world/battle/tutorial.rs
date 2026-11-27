@@ -151,6 +151,23 @@ impl World {
         }
     }
 
+    /// Stand the side-band request pair on `request`, through the field
+    /// VM's own op-`0x36` sub-`1` handler (`36 01 80 lo hi`): the pair, the
+    /// bank the hosts stage for it and the slot-6 latch end up where a record
+    /// issuing that op would have left them. A pair already acknowledging
+    /// `request` is left alone. Returns whether the op ran. The retail
+    /// comparison's seat of the request a state was captured under.
+    pub fn seat_side_band_request(&mut self, request: i16) -> bool {
+        if self.audio.sound_stream.acked == i32::from(request)
+            && self.audio.sound_stream.requested == i32::from(request)
+        {
+            return false;
+        }
+        let mut host = crate::world::vm_hosts::FieldHostImpl { world: self };
+        legaia_engine_vm::field::FieldScreenHost::scene_fade(&mut host, 0x8001, request as u16)
+            == legaia_engine_vm::field::SceneFadeResult::Done
+    }
+
     /// Age the box queue one frame. Returns `true` when a box is (still) up and
     /// the battle loop must park.
     ///

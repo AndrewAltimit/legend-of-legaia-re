@@ -40,6 +40,35 @@ pub struct IntroFrame {
     pub fade: Option<IntroFade>,
 }
 
+/// The move-VM parts the transition's init seats beside its style.
+///
+/// Every arm of the style switch in the init `FUN_801CE8CC`
+/// (`0x801CED58..0x801CF10C`) seats one or more draw-kind-4 parts through
+/// the SCUS stager `FUN_80021B04`, out of records in the intro overlay's own
+/// image: the scatter style's starburst, the spin-up and swirl styles' discs,
+/// the shatter's ring. They live in the field actor list, tick with every
+/// other part (`FUN_80021DF4`) and draw through the actor walk
+/// `FUN_8001ADA4` - none of the style bodies `FUN_801CF5BC` calls emits them.
+/// Running them needs the move VM and the procedural mesh builder
+/// `FUN_80028158`, which sit above this crate, so the session holds them
+/// behind this seam (`legaia_engine_effects::battle_intro_parts` implements
+/// it).
+pub trait IntroPartRuntime: Send + Sync {
+    /// One retail frame of every live part's tick at `frame_step`
+    /// (`DAT_1F800393`).
+    fn step(&mut self, frame_step: u8);
+    /// Append the live parts' primitives for this frame.
+    fn emit(&self, prims: &mut Vec<ScreenPrim>);
+    /// A boxed copy (the session is `Clone`).
+    fn clone_box(&self) -> Box<dyn IntroPartRuntime>;
+}
+
+impl Clone for Box<dyn IntroPartRuntime> {
+    fn clone(&self) -> Self {
+        self.clone_box()
+    }
+}
+
 /// The field-to-battle transition's per-frame emitter.
 ///
 /// One is armed when the encounter session enters its `Transition` phase and
@@ -111,9 +140,19 @@ pub struct BattleIntro {
     /// trail quads show exactly what retail's undrawn gaps show. Empty for
     /// every other style.
     pub(super) display_accum: Vec<u16>,
+    /// The particle styles' other display buffer
+    /// ([`BattleIntro::update_spinup_display`]): retail double-buffers the
+    /// display, so the model keeps both and swaps them each drawn frame.
+    /// Empty for every other style.
+    pub(super) display_accum_back: Vec<u16>,
+    /// Particle-style frames drawn since the display model last advanced.
+    pub(super) pending_display_frames: u16,
     /// The clock [`BattleIntro::advance_to`] last stepped to and the frame it
     /// emitted there.
     pub(super) last_frame: Option<(i16, IntroFrame)>,
+    /// The parts the init seated beside the style ([`IntroPartRuntime`]),
+    /// `None` for an emitter armed without them.
+    pub(super) parts: Option<Box<dyn IntroPartRuntime>>,
 }
 
 impl BattleIntro {
@@ -204,8 +243,18 @@ impl BattleIntro {
             pending_wash_5: 0,
             intermediate: Vec::new(),
             display_accum: Vec::new(),
+            display_accum_back: Vec::new(),
+            pending_display_frames: 0,
             last_frame: None,
+            parts: None,
         }
+    }
+
+    /// Attach the parts the init seated beside the style
+    /// ([`IntroPartRuntime`]).
+    pub fn with_parts(mut self, parts: Option<Box<dyn IntroPartRuntime>>) -> Self {
+        self.parts = parts;
+        self
     }
 
     /// Attach the field-character texture pack whose entry 0 is the shade
@@ -367,7 +416,10 @@ impl BattleIntro {
         }
         if matches!(
             style,
-            IntroStyle::Curtain | IntroStyle::SpinUpParticles | IntroStyle::ScatterParticles
+            IntroStyle::Curtain
+                | IntroStyle::SpinUpParticles
+                | IntroStyle::ScatterParticles
+                | IntroStyle::Swirl
         ) {
             self.capture_src = lift_capture_src(page);
         }
@@ -398,7 +450,7 @@ impl BattleIntro {
         let landed = std::mem::take(&mut self.upload_pending);
         if matches!(
             self.style,
-            IntroStyle::SpinUpParticles | IntroStyle::ScatterParticles
+            IntroStyle::SpinUpParticles | IntroStyle::ScatterParticles | IntroStyle::Swirl
         ) {
             self.captured.as_ref()?;
             self.update_spinup_display();
@@ -467,6 +519,25 @@ mod capture_landing_tests {
             &mut trig,
             [0, 1, 0x11, 0x12],
         )
+    }
+
+    /// The spin-up steps on retail's cadence: one call per three clock
+    /// units at step `3`, as the scatter does. Its particle kernel
+    /// integrates per call, so a call per unit carries the field further
+    /// out and dims it.
+    #[test]
+    fn the_spinup_steps_every_three_units() {
+        let mut a = bare_intro(IntroStyle::SpinUpParticles);
+        let mut b = bare_intro(IntroStyle::SpinUpParticles);
+        let mut ticked = Vec::new();
+        let mut e = 0;
+        while e <= 36 {
+            ticked = b.tick(e, 3).prims;
+            e += 3;
+        }
+        let _ = a.advance_to(36);
+        assert_eq!(a.advance_to(37).prims, ticked, "37 holds 36's frame");
+        assert_eq!(a.advance_to(38).prims, ticked, "38 holds 36's frame");
     }
 
     /// Two source rows, captured 1:1 into a 2-row rect: the top-down path

@@ -953,8 +953,14 @@ The auto-command preseed `FUN_801DA34C` and its write-back `FUN_801DA59C` (`auto
 order and gauge pair, and the effect-placement clamp `FUN_801DF570` (`approach_clamp`) match.
 Two more host-handed ops are stepped on the real `World` against where it keeps their writes. The tint `4C 81`
 lands in `actor_tints` in all three forms (the running placement, `CC <id> 81` on another, `CC F8 81` on the
-player) as retail leaves `+0x74` / `+0x78`; the tile warp `0x23` lands its tile, world pair and walk byte on the
-context it names. What the first pass still counts as left to the host is the floor sample and the cull a warp
+player) as retail leaves `+0x74` / `+0x78`, and its tweens, replayed through the real ramp pool (`FUN_8003C5F0`
+installs, `FUN_80036D80` ticks at frame steps 1 to 3), found the port lerping `start + (end - start) * elapsed /
+total` where the pool lands `end + (start - end) * remaining / total` (a unit off on most frames, the colour lanes
+off by kind 3's scaled-lane rule) and reading the ticks word unsigned, so a `0x8000..` count tweened for minutes
+instead of landing at once; the tile warp `0x23` lands its tile, world pair and walk byte on the context it names.
+Driving the field player tick `FUN_801D1344` down its intro-skip arm found the skip's press is a held Select
+(`_DAT_8007B850 & 0x100`, the packed held word), where both play hosts took a Cross edge: a player pressing Cross
+to hurry the opening's narration skipped the whole opening. What the first pass still counts as left to the host is the floor sample and the cull a warp
 calls, and the cross-context ops whose target state the port keeps off the context: the rotate `B8` and arc `C3`
 legs' halt bit and ramps, `4C C3`'s re-seat on the placement, and the player-aimed `3E` / `4C DA` / `4C E3` stores.
 The per-art attack camera `FUN_801D71B8` (`attack_camera`), every character, art id, selector and animation cursor,
@@ -1600,8 +1606,8 @@ quad wholly off the screen (`FUN_80044798`) and fades the colour toward black by
 The swirl's early submit `FUN_801D1A20` rides the same bank through its flag word's top byte, which
 also links each quad at its largest corner `SZ`; and under the double-sided `NCLIP` mask an edge-on
 quad still drops, which the port's double-sided arm had skipped. The tick `FUN_801D1888` matches. The
-late swirl, which hands the band to the shatter renderer `FUN_80029888`, is not carried faithfully and
-the test leaves it out.
+late swirl, which hands the band to the shatter renderer `FUN_80029888`, runs through the port's
+shatter kernel, but the test leaves it out.
 
 The procedural mesh builder `FUN_80028158` matches `effect_default_arm::build` byte for byte over
 every shape and texture mode; shapes 1 and 3 on the planes that start at `z` extrapolate vertex 6

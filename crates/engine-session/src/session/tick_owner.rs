@@ -11,7 +11,6 @@
 //! pause menu - are done by the time it returns.
 
 use legaia_engine_audio::AudioSink;
-use legaia_engine_system::input::PadButton;
 
 use super::{BootSession, PauseMenuPress};
 
@@ -51,8 +50,9 @@ pub enum TickOwner {
     /// The naming prompt took the tick and has been stepped on its edge
     /// (`step_name_entry_frame`). `true` = the name committed this tick.
     NameEntry(bool),
-    /// Retail's prologue intro skip (`FUN_801D1344`): a Cross press during
-    /// the opening chain handed off to the named scene. The host enters it
+    /// Retail's prologue intro skip (`FUN_801D1344`): a held Select during
+    /// the opening chain, once its fade to black has run, handed off to the
+    /// named scene. The host enters it
     /// (and rebuilds whatever it draws the scene with); the tick is spent.
     PrologueSkip(&'static str),
     /// The pause menu's wipe has spawned it: from this tick on the host's
@@ -115,11 +115,15 @@ impl<S: AudioSink> BootSession<S> {
             return TickOwner::NameEntry(!self.host.world.name_entry_active());
         }
         // The prologue intro skip: while the opening chain plays with the
-        // trigger bit armed, a Cross press skips the whole remaining opening.
+        // trigger bit armed, a held Select skips the whole remaining opening
+        // (retail tests the held word, `FUN_801D1344`); Cross, which a player
+        // presses to hurry the narration along, does not.
+        // The press puts retail's fade up and the hand-off follows when it
+        // has run (`World::step_prologue_skip`); the field ticks under it.
         if let Some(target) = self
             .host
             .world
-            .take_prologue_handoff(edge & PadButton::Cross.mask() != 0)
+            .step_prologue_skip(legaia_engine_core::world::prologue_skip_held(claims.held))
         {
             return TickOwner::PrologueSkip(target);
         }

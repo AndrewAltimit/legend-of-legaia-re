@@ -224,6 +224,22 @@ impl World {
             .any(|p| p.record == usize::from(record) && p.anim.flags & (ANIM_END | ANIM_HOLD) == 0)
     }
 
+    /// Seat the collision-exempt bits `+0x10 & 3` of every prop bound to
+    /// `record` (`bits` the state's), as `FUN_801CF754` / `FUN_801CF9F4`
+    /// read them: a door a state holds open stops blocking and touching. A
+    /// harness seat standing the world on a retail capture.
+    pub fn seed_object_prop_exempt(&mut self, record: usize, bits: u32) {
+        for p in self
+            .props
+            .bank
+            .props
+            .values_mut()
+            .filter(|p| p.record == record)
+        {
+            p.cflags = (p.cflags & !3) | (bits & 3);
+        }
+    }
+
     /// Capture alignment: write a placed object's clip cursor and control
     /// word over its prop's own, where the prop has that clip bound. Which
     /// frame of a door's swing is up is touch history a seat does not

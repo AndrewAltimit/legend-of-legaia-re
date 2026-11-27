@@ -48,10 +48,9 @@ pub struct GameplayTweaks {
     /// state-`0x51` readout softlock cannot hold. A port fix with no patcher
     /// counterpart. On by default.
     pub hp_readout_guard: bool,
-    /// Heal numerals (`--no-heal-numerals` disables,
-    /// `WorldToggles::heal_numerals`): a battle restore throws a heal-coloured
-    /// number, where retail only rolls the HP figure up. An enhancement. On
-    /// by default.
+    /// Heal numerals (`--heal-numerals`, `WorldToggles::heal_numerals`): a
+    /// battle restore throws a heal-coloured number, where retail only rolls
+    /// the HP figure up. An enhancement. Off by default.
     pub heal_numerals: bool,
     /// Stoned-seat rescale (`--no-stone-scale-fix` disables,
     /// `WorldToggles::stone_scale_fix`): Iota's exit stands a Stoned monster
@@ -334,9 +333,11 @@ pub struct PersistedSwitches {
     /// Without the battle HP-readout guard (`--no-hp-readout-guard`).
     #[serde(default, skip_serializing_if = "is_false")]
     pub no_hp_readout_guard: bool,
-    /// Without the heal numerals (`--no-heal-numerals`).
+    /// The heal numerals (`--heal-numerals`). A set stored while they
+    /// shipped on carries `no_heal_numerals` instead; that key is ignored,
+    /// and its "off" is the default now.
     #[serde(default, skip_serializing_if = "is_false")]
-    pub no_heal_numerals: bool,
+    pub heal_numerals: bool,
     /// Without the Stoned-seat rescale (`--no-stone-scale-fix`).
     #[serde(default, skip_serializing_if = "is_false")]
     pub no_stone_scale_fix: bool,
@@ -395,7 +396,7 @@ impl PersistedSwitches {
             tetsu_spar_fix: !self.no_tetsu_spar_fix,
             jewel_fix: self.jewel_fix,
             hp_readout_guard: !self.no_hp_readout_guard,
-            heal_numerals: !self.no_heal_numerals,
+            heal_numerals: self.heal_numerals,
             stone_scale_fix: !self.no_stone_scale_fix,
             spirit_ap: self.spirit_ap.unwrap_or(SPIRIT_AP_RETAIL),
             damage_ap: self.damage_ap.unwrap_or(DAMAGE_AP_RETAIL),
@@ -421,7 +422,7 @@ impl PersistedSwitches {
         self.no_tetsu_spar_fix = !t.tetsu_spar_fix;
         self.jewel_fix = t.jewel_fix;
         self.no_hp_readout_guard = !t.hp_readout_guard;
-        self.no_heal_numerals = !t.heal_numerals;
+        self.heal_numerals = t.heal_numerals;
         self.no_stone_scale_fix = !t.stone_scale_fix;
         self.spirit_ap = (t.spirit_ap != SPIRIT_AP_RETAIL).then_some(t.spirit_ap);
         self.damage_ap = (t.damage_ap != DAMAGE_AP_RETAIL).then_some(t.damage_ap);
@@ -554,14 +555,14 @@ mod tests {
         assert_eq!(GameplayTweaks::from_toggles(&t), all_on(false).tweaks);
     }
 
-    /// The heal numerals ride the shared switch set both hosts apply: on by
-    /// default and when the set says so, off when it says so, held off by the
-    /// retail profile whatever the set says, and stored as a `no_` key only
-    /// when off.
+    /// The heal numerals ride the shared switch set both hosts apply: off by
+    /// default and when the set says so, on when it says so, held off by the
+    /// retail profile whatever the set says, and stored only when on (an old
+    /// `no_heal_numerals` key still loads, as off).
     #[test]
     fn heal_numerals_follow_the_set_and_retail_holds_them_off() {
         let mut t = WorldToggles::new();
-        assert!(t.heal_numerals, "the engine default");
+        assert!(!t.heal_numerals, "the engine default");
         let mut set = all_on(false);
         set.apply(&mut t);
         assert!(t.heal_numerals);
@@ -574,13 +575,18 @@ mod tests {
         assert!(!t.heal_numerals, "the retail profile hides them");
         assert!(!GameplayTweaks::retail().heal_numerals);
         let mut p = PersistedSwitches::default();
-        assert!(p.tweaks().heal_numerals);
-        let off = GameplayTweaks {
-            heal_numerals: false,
+        assert!(!p.tweaks().heal_numerals);
+        let on = GameplayTweaks {
+            heal_numerals: true,
             ..Default::default()
         };
-        p.set_tweaks(&off);
-        assert!(p.no_heal_numerals && !p.tweaks().heal_numerals);
+        p.set_tweaks(&on);
+        assert!(p.heal_numerals && p.tweaks().heal_numerals);
+        p.set_tweaks(&GameplayTweaks::default());
+        assert!(!p.heal_numerals);
+        let old: PersistedSwitches =
+            serde_json::from_str(r#"{"no_heal_numerals":true}"#).expect("an old key loads");
+        assert!(!old.tweaks().heal_numerals);
     }
 
     #[test]
@@ -588,7 +594,7 @@ mod tests {
         let d = GameplayTweaks::default();
         assert_eq!(d, GameplayTweaks::from_toggles(&WorldToggles::new()));
         assert!(d.shiny_seru && d.fortress_encounter_fix && d.tetsu_spar_fix && d.hp_readout_guard);
-        assert!(d.heal_numerals, "the heal numerals ship on");
+        assert!(!d.heal_numerals, "the heal numerals ship off");
         assert!(!d.flee_exp && !d.jewel_fix && !d.save_anywhere && !d.action_movement);
         assert_eq!(d.exp_rate_permille, 1000);
         assert_eq!(GameplayTweaks::exp_rate_label(1500), "1.5x");

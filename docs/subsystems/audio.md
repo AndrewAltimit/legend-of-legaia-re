@@ -1009,16 +1009,18 @@ mode-`8` store (`T`) and from the fight's end (`E`, mode `2`):
 The spin is therefore the cue alone, for over two seconds, and the theme arrives with
 the fight. Phase 2 only reads the bundle: its `FUN_800567A8` is the debug print of
 `battle bgm %d`. Port: `World::silence_field_audio_for_intro` keys off the track
-(sub-op `3`, set `0` only) and voices `0x10..0x17` on the transition's first tick, and
-queues the sustained teardown of the init's own mode init `FUN_8001DCF8(0xA)`
+(sub-op `3`, set `0` only) and voices `0x10..0x17` on the third tick of the held mode-`8`
+window, `T + 3` (the init's key-offs precede its display capture, which fills the rest of
+the window; a walked roll stores mode `8` a frame after it rolls, so the window opens two ticks
+after the roll, [cutscene](cutscene.md#the-mode-8-window)), and queues the sustained teardown of the init's own mode init `FUN_8001DCF8(0xA)`
 (`jal` at `0x801CE974`, ahead of the voice loop), and
 `World::enter_battle_from_formation` attaches, both hosts through
 `route_bgm_events`. A set above `0` leaves the field track alone until the attach, and
 `-1` plays it through.
 
 The session test `parity/tests/battle_music_timeline_disc.rs` reads the same order on a
-forced fight: the key-off on the transition's first tick, the start on the battle's, `132`
-ticks on, where retail's mode `9` runs `133` vsyncs.
+forced fight: the key-off on the window's third tick, the start on the battle's, `138`
+ticks after the encounter, where retail attaches at `T + 139`.
 
 #### The return closes the battle score before the field's track loads
 
@@ -3810,10 +3812,25 @@ word `0x1000`. `edteien`'s entry starts `2068` on the ending source, and its
 `P2[0]` raises sub-op 6 and changes scene to `edbylon`, which parks:
 `ending_vignette_biron` plays `2068` under the same word. Both are seeded
 from the scene before (`arrival = { from = "town0e", door = 6 }`,
-`arrival = { from = "edteien" }`) and match retail on every channel.
+`arrival = { from = "edteien" }`) and match retail on every channel. The PCSX-Redux
+credits states take the same arrivals where one hop reaches them (`credits_rimelm_walkaway_pcsx`,
+both `credits_edbylon_*_pcsx`). The vignettes after `edbylon` are several parked scenes past
+`edteien`'s start, which no one-door arrival replays, so they name the history instead
+(`kept_bgm = 2068`); that the engine's own chain sounds `2068` through every one of them is
+`engine-scene-host/tests/door_keep_bgm_disc.rs`'s credits-chain test.
 `P2[6]` opens on a line of text at `+0x61`, which the replay pages because
 `World::dialogue_owns_input` counts a modal cutscene record's box as it
 counts the other channels'.
+
+A record's side-band request is history of the same kind. `conc3`'s entry
+requests `2116` (`36 01 80 44 08`), the inn's `P2[9]` requests `2070` at `+0xCD`, and the
+ceremony `P2[10]` keys its runtime rows (`0x201` .. `0x214`, category `3`) out of
+`2070`'s bank until its own `2116` at its end. A card load runs the entry and not
+`P2[9]`, so the resumed ceremony keyed its cues into a bank that holds none of their
+programs, and nothing sounded. The seed stands the pair on the one the state holds
+(`_DAT_8007BABC` / `_DAT_8007BAA0`, settled) when it resumes the gate's record, through
+op `0x36` sub `1`'s own handler (`World::seat_side_band_request`); the record's own
+requests on its way to the gate replace it as retail's did.
 
 The sweep found the sub-op 9 defect: the port started a cutscene's new track
 at the select where retail holds it to the commit
@@ -4222,6 +4239,17 @@ one was the replay's hold ([the hold ends at the gate](#the-side-band-hold-ends-
 read `0.42` because the replay's delegated fill drew two arts where retail's drew five
 ([a delegated seat's stream](../tooling/retail-compare.md#a-delegated-seats-stream)); on retail's
 stream its envelope lines up within `8` vsyncs and the waveform reads `0.38`.
+
+Three party actions stand beside the casts, so a strike's sound is scored as a cast's is:
+
+| State | `cast` corr | Level | Reading |
+|---|---|---|---|
+| `battle_melee_hit_spark` | `0.9993` | `+0.01` dB | a melee impact; `cast_core` `0.81` at `-1.3` dB |
+| `noa_levelup_fight_pre` | `0.9996` | `0.00` dB | Noa's last blow; the engine's recording ends `20` vsyncs past the Done band, before the level-up banner, and the retail cue tail is silent past `0.5` s: no cue sounds for the level-up |
+| `player_steal_skeleton_pre` | `0.71` | `+0.18` dB | Vahn's arts string into the kill and the steal banner, `5.7` s of cues. Quarter-second windows fit `0.65..0.99` at their best lag, and the lag walks from `+1` to `+4` vsyncs (the engine early) over the string: [the frame step](#the-casts-step-is-pcsx-reduxs) on a party strike. The last second, cue `0x0D` decaying, fits `0.99` |
+
+`rim_elm_gimard_seru_capture_before` is not a row: the state stands partway into its action, and the
+gate replays the action from its start, about thirty vsyncs before the recording opens.
 
 <a id="the-casts-step-is-pcsx-reduxs"></a>
 **The cast's step is PCSX-Redux's.** The battle frame step carries each pass's cost into the next

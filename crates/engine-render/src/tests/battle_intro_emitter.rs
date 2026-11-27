@@ -1532,19 +1532,56 @@ mod scatter_display {
         assert_eq!(SCATTER_DISPLAY_DECAY_5, 1);
     }
 
+    /// The model is double-buffered as retail's display is: each frame
+    /// draws into the buffer two frames back, washed by both frames' worth,
+    /// so an undrawn pixel holds for two frames between drops of two levels
+    /// a unit - the `31, 31, 25, 25, 19, 19` a retail film reads at step `3`.
     #[test]
-    fn an_undrawn_scatter_pixel_fades_from_the_second_frame() {
-        let px = run(IntroStyle::ScatterParticles, 4);
+    fn an_undrawn_scatter_pixel_fades_in_pairs_from_the_second_frame() {
+        let px = run(IntroStyle::ScatterParticles, 5);
         let first = levels(px[0]);
         assert!(
             first.iter().all(|&c| c >= 6),
             "the probe needs a lit pixel: {first:?}"
         );
         for (k, p) in px.iter().enumerate() {
-            let want = first.map(|c| c.saturating_sub(k as u16));
+            let drop = 2 * SCATTER_DISPLAY_DECAY_5 * (k as u16).div_ceil(2);
+            let want = first.map(|c| c.saturating_sub(drop));
             assert_eq!(levels(*p), want, "frame {k}: the first frame is not washed");
             assert_eq!(p & 0x8000, 0x8000, "the model stays opaque");
         }
+    }
+
+    /// A host redraws more often than the scatter steps (once every three
+    /// clock units): a refresh with no step since the last leaves the page
+    /// as the last refresh uploaded it. The model already holds the last
+    /// step's particles, which the host draws live over the page, so
+    /// re-uploading it would add them twice on the redraws between steps.
+    #[test]
+    fn a_refresh_between_steps_keeps_the_page() {
+        use legaia_render_kernels::battle_intro::CURTAIN_TRAIL_RECT;
+        let mut it = intro(IntroStyle::ScatterParticles, 400);
+        it.seed_capture_for_test(vram_with_capture());
+        let rect = |it: &mut BattleIntro| -> Vec<u16> {
+            let page = it
+                .refresh_captured_page()
+                .expect("the page")
+                .as_u16()
+                .to_vec();
+            let r = CURTAIN_TRAIL_RECT;
+            (r.y..r.y + r.h)
+                .flat_map(|y| (r.x..r.x + r.w).map(move |x| (x, y)))
+                .map(|(x, y)| page[usize::from(y) * 1024 + usize::from(x)])
+                .collect()
+        };
+        let _ = it.advance_to(0);
+        let _ = rect(&mut it);
+        let _ = it.advance_to(30);
+        let stepped = rect(&mut it);
+        let _ = it.advance_to(31);
+        assert_eq!(rect(&mut it), stepped, "no step, no change");
+        let _ = it.advance_to(32);
+        assert_eq!(rect(&mut it), stepped, "still between steps");
     }
 
     #[test]

@@ -357,9 +357,12 @@ fn run_full_loop(starting_save: SaveFile) -> (Vec<u8>, SaveFile) {
         triggered,
         "saturated encounter rate should fire on the first step"
     );
-    world.tick_encounter();
-    let roll = world
-        .drain_encounter_formation()
+    let roll = (0..16)
+        .find_map(|_| {
+            // The load window holds before the roll drains (`ENCOUNTER_JOLT_VSYNCS`).
+            world.tick_encounter();
+            world.drain_encounter_formation()
+        })
         .expect("encounter session should yield a formation roll");
 
     // 3. Trigger the encounter - populate monsters from the formation.
@@ -793,9 +796,12 @@ fn real_battle_data_encounter_drives_loop() {
     // install_encounter_from_record set the table's trigger rate to
     // 255.
     assert!(world.on_field_step());
-    world.tick_encounter();
-    let roll = world
-        .drain_encounter_formation()
+    let roll = (0..16)
+        .find_map(|_| {
+            // The load window holds before the roll drains (`ENCOUNTER_JOLT_VSYNCS`).
+            world.tick_encounter();
+            world.drain_encounter_formation()
+        })
         .expect("disc-derived formation should yield a roll");
     assert_eq!(roll.formation_id, formation_id);
     let formation = world

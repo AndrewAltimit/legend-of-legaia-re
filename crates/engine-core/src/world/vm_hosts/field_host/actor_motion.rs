@@ -473,6 +473,7 @@ impl FieldHostImpl<'_> {
                 .npcs
                 .anim_cues
                 .insert(slot, (1, move_id, Vec::new()));
+            self.world.npcs.poked_cues.insert(slot);
             self.world.script_npc_move(slot, move_id);
             let party_bank =
                 ctx.flags & legaia_engine_field::field_player_clip::PARTY_BANK_FLAG != 0;
@@ -863,7 +864,7 @@ impl World {
     /// the object-grid cell under `(x, z)` lacks `0x1000` (the `0x1800 ==
     /// 0x800` re-test after it implies the same).
     // PORT: FUN_80019278 (the +0x10 near-bucket rewrite, 0x800192F8..0x80019350)
-    pub(crate) fn floor_sampler_sort_flags(&self, flags: u32, x: i32, z: i32) -> u32 {
+    pub fn floor_sampler_sort_flags(&self, flags: u32, x: i32, z: i32) -> u32 {
         const NEAR: u32 = 0x0080_0000;
         if flags & 0x8000_0000 != 0 {
             return flags | NEAR;

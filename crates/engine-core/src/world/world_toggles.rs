@@ -175,13 +175,12 @@ pub struct WorldToggles {
     /// raises it from `LEGAIA_FIELD_GPU_COST=1`; only the native window
     /// prices its frames.
     pub field_gpu_cost_step: bool,
-    /// Opt-in, off by default: a party art commit's `"ME"` keyframe decode
-    /// priced into its battle frame (`frame_clock::me_decode_work`;
-    /// `FUN_8002B28C` from `FUN_8004AD80`). Retail-correct, but over the
-    /// arts films it trades the arts mean and camera against the worst rows
-    /// until the census base and the voiced frames' span agree with retail's
-    /// (`battle-stage-camera.md`, an art's keyframe decode). The native
-    /// session sets it either way from `LEGAIA_BATTLE_ME_DECODE`.
+    /// On by default: a party art commit's `"ME"` keyframe decode priced
+    /// into its battle frame (`frame_clock::me_decode_work`; `FUN_8002B28C`
+    /// from `FUN_8004AD80`), the retail work of the commit pass. It carries
+    /// the Super Arts' voiced commit passes over the step-`4` edge as
+    /// retail's are (`battle-stage-camera.md`, an art's keyframe decode).
+    /// The native session sets it either way from `LEGAIA_BATTLE_ME_DECODE`.
     pub battle_me_decode_cost: bool,
     /// Opt-in, off by default: an arts shout's CD read priced from its own
     /// `--cd-trace` recordings, the polls running from the read the seek opens
@@ -219,13 +218,15 @@ pub struct WorldToggles {
     /// timing model, so [`Self::pin_retail`] leaves it alone; the native
     /// session raises it from `LEGAIA_BATTLE_DERIVED_FRAME_COST=1`.
     pub battle_derived_frame_cost: bool,
-    /// Opt-in, off by default: the battle census decides each primitive by
-    /// the dispatcher leaves' own rules on the GTE's integer corners (the
-    /// winding test with its zero kept, the near floor on `OTZ`, the
-    /// off-screen test where the leaf runs it, bodies included) in place of
-    /// the float rules the fitted census line was fitted on. Always on under
-    /// [`Self::battle_derived_frame_cost`]; this raises it on the census line
-    /// alone (`LEGAIA_CENSUS_RETAIL_CULLS=1` in the native session).
+    /// On by default: the battle census decides each primitive by the
+    /// dispatcher leaves' own rules on the GTE's integer corners (the winding
+    /// test with its zero kept, the near floor on `OTZ`, the off-screen test
+    /// where the leaf runs it, bodies included) in place of the float rules,
+    /// and a census-priced frame is priced on those counts unit by unit
+    /// (`frame_clock::leaf_frame_work`) instead of the one-price line fitted
+    /// on the float rules' counts. Always on under
+    /// [`Self::battle_derived_frame_cost`]; the native session sets it either
+    /// way from `LEGAIA_CENSUS_RETAIL_CULLS`.
     pub battle_census_retail_culls: bool,
     /// Which machine's CD response timing a battle frame's cost reads while a
     /// CD-XA voice clip plays: PCSX-Redux's, where the clip player's stop
@@ -489,13 +490,14 @@ pub struct WorldToggles {
     /// in every state retail itself produces cleanly, so the guard is an
     /// identity there.
     pub hp_readout_guard: bool,
-    /// Heal numerals (enhancement, **on** by default): a battle restore that
-    /// retail lands with no numeral - an item's HP / MP / revive arm of
-    /// `FUN_800402F4`, the Life Grail tick, the Lost Grail's Final Heal, the
-    /// AI companion's heal and a catalog heal cast - throws a heal-coloured
-    /// number over its patient. Retail pushes none of them onto the
-    /// damage-number ring, so off (and under [`Self::pin_retail`]) only the
-    /// HP figure rolls up. Presentation only: no HP, readout or RNG change.
+    /// Heal numerals (enhancement, **off** by default, `--heal-numerals` opts
+    /// in): a battle restore that retail lands with no numeral - an item's
+    /// HP / MP / revive arm of `FUN_800402F4`, the Life Grail tick, the Lost
+    /// Grail's Final Heal, the AI companion's heal and a catalog heal cast -
+    /// throws a heal-coloured number over its patient. Retail pushes none of
+    /// them onto the damage-number ring, so off (the default, and always
+    /// under [`Self::pin_retail`]) only the HP figure rolls up. Presentation
+    /// only: no HP, readout or RNG change.
     pub heal_numerals: bool,
     /// Stoned-seat rescale (a fix of a retail oversight, **on** by default):
     /// Iota's exit (PROT 0921 arm `0xB`) stands every row seat back at unity
@@ -750,12 +752,12 @@ impl WorldToggles {
             battle_gpu_cost_step: false,
             gpu_cost_timing: legaia_engine_system::gpu_draw_cost::GpuTiming::DuckStation,
             field_gpu_cost_step: false,
-            battle_me_decode_cost: false,
+            battle_me_decode_cost: true,
             battle_arts_shout_cd: false,
             battle_effect_walk_cost: false,
             derived_frame_cost: true,
             battle_derived_frame_cost: false,
-            battle_census_retail_culls: false,
+            battle_census_retail_culls: true,
             battle_cd_timing: legaia_engine_battle_loop::frame_clock::CdTiming::PcsxRedux,
             battle_frame_span_law: true,
             battle_poly_frame_cost: true,
@@ -783,7 +785,7 @@ impl WorldToggles {
             tetsu_spar_fix: true,
             jewel_fix: false,
             hp_readout_guard: true,
-            heal_numerals: true,
+            heal_numerals: false,
             stone_scale_fix: true,
             spirit_ap: SPIRIT_AP_RETAIL,
             damage_ap: DAMAGE_AP_RETAIL,
@@ -1017,7 +1019,6 @@ mod fidelity_tests {
                 "fortress_encounter_fix",
                 "tetsu_spar_fix",
                 "hp_readout_guard",
-                "heal_numerals",
                 "stone_scale_fix",
                 "battle_entry_off_axis"
             ]
@@ -1039,6 +1040,7 @@ mod fidelity_tests {
         t.flee_exp = true;
         t.exp_rate_permille = 2000;
         t.jewel_fix = true;
+        t.heal_numerals = true;
         t.spirit_ap = 64;
         t.damage_ap = -50;
         t.seru_catch_pct = Some(100);

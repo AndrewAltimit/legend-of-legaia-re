@@ -10,6 +10,20 @@ use legaia_engine_mode::mode::SceneMode;
 /// words `0xFF` for six vsyncs before mode `9`).
 pub const ENCOUNTER_JOLT_VSYNCS: u8 = 6;
 
+/// The mode-`8` window's tick on which the intro init's audio half runs:
+/// the third, retail's `T + 3` (the battle music timeline in
+/// `docs/subsystems/audio.md`). The init's key-offs (`0x801CE974`,
+/// `0x801CE994`, `0x801CEB6C`) precede its display capture and mask-bit loop
+/// (the `jal`s from `0x801CEB74` on), which take the rest of the window.
+pub const INTRO_INIT_AUDIO_TICK: u8 = 2;
+
+/// Ticks a walked roll leads its load window by: the roll's own frame, and
+/// the next, on which the encounter SM's state `1` arm (`FUN_801DA51C`,
+/// `0x801DA5C0..0x801DA724`) copies the formation and stores mode `8` - the
+/// frame retail's per-vsync logs first read mode `8` on. The mode-`8`
+/// handler runs on the frame after the store.
+pub const INTRO_STORE_LEAD_TICKS: u8 = 2;
+
 impl World {
     /// Field-step trigger. Engines call this once per "the player walked
     /// one map cell" (typically when the player actor's grid coord moves)
@@ -206,11 +220,84 @@ impl World {
     /// Per-frame tick of the encounter session timers. Drives the
     /// `Transition` and `Grace` countdowns, and - while the session is in
     /// `Transition` - the field-to-battle intro state machine.
+    ///
+    /// A transition opens on retail's game mode `8`: the mode-table handler
+    /// `FUN_80025E68` copies (or loads) the intro overlay, runs `FUN_8003DE7C`
+    /// and calls the init `FUN_801CE8CC`, whose last act stores mode `9`; the
+    /// transition entity first ticks on the frame after. Nothing else runs in
+    /// that window - no field frame, no entity tick, no countdown - and the
+    /// display holds the field's last frame. Three PCSX-Redux captures (the
+    /// Queen Bee ambush and two `retona_field_card_boot` intros, a scatter and
+    /// a shatter) read the window as [`ENCOUNTER_JOLT_VSYNCS`] vsyncs, the
+    /// span the encounter jolt covers. The world holds the session for those
+    /// ticks before its first transition frame
+    /// ([`Self::hold_intro_load`]).
     pub fn tick_encounter(&mut self) {
+        if self.hold_intro_load() {
+            return;
+        }
         if let Some(session) = self.encounters.session.as_mut() {
             session.tick_frame();
         }
         self.tick_battle_intro();
+    }
+
+    /// The mode-`8` load window ahead of a transition's first tick: `true`
+    /// on each tick of it, when the session neither counts nor ticks the
+    /// intro. The encounter jolt starts with it (the entity SM's `0xFF`
+    /// stores precede the mode-`8` store) and runs out with it.
+    ///
+    /// The window's length is measured, not computed: the handler's work
+    /// (`FUN_80025E68`, the init's capture and its mask-bit loop) is CPU
+    /// time on retail.
+    // REF: FUN_80025E68, FUN_801CE8CC
+    fn hold_intro_load(&mut self) -> bool {
+        use legaia_engine_battle::encounter::EncounterPhase;
+        let in_transition = matches!(
+            self.encounters.session.as_ref().map(|s| s.phase()),
+            Some(EncounterPhase::Transition { .. })
+        );
+        if !in_transition {
+            self.encounters.intro_load_hold = None;
+            self.encounters.intro_store_lead = 0;
+            self.audio.intro_audio_silenced = false;
+            return false;
+        }
+        if self.battle.intro.is_some() {
+            return false;
+        }
+        // A walked roll stores mode `8` a frame after it rolls, and the
+        // window opens on the frame after the store. The jolt's `0xFF`
+        // stores (`0x801DA70C..0x801DA718`) sit in the store's own arm.
+        if self.encounters.intro_load_hold.is_none() && self.encounters.intro_store_lead > 0 {
+            self.encounters.intro_store_lead -= 1;
+            if self.encounters.intro_store_lead == 0 {
+                self.encounter_rumble();
+                self.tick_intro_rumble();
+                self.encounters.intro_load_hold = Some(ENCOUNTER_JOLT_VSYNCS);
+            }
+            return true;
+        }
+        let left = match self.encounters.intro_load_hold {
+            Some(left) => left,
+            None => {
+                self.encounter_rumble();
+                ENCOUNTER_JOLT_VSYNCS
+            }
+        };
+        if left == 0 {
+            self.encounters.intro_load_hold = Some(0);
+            return false;
+        }
+        // The init runs inside the window, and its key-offs come before its
+        // capture: the field's music and cue voices stop here, not on the
+        // transition's first tick.
+        if ENCOUNTER_JOLT_VSYNCS - left == INTRO_INIT_AUDIO_TICK {
+            self.silence_field_audio_for_intro();
+        }
+        self.tick_intro_rumble();
+        self.encounters.intro_load_hold = Some(left - 1);
+        true
     }
 
     /// The battle's **first monster id** - retail's `DAT_8007BD0C`, slot 0 of
@@ -329,9 +416,12 @@ impl World {
         // whose length a caller set to something else (a test or tool
         // shortening the bracket) keeps its own.
         if self.battle.intro.is_none() {
-            self.encounter_rumble();
             self.raise_hud_short_idle();
-            self.silence_field_audio_for_intro();
+            // A window that ran out before the init's audio tick (a caller
+            // seating the hold) still keys the field off with the init.
+            if !self.audio.intro_audio_silenced {
+                self.silence_field_audio_for_intro();
+            }
             use legaia_render_kernels::battle_intro_styles::{
                 INTRO_DURATION_FRAMES, INTRO_DURATION_FRAMES_SWIRL, intro_duration_frames,
                 select_intro_style,
@@ -504,11 +594,13 @@ impl World {
     ///
     /// The init's mode-init call `FUN_8001DCF8(0xA)` (`jal` at `0x801CE974`)
     /// comes first, and its unconditional `jal 0x80017910` (`0x8001DDA8`)
-    /// tears down a held sustained run (voices `7 ..`) here, on the intro's
-    /// first tick, not at the battle's own mode init a spin later.
+    /// tears down a held sustained run (voices `7 ..`) here, on the init's
+    /// tick of the mode-`8` window ([`INTRO_INIT_AUDIO_TICK`]), not at the
+    /// battle's own mode init a spin later.
     ///
     /// PORT: FUN_801CE8CC (0x801CE974, 0x801CE990..0x801CE9A8, 0x801CEB58..0x801CEB70)
     fn silence_field_audio_for_intro(&mut self) {
+        self.audio.intro_audio_silenced = true;
         self.release_sustained_sfx();
         self.audio.sfx_voice_stops.extend(0x10..=0x17);
         // A looping emitter's voices just went off under it: its latch drops,

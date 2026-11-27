@@ -649,6 +649,28 @@ pub fn retail_object_draw_flags(ram: &[u8]) -> Vec<(u16, u8)> {
         .collect()
 }
 
+/// Each bind record's `(record +0x50, +0x10 & 3)`, off the first field
+/// actor in list order that carries it (as [`retail_object_models`] takes
+/// them). The bits are the collision exemption `FUN_801CF754` /
+/// `FUN_801CF9F4` skip on: a door's touch pass raises bit `0` (`31 00`) as
+/// its swing starts, so a state saved after a door opened holds it exempt,
+/// touch history a seat does not replay. `mei_house_door_pcsx` holds
+/// `town01`'s door at `0x08008881` with its clip at the open end; seated
+/// solid, the film's first step into the doorway struck it and ran its
+/// record a pass before retail's walk-on.
+pub fn retail_object_exempt_bits(ram: &[u8]) -> Vec<(u16, u32)> {
+    let mut seen = std::collections::BTreeSet::new();
+    crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .filter(|&n| game_anchors::u32_at(ram, n + 0x0C) == 0x8003_BC08)
+        .filter_map(|n| {
+            let record = game_anchors::u16_at(ram, n + 0x50);
+            seen.insert(record)
+                .then(|| (record, game_anchors::u32_at(ram, n + 0x10) & 3))
+        })
+        .collect()
+}
+
 /// Every field actor with a clip bound, first in list order per record
 /// (as [`retail_object_models`] takes them). A placed object's clip is touch
 /// and walk history - a door the player has just pushed open, a lid mid
@@ -708,16 +730,25 @@ fn object_clips_back(ram: &[u8], lag_frames: u16) -> Vec<ObjectClipSeed> {
         .collect()
 }
 
-/// The player's party-bank clip words as the displayed frame stood them. The
-/// player's node ticks through its own handler `FUN_801D2298`, so
+/// The player's clip words as the displayed frame stood them. The player's
+/// node ticks through its own handler `FUN_801D2298`, so
 /// [`retail_object_clips`] does not list it, and a seat stands it idle; a
 /// capture the pad was running holds the run clip `3` mid-stride
 /// (`+0x10 & PARTY_BANK_FLAG` selects the bank, `lw v0,0x10(s0)` at
-/// `0x80020534`). `None` for a clip outside the party bank.
+/// `0x80020534`). `record` is `0` for a party-bank clip and `1` for one of
+/// the scene's own records (the bit down: `dream`'s Noa on scene clip `6`).
 pub fn retail_player_clip(ram: &[u8]) -> Option<ObjectClipSeed> {
     let p = game_anchors::player_ptr(ram)?;
-    if game_anchors::u32_at(ram, p + 0x10) & legaia_engine_field::field_player_clip::PARTY_BANK_FLAG
-        == 0
+    let scene = game_anchors::u32_at(ram, p + 0x10)
+        & legaia_engine_field::field_player_clip::PARTY_BANK_FLAG
+        == 0;
+    // A scene clip is seated only on a player standing still (`+0x14` /
+    // `+0x18` where the tick began, `+0x1C` / `+0x20`): a script walking the
+    // player (`credits_rimelm_walkaway_pcsx`) draws its pose beside a
+    // position the seat does not take back to the displayed frame.
+    if scene
+        && (game_anchors::u16_at(ram, p + 0x14) != game_anchors::u16_at(ram, p + 0x1C)
+            || game_anchors::u16_at(ram, p + 0x18) != game_anchors::u16_at(ram, p + 0x20))
     {
         return None;
     }
@@ -739,7 +770,7 @@ pub fn retail_player_clip(ram: &[u8]) -> Option<ObjectClipSeed> {
         ),
     );
     (1..0x100).contains(&clip).then_some(ObjectClipSeed {
-        record: 0,
+        record: u16::from(scene),
         clip: clip as u8,
         cursor,
         flags,

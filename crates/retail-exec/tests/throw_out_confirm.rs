@@ -170,6 +170,9 @@ fn the_throw_out_confirm_ends_as_retail_does() {
                     } else {
                         assert_eq!(port.focus, PauseItemsFocus::ThrowOutList, "{ctx}");
                         assert_eq!(cpu.mem.rd32(STEP), 1, "{ctx}: back to the list");
+                        // Items are left, so the rescan (`0x801D8980..0x801D89E8`)
+                        // keeps the throw-out screen rather than the command window.
+                        assert_eq!(cpu.mem.rd32(SCREEN), 0xA, "{ctx}: the list screen");
                         endings[0] += 1;
                     }
                 }

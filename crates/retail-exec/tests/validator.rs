@@ -148,6 +148,10 @@ fn the_validator_answers_what_retail_answers() {
                 cpu.mem.wr16(r + 0x12E, status);
             }
         }
+        // A third of the rounds hold every stat at its cap but one, so each
+        // of the stat arm's eight `sltiu` tests is the only one that can
+        // answer (the arm ORs them).
+        let lone = (rng.below(3) == 0).then(|| rng.below(STAT_OFFSETS.len() as u32) as usize);
         for s in 0..7 {
             let r = RECORDS + s as u32 * STRIDE;
             for (k, (off, cap)) in STAT_OFFSETS.iter().enumerate() {
@@ -156,6 +160,8 @@ fn the_validator_answers_what_retail_answers() {
                     h.quad[s].hp_max
                 } else if !in_battle && s < 3 && *off == 0x108 {
                     h.quad[s].mp_max
+                } else if lone.is_some_and(|l| l != k) {
+                    *cap as u16 + rng.below(2) as u16
                 } else {
                     stat(&mut rng, *cap)
                 };

@@ -88,6 +88,20 @@ fn rig() -> Option<Rig> {
 }
 
 impl Rig {
+    /// Deal every window's park class (descriptor `+1`) afresh over the
+    /// jump table's eight, on both sides; `table` is the overlay image the
+    /// port's descriptors are parsed from.
+    fn deal_park_classes(&mut self, rng: &mut Rng, table: &mut [u8]) {
+        for id in 0..52usize {
+            let class = rng.below(8) as u8;
+            table[(TABLE - OVERLAY_BASE) as usize + id * 16 + 1] = class;
+            self.cpu.mem.wr8(TABLE + id as u32 * 16 + 1, class);
+        }
+        self.port.set_defaults_from_table(
+            &legaia_game_tables::menu_windows::parse(table).expect("window table"),
+        );
+    }
+
     fn seat_screen(&mut self, s: ScreenBox) {
         for (i, v) in [s.left, s.top, s.right, s.bottom].into_iter().enumerate() {
             self.cpu.mem.wr16(SCREEN + 2 * i as u32, v);
@@ -260,7 +274,14 @@ fn generated_programs_drive_the_list_retail_drives() {
         return;
     };
     let mut rng = Rng(0x4F50_5321);
+    // The disc's descriptors park on the four edges only; here every
+    // window's park class (descriptor `+1`) is dealt afresh over the eight,
+    // the diagonals included, on both sides (the table parser refuses a
+    // class past the jump table's eight).
+    let mut table = r.overlay.clone();
+    let mut diagonals = 0;
     for chain in 0..300 {
+        r.deal_park_classes(&mut rng, &mut table);
         r.seat_screen(screens(&mut rng));
         r.clear();
         for step in 0..10 {
@@ -278,9 +299,15 @@ fn generated_programs_drive_the_list_retail_drives() {
             prog.extend_from_slice(&[0; 4]);
             r.run(&prog);
             r.compare(&format!("chain {chain} step {step} {prog:02x?}"));
+            for (id, _) in r.port.windows() {
+                if table[(TABLE - OVERLAY_BASE) as usize + usize::from(id) * 16 + 1] & 1 != 0 {
+                    diagonals += 1;
+                }
+            }
             r.walk(&mut rng);
         }
     }
+    assert!(diagonals > 2000, "{diagonals}");
 }
 
 /// Each helper called on its own over lists the VM built.
@@ -301,7 +328,13 @@ fn the_window_helpers_match_their_ports() {
     };
     let mut rng = Rng(0x4845_4C50);
     let mut hits = [0u32; 7];
+    // Half the chains run on dealt park classes, so the create's four
+    // diagonal arms run beside the disc's edge parks.
+    let mut table = r.overlay.clone();
     for chain in 0..300 {
+        if chain % 2 == 1 {
+            r.deal_park_classes(&mut rng, &mut table);
+        }
         r.seat_screen(screens(&mut rng));
         r.clear();
         for step in 0..40 {

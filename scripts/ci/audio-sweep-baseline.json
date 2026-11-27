@@ -1219,7 +1219,7 @@
       "track": 1.0
     },
     "conc3_ceremony_gala_box": {
-      "ambient": 0.0,
+      "ambient": 1.0,
       "playing": 1.0,
       "seq_vol": 1.0,
       "tempo": 1.0,
@@ -1233,14 +1233,14 @@
       "track": 1.0
     },
     "conc3_ceremony_mist_monsters": {
-      "ambient": 0.0,
+      "ambient": 1.0,
       "playing": 1.0,
       "seq_vol": 1.0,
       "tempo": 1.0,
       "track": 1.0
     },
     "conc3_ceremony_mist_pillar": {
-      "ambient": 0.0,
+      "ambient": 1.0,
       "playing": 1.0,
       "seq_vol": 1.0,
       "tempo": 1.0,
@@ -1325,69 +1325,82 @@
       "battle_track": 1.0
     },
     "credits_edbubu_fullscreen_pcsx": {
-      "playing": 0.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
       "tempo": 1.0,
-      "track": 0.0
+      "track": 1.0
     },
     "credits_edbylon_fullscreen_pcsx": {
-      "playing": 0.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
       "tempo": 1.0,
-      "track": 0.0
+      "track": 1.0
     },
     "credits_edbylon_panel_pcsx": {
-      "playing": 0.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
       "tempo": 1.0,
-      "track": 0.0
+      "track": 1.0
     },
     "credits_eddoman_fullscreen_pcsx": {
-      "playing": 0.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
       "tempo": 1.0,
-      "track": 0.0
+      "track": 1.0
     },
     "credits_edkorout_panel_pcsx": {
-      "playing": 0.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
       "tempo": 1.0,
-      "track": 0.0
+      "track": 1.0
     },
     "credits_edkorout_window_pcsx": {
-      "playing": 0.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
       "tempo": 1.0,
-      "track": 0.0
+      "track": 1.0
     },
     "credits_edlast_casting_pcsx": {
-      "playing": 0.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
       "tempo": 1.0,
-      "track": 0.0
+      "track": 1.0
     },
     "credits_edretoin_fullscreen_pcsx": {
-      "playing": 0.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
       "tempo": 1.0,
-      "track": 0.0
+      "track": 1.0
     },
     "credits_edretoin_panel_pcsx": {
-      "playing": 0.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
       "tempo": 1.0,
-      "track": 0.0
+      "track": 1.0
     },
     "credits_edson_fullscreen_pcsx": {
-      "playing": 0.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
       "tempo": 1.0,
-      "track": 0.0
+      "track": 1.0
     },
     "credits_edson_panel_pcsx": {
-      "playing": 0.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
       "tempo": 1.0,
-      "track": 0.0
+      "track": 1.0
     },
     "credits_edstati3_fullscreen_pcsx": {
-      "playing": 0.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
       "tempo": 1.0,
-      "track": 0.0
+      "track": 1.0
     },
     "credits_edstati3_panel_pcsx": {
-      "playing": 0.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
       "tempo": 1.0,
-      "track": 0.0
+      "track": 1.0
     },
     "credits_edteien_panel_pcsx": {
       "playing": 1.0,
@@ -1396,9 +1409,10 @@
       "track": 1.0
     },
     "credits_rimelm_walkaway_pcsx": {
-      "playing": 0.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
       "tempo": 1.0,
-      "track": 0.0
+      "track": 1.0
     },
     "deene_field_card_walk": {
       "playing": 1.0,
@@ -1603,7 +1617,7 @@
     },
     "garmel_zeto_defeat_pre_line": {
       "ambient": 0.0,
-      "playing": 0.0,
+      "playing": 1.0,
       "track": 1.0
     },
     "garmel_zeto_pre_big_wave": {
@@ -1680,6 +1694,12 @@
       "seq_vol": 1.0,
       "tempo": 1.0,
       "track": 1.0
+    },
+    "jou_gala_heavens_drop_strike_h30": {
+      "battle_track": 1.0
+    },
+    "jou_gala_heavens_drop_strike_h6": {
+      "battle_track": 1.0
     },
     "jou_nova_v3_pre_scythe_wind": {
       "battle_track": 1.0
@@ -1843,7 +1863,7 @@
       "track": 1.0
     },
     "kor5_p2_5_pre_raise": {
-      "playing": 0.0,
+      "playing": 1.0,
       "track": 0.0
     },
     "kor5_post_436_organic": {
@@ -2270,6 +2290,12 @@
       "battle_track": 1.0
     },
     "rugi_berserker_3_pre_spore_gas": {
+      "battle_track": 1.0
+    },
+    "rugi_caruban_2_pre_fire_breath": {
+      "battle_track": 1.0
+    },
+    "rugi_caruban_3_pre_fire_breath": {
       "battle_track": 1.0
     },
     "rugi_field_card_boot": {

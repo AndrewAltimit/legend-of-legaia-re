@@ -42,6 +42,13 @@ pub struct SummonScene {
     /// spawned it, and drags along the flight while the move-power record's
     /// `+0x09` byte is set. `None` for a scene no flight addresses.
     pub homing_slot: Option<u8>,
+    /// `Some(legs)` while this scene's first part is the effect-script
+    /// walk's follow handle `ctx[+0x1028]`, with the raw record legs stashed
+    /// at `ctx[+0x1184..+0x1188]`: the stepper's prologue re-seats it at the
+    /// active actor each frame
+    /// ([`crate::action_effect_script::follow_reseat`]). At most one scene
+    /// holds it.
+    pub follow_legs: Option<[i16; 3]>,
     /// Record tags ([`SummonPartRuntime::tag`]) the draw lists leave out: a
     /// diagnostic recorder's per-part toggle (`LEGAIA_DIAG_CAST_HIDE`), for
     /// naming which part a film's frame shows. Empty in play.
@@ -107,6 +114,7 @@ impl SummonScene {
             retail_wait_drain: false,
             last_frame_delta: RETAIL_CHANNEL_DELTA,
             homing_slot: None,
+            follow_legs: None,
             diag_hidden: Vec::new(),
         }
     }

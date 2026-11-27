@@ -6,8 +6,8 @@
 
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_effects::action_effect_script::{
-    EffectScriptActor, RECORD_BASE, RECORD_STRIDE, TABLE_ART_SLOT, TABLE_CLUT_GATE,
-    step_effect_script, table_effect_code,
+    EffectScriptActor, FOLLOW_HANDLE_CODES, RECORD_BASE, RECORD_STRIDE, TABLE_ART_SLOT,
+    TABLE_CLUT_GATE, follow_reseat, step_effect_script, table_effect_code,
 };
 use legaia_engine_system::rotation_lut::retail_rotation_lut;
 use psx_retail_exec::{A0, A1, Stop};
@@ -329,5 +329,140 @@ fn the_effect_stepper_is_retails() {
     assert!(
         spawned > 30_000 && terminators > 3000 && substituted > 100,
         "{spawned} {terminators} {substituted}"
+    );
+}
+
+/// The stepper's follow handle `ctx[+0x1028]` against `follow_reseat` and the
+/// port's install rule: the prologue (`0x801DEA50..0x801DEBEC`) drops a
+/// retired handle and re-seats a live one at the active actor; the table arm
+/// (`0x801DF198..0x801DF1E8`) makes a follow code's spawn the handle and
+/// stashes the record's raw legs at `ctx[+0x1184..+0x1188]`.
+#[test]
+fn the_effect_stepper_follow_handle_is_retails() {
+    differential!(prot(898, STEP));
+    let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    const HANDLE: u32 = 0x8017_0000;
+    const SPAWNED: u32 = 0x8017_1000;
+    let lut = retail_rotation_lut();
+    let overlay = disc.read_entry(898).expect("PROT 0898");
+    cpu.mem.load(OVERLAY_BASE, &overlay);
+    cpu.mem.wr32(CTX_PTR, CTX);
+    cpu.mem.wr32(SIN_PTR, SIN);
+    cpu.mem.wr32(COS_PTR, COS);
+    use legaia_engine_system::rotation_lut::RotationLut;
+    for a in 0..0x1000 {
+        cpu.mem.wr16(SIN + a as u32 * 2, lut.b(a) as u16);
+        cpu.mem.wr16(COS + a as u32 * 2, lut.a(a) as u16);
+    }
+    for s in 0..8 {
+        cpu.mem.wr32(ACTORS + s * 4, ACTOR + s * 0x400);
+        cpu.mem.wr32(ACTOR + s * 0x400 + 0x22C, NODE + s * 0x100);
+        cpu.mem.wr16(NODE + s * 0x100 + 0x72, 0x1000);
+    }
+    cpu.stub(APPROACH, 0);
+    cpu.stub(BEARING, 0);
+    cpu.stub(MOVE_IMAGE, 0);
+    cpu.stub(DIRECT, 0);
+    cpu.hook(TABLE, |r, _| r.r[2] = SPAWNED);
+    let mut rng = Rng(0x464F_4C4C);
+    let (mut reseated, mut dropped, mut installed, mut failures) = (0u32, 0u32, 0u32, Vec::new());
+    for round in 0..20_000 {
+        let slot = rng.below(4);
+        let active = if rng.below(4) == 0 {
+            (slot + 1) % 4
+        } else {
+            slot
+        };
+        let retired = rng.below(5) == 0;
+        let c = |rng: &mut Rng| (rng.below(0x801) as i32 - 0x400) as i16;
+        let legs = [c(&mut rng), c(&mut rng), c(&mut rng)];
+        let world = (c(&mut rng), c(&mut rng), c(&mut rng));
+        let facing = rng.below(0x1000) as u16;
+        // One table record now and then, its code a follow code or not.
+        let code = match rng.below(4) {
+            0 => FOLLOW_HANDLE_CODES[rng.below(3) as usize],
+            1 => rng.below(0x30) as u8,
+            _ => 0,
+        };
+        let rec_legs = [c(&mut rng), c(&mut rng), c(&mut rng)];
+        let mut block = vec![0u8; RECORD_BASE + 2 * RECORD_STRIDE];
+        if code != 0 {
+            let o = RECORD_BASE;
+            block[o] = 1;
+            block[o + 1] = code;
+            for (k, v) in rec_legs.iter().enumerate() {
+                block[o + 2 + 2 * k..o + 4 + 2 * k].copy_from_slice(&v.to_le_bytes());
+            }
+        }
+        cpu.mem.load(SCRIPT, &block);
+        cpu.mem.wr8(CTX + 0x13, active as u8);
+        cpu.mem.wr8(CTX + 0x263, 0);
+        cpu.mem.wr32(CTX + 0x1028, HANDLE);
+        cpu.mem.wr16(CTX + 0x1184, legs[0] as u16);
+        cpu.mem.wr16(CTX + 0x1186, legs[1] as u16);
+        cpu.mem.wr16(CTX + 0x1188, legs[2] as u16);
+        cpu.mem.wr32(HANDLE + 0x10, if retired { 0x8 } else { 0 });
+        for o in [0x14, 0x16, 0x18] {
+            cpu.mem.wr16(HANDLE + o, 0x5A5A);
+        }
+        let a = ACTOR + slot * 0x400;
+        cpu.mem.wr8(a + 0x1F5, 0);
+        cpu.mem.wr8(a + 0x1D9, 1);
+        cpu.mem.wr16(a + 0x34, world.0 as u16);
+        cpu.mem.wr16(a + 0x36, world.1 as u16);
+        cpu.mem.wr16(a + 0x38, world.2 as u16);
+        cpu.mem.wr16(a + 0x46, facing);
+        assert_eq!(
+            cpu.call(STEP, &[slot, SCRIPT, 2]),
+            Stop::Returned,
+            "round {round}"
+        );
+
+        let handle = cpu.mem.rd32(CTX + 0x1028);
+        let pos = [
+            cpu.mem.rd16(HANDLE + 0x14) as i16,
+            cpu.mem.rd16(HANDLE + 0x16) as i16,
+            cpu.mem.rd16(HANDLE + 0x18) as i16,
+        ];
+        let stashed = [
+            cpu.mem.rd16(CTX + 0x1184) as i16,
+            cpu.mem.rd16(CTX + 0x1186) as i16,
+            cpu.mem.rd16(CTX + 0x1188) as i16,
+        ];
+        // The port: a retired handle drops; a live one re-seats when the
+        // stepped actor is the active one; a follow code's spawn replaces
+        // it with the record's raw legs.
+        let world32 = (i32::from(world.0), i32::from(world.1), i32::from(world.2));
+        let follow = FOLLOW_HANDLE_CODES.contains(&code);
+        let want_pos = if !retired && slot == active {
+            follow_reseat(lut, world32, facing, legs)
+        } else {
+            [0x5A5A; 3]
+        };
+        let (want_handle, want_legs) = if follow {
+            (SPAWNED, rec_legs)
+        } else if retired {
+            (0, legs)
+        } else {
+            (HANDLE, legs)
+        };
+        reseated += u32::from(!retired && slot == active);
+        dropped += u32::from(retired && !follow);
+        installed += u32::from(follow);
+        if (pos, handle, stashed) != (want_pos, want_handle, want_legs) && failures.len() < 14 {
+            failures.push(format!(
+                "round {round} slot {slot} active {active} retired {retired} code {code:#x}: \
+                 retail {pos:?} {handle:#x} {stashed:?} port {want_pos:?} {want_handle:#x} \
+                 {want_legs:?}"
+            ));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    assert!(
+        reseated > 5000 && dropped > 2000 && installed > 2000,
+        "{reseated} {dropped} {installed}"
     );
 }

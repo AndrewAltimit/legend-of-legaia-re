@@ -492,7 +492,8 @@ impl World {
     /// through its `opstati` / `opurud` legs), the trigger bit is set
     /// ([`Self::arm_prologue_handoff`] - `opdeene`'s timeline raises it near
     /// its top, so the skip is available almost immediately), and the caller
-    /// reports a confirm-button press this frame. This is the retail
+    /// reports the skip press this frame - a held Select
+    /// ([`crate::world::prologue_skip_held`]). This is the retail
     /// intro-SKIP: the packet fires mid-narration too (the roller is
     /// timer-driven, not confirm-paced). Clears the bit so it fires once,
     /// exactly as retail clears `0x4000000`, and tears down the playing
@@ -523,7 +524,67 @@ impl World {
         self.scene_transition_hold = None;
         self.cutscene.opening_chain_active = false;
         self.cutscene.entering_town01_opening = false;
+        self.cutscene.prologue_skip_fade = None;
         was_live
+    }
+
+    /// One tick of the intro skip as the play hosts run it: the press
+    /// ([`crate::world::prologue_skip_held`]) does what `FUN_801D1344` does on
+    /// its frame - a `0x3C`-frame fade to black (`FUN_801D58F0(2, 0,
+    /// 0xFFFFFF, 0, 0x3C, -1)`, held), the player's movement lock
+    /// (`+0x10 |= 0x80000` at `0x801D1590..0x801D159C`) and the one-shot
+    /// clear of bit 26 - and the hand-off to `town01` follows once the fade
+    /// has run. Retail posts its scene packet on the press frame too, but the
+    /// load behind it keeps the screen black for some 380 vsyncs before
+    /// `town01` fades in (a PCSX-Redux film of the `s1_newgame_field` state
+    /// with Select held: black by about 50 vsyncs after the press); the port
+    /// enters the scene once the fade lands, its load holds being the host's.
+    ///
+    /// Returns the scene to enter on the tick the hand-off is due.
+    // REF: FUN_801D1344, FUN_801D58F0
+    pub fn step_prologue_skip(&mut self, held_select: bool) -> Option<&'static str> {
+        if let Some(left) = self.cutscene.prologue_skip_fade {
+            let left = left.saturating_sub(1);
+            if left > 0 {
+                self.cutscene.prologue_skip_fade = Some(left);
+                return None;
+            }
+            self.cutscene.prologue_skip_fade = None;
+            // The held fade has done its work; the scene behind it brings
+            // its own entry.
+            self.presentation.fade = None;
+            return Some(self.finish_prologue_handoff());
+        }
+        if held_select
+            && self.flags.story_flags & PROLOGUE_HANDOFF_FLAG != 0
+            && self.cutscene.opening_chain_active
+        {
+            self.flags.story_flags &= !PROLOGUE_HANDOFF_FLAG;
+            legaia_engine_system::fade::spawn_fade(
+                &mut self.presentation.fade,
+                &PROLOGUE_SKIP_FADE,
+                0,
+            );
+            if let Some(slot) = self.player_actor_slot
+                && let Some(actor) = self.actors.get_mut(slot as usize)
+            {
+                actor.move_state.flags |= legaia_engine_field::field_warp_tile::MOVEMENT_LOCK;
+            }
+            self.cutscene.prologue_skip_fade = Some(PROLOGUE_SKIP_FADE.duration as u16);
+        }
+        None
+    }
+
+    /// The skip's tail: tear the opening down and name `town01`.
+    fn finish_prologue_handoff(&mut self) -> &'static str {
+        // Tear down whatever leg of the opening is mid-flight - the skip
+        // abandons the remaining narration + choreography wholesale.
+        self.abandon_opening_chain();
+        // Mark the upcoming `town01` entry as the new-game opening so it
+        // installs the opening cutscene timeline (which opens name entry at
+        // its pinned op-`0x49`); a normal `town01` visit never sets this.
+        self.cutscene.entering_town01_opening = true;
+        legaia_game_tables::new_game::OPENING_SCENE
     }
 
     // REF: FUN_801D1344
@@ -534,14 +595,7 @@ impl World {
             && self.cutscene.opening_chain_active
         {
             self.flags.story_flags &= !PROLOGUE_HANDOFF_FLAG;
-            // Tear down whatever leg of the opening is mid-flight - the skip
-            // abandons the remaining narration + choreography wholesale.
-            self.abandon_opening_chain();
-            // Mark the upcoming `town01` entry as the new-game opening so it
-            // installs the opening cutscene timeline (which opens name entry at
-            // its pinned op-`0x49`); a normal `town01` visit never sets this.
-            self.cutscene.entering_town01_opening = true;
-            Some(legaia_game_tables::new_game::OPENING_SCENE)
+            Some(self.finish_prologue_handoff())
         } else {
             None
         }

@@ -141,11 +141,15 @@ fn the_player_tick_gates_its_legs_as_retail_does() {
     let mut rng = Rng(0x504C_5449);
     let (mut walked, mut held, mut engaged_n, mut halted, mut armed, mut zoned, mut clips) =
         (0, 0, 0, 0, 0, 0, 0);
+    let mut skipped = 0;
     for run in 0..20000 {
         let halt = rng.below(16) == 0;
         let engaged = rng.below(3) == 0;
-        let scratch = (rng.next() & 0x0041_0400 & [0, !0, !0][rng.below(3) as usize])
+        let scratch = (rng.next() & 0x0441_0400 & [0, !0, !0][rng.below(3) as usize])
             | (rng.next() & 0x0000_00FF);
+        // The intro skip's dev word: zero in retail, so the skip packet can
+        // fire, in a third of the runs.
+        let dev = rng.below(3) != 0;
         let warp = WarpTimer {
             timer: match rng.below(4) {
                 0 => 1 + rng.below(0x26) as i32,
@@ -177,10 +181,11 @@ fn the_player_tick_gates_its_legs_as_retail_does() {
         for (i, w) in emitter.iter().enumerate() {
             cpu.mem.wr32(EMITTER + 4 * i as u32, *w);
         }
-        // The prologue's skip packet needs a held Start under scratch bit 26;
-        // the progress word keeps it shut here.
-        cpu.mem.wr32(PROGRESS, 1);
-        cpu.mem.wr32(PAD_HELD, rng.next() & 0xFFFF);
+        // The prologue's skip packet needs a held Select (packed `0x100`)
+        // under scratch bit 26 with the dev word clear.
+        cpu.mem.wr32(PROGRESS, u32::from(dev));
+        let pad_held = rng.next() & 0xFFFF;
+        cpu.mem.wr32(PAD_HELD, pad_held);
         cpu.mem.wr32(SCRATCH, scratch);
         cpu.mem.wr8(FRAME_STEP, step);
         cpu.mem.wr32(HOLD, warp.hold as u32);
@@ -206,6 +211,38 @@ fn the_player_tick_gates_its_legs_as_retail_does() {
             assert_eq!(cpu.mem.rd32(HOLD) as i32, warp.hold, "{ctx}");
             halted += 1;
             continue;
+        }
+        // The skip: `FUN_801D1344` against `World::take_prologue_handoff`
+        // fed the held pad through `prologue_skip_held`, the press both hosts
+        // hand it. On its frame retail fades (`0x3C` frames), seats the
+        // `town01` entry, locks the player and posts the `town01` packet,
+        // and the scene change tears the rest down; the legs after it are
+        // not compared.
+        if !dev && scratch & 0x0400_0000 != 0 {
+            let mut w = legaia_engine_core::world::World::new();
+            w.cutscene.opening_chain_active = true;
+            w.flags.story_flags = legaia_engine_core::world::PROLOGUE_HANDOFF_FLAG;
+            let raw = (pad_held as u16).swap_bytes();
+            let port = w.take_prologue_handoff(legaia_engine_core::world::prologue_skip_held(raw));
+            let posted = got.contains(&SKIP_MAP);
+            assert_eq!(port.is_some(), posted, "the skip: {ctx} held {pad_held:#x}");
+            assert_eq!(
+                cpu.mem.rd32(SCRATCH) & 0x0400_0000 == 0,
+                w.flags.story_flags & legaia_engine_core::world::PROLOGUE_HANDOFF_FLAG == 0,
+                "the skip's one-shot bit: {ctx}"
+            );
+            if posted {
+                assert_eq!(port, Some("town01"), "{ctx}");
+                let fade = log.borrow().iter().find(|c| c.0 == SKIP_FADE).map(|c| c.1);
+                assert_eq!(fade, Some([2, 0, 0x00FF_FFFF, 0]), "{ctx}");
+                assert_eq!(
+                    (cpu.mem.rd32(0x8007_3EF4), cpu.mem.rd32(0x8007_3EF8)),
+                    (0xEC0, 0x2DC0),
+                    "{ctx}: the town01 entry"
+                );
+                skipped += 1;
+                continue;
+            }
         }
         let mut port = warp;
         drain_post_warp_hold(&mut port, step);
@@ -270,7 +307,8 @@ fn the_player_tick_gates_its_legs_as_retail_does() {
             && halted > 500
             && armed > 2000
             && zoned > 500
-            && clips > 2000,
-        "{walked} {held} {engaged_n} {halted} {armed} {zoned} {clips}"
+            && clips > 2000
+            && skipped > 200,
+        "{walked} {held} {engaged_n} {halted} {armed} {zoned} {clips} {skipped}"
     );
 }

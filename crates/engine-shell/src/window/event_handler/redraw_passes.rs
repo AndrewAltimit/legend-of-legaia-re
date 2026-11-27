@@ -476,10 +476,12 @@ impl PlayWindowApp {
                 None => pose,
             };
             // `LEGAIA_DIAG_POSE_CSV=<file>`: the drawn pose of every battle
-            // body each redraw - tick, slot, clip, cursor (12.4), whether the
-            // smooth camera carried it, then one `tx ty tz rx ry rz` group
-            // per part - for a per-frame continuity read of a clip switch.
-            if actor.battle_animation.is_some()
+            // body and of the field player each redraw - tick, slot, clip,
+            // cursor (12.4), whether the smooth draw carried it, then one
+            // `tx ty tz rx ry rz` group per part, and after a `|` the live
+            // pose's groups - for a per-frame continuity read of a clip
+            // switch.
+            if (actor.battle_animation.is_some() || player_slot == Some(ai as u8))
                 && let Some(path) = std::env::var_os("LEGAIA_DIAG_POSE_CSV")
                 && let Ok(mut f) = std::fs::OpenOptions::new()
                     .create(true)
@@ -493,14 +495,21 @@ impl PlayWindowApp {
                     .iter()
                     .map(|(t, r)| format!("{} {} {} {} {} {}", t[0], t[1], t[2], r[0], r[1], r[2]))
                     .collect();
+                let live: Vec<String> = actor
+                    .pose_frame
+                    .iter()
+                    .flat_map(|p| p.bone_outputs.iter())
+                    .map(|(t, r)| format!("{} {} {} {} {} {}", t[0], t[1], t[2], r[0], r[1], r[2]))
+                    .collect();
                 let _ = writeln!(
                     f,
-                    "{},{ai},{},{},{},{}",
+                    "{},{ai},{},{},{},{}|{}",
                     self.tick_no,
                     p.map_or(-1, |p| i32::from(p.action_id())),
                     p.map_or(-1, |p| i32::from(p.cursor_sixteenths())),
                     u8::from(lerped.is_some()),
-                    parts.join(",")
+                    parts.join(","),
+                    live.join(",")
                 );
             }
             // The playing clip's morph lanes (`FUN_800495C8`, blended before

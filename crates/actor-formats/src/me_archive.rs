@@ -105,6 +105,15 @@ impl<'a> MeArchive<'a> {
         self.bytes.get(off..off + len)
     }
 
+    /// The reader's instructions on entry `n` ([`reader_steps`]), for a
+    /// compressed entry; `None` for a raw one or a stream the codec refuses.
+    pub fn entry_reader_steps(&self, n: usize) -> Option<u32> {
+        if self.is_compressed(n) != Some(true) {
+            return None;
+        }
+        codec_walk(self.raw_body(n)?).ok().map(|w| reader_steps(&w))
+    }
+
     /// Decode entry `n` to its packed keyframe stream
     /// (`[u8 parts][u8 frames][9-byte TRS records]`): a verbatim copy for a
     /// raw entry, the [`decode_channel_delta`] codec for a compressed one.
@@ -261,6 +270,76 @@ pub fn decode_channel_delta(src: &[u8]) -> Result<Vec<u8>> {
         }
     }
     Ok(out)
+}
+
+/// What the codec's walk takes on one compressed stream, the inputs of its
+/// instruction count: the stream's `parts` and `frames`, and how many values
+/// took each selector arm (`1`, `01`, `001`, `0001`, `0000`, in that order).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CodecWalk {
+    pub parts: u32,
+    pub frames: u32,
+    pub arms: [u32; 5],
+}
+
+/// Instructions [`reader_steps`] charges once per stream, and per frame.
+pub const READER_BASE_STEPS: u32 = 1435;
+/// Thousandths of an instruction per frame.
+pub const READER_FRAME_MILLI_STEPS: u32 = 11_761;
+/// Thousandths of an instruction per value by selector arm (`1`, `01`,
+/// `001`, `0001`, `0000`): the arm's bit reads, its nibble and byte reads,
+/// and the value's share of the row accumulate and the packed emit.
+pub const READER_ARM_MILLI_STEPS: [u32; 5] = [75_230, 82_292, 95_227, 96_250, 96_917];
+
+/// The instructions the archive reader `FUN_8002B28C` with its codec
+/// `FUN_8002A9CC` runs on one compressed entry, off the codec's walk
+/// ([`codec_walk`]). Fitted on the retail interpreter's counts over every
+/// compressed entry of `readef.DAT`, it reads each to within `0.1%`
+/// (`retail-exec`'s `the_archive_reader_costs_its_selector_arms`); the
+/// per-part-frame law the frame clock falls back on
+/// (`frame_clock::ME_DECODE_STEPS_PER_PART_FRAME`) spreads `495` to `520`
+/// over the same entries, the arms' mix.
+pub fn reader_steps(walk: &CodecWalk) -> u32 {
+    let arms: u64 = walk
+        .arms
+        .iter()
+        .zip(READER_ARM_MILLI_STEPS)
+        .map(|(&n, k)| u64::from(n) * u64::from(k))
+        .sum();
+    let milli = u64::from(READER_BASE_STEPS) * 1000
+        + u64::from(walk.frames) * u64::from(READER_FRAME_MILLI_STEPS)
+        + arms;
+    u32::try_from((milli + 500) / 1000).unwrap_or(u32::MAX)
+}
+
+/// Walk a channel-delta stream's selector bits ([`decode_channel_delta`]'s
+/// arms) without decoding it.
+pub fn codec_walk(src: &[u8]) -> Result<CodecWalk> {
+    if src.len() < 7 || src[0] & 0xC0 != 0x40 {
+        bail!("not a channel-delta stream");
+    }
+    let byte_off = 5 + u16::from_le_bytes([src[3], src[4]]) as usize;
+    let head = src
+        .get(byte_off..byte_off + 2)
+        .ok_or_else(|| anyhow::anyhow!("codec byte stream offset past end"))?;
+    let (parts, frames) = (u32::from(head[0]), u32::from(head[1]));
+    let mut bits = BitCursor {
+        bytes: &src[5..],
+        pos: 0,
+    };
+    let mut arms = [0u32; 5];
+    for _ in 0..parts * 6 * frames {
+        let mut arm = 0;
+        while arm < 4 && !bits.bit()? {
+            arm += 1;
+        }
+        arms[arm] += 1;
+    }
+    Ok(CodecWalk {
+        parts,
+        frames,
+        arms,
+    })
 }
 
 #[cfg(test)]

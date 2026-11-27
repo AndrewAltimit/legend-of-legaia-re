@@ -604,7 +604,9 @@ impl SceneHost {
 
     /// The world-side frame tail a headless driver owes after each
     /// [`Self::tick`]: seat a requested summon creature unrendered, run
-    /// [`legaia_engine_core::world::World::step_world_frame_tail`] with no clip banks, and
+    /// [`legaia_engine_core::world::World::step_world_frame_tail`] with the clip banks the
+    /// scene's actors were bound from ([`Self::headless_clip_banks`], none when
+    /// nothing bound them), and
     /// step [`legaia_engine_core::world::World::step_field_vram_effects`] over the scene's
     /// own VRAM image. `engine-session`'s `BootSession` runs exactly this on
     /// every tick it does not hand to a play host. It runs no follow camera,
@@ -623,7 +625,15 @@ impl SceneHost {
     /// caller drops it.
     pub fn step_headless_frame_tail(&mut self) -> legaia_engine_core::world::WorldFrameTail {
         self.world.seat_summon_creature_unrendered();
-        let tail = self.world.step_world_frame_tail(None, None, |_| None);
+        let banks = self
+            .headless_clip_banks
+            .as_ref()
+            .filter(|b| b.scene == self.world.active_scene_label);
+        let tail = self.world.step_world_frame_tail(
+            banks.and_then(|b| b.scene_anm.as_ref()),
+            banks.and_then(|b| b.locomotion_anm.as_ref()),
+            |slot| banks.and_then(|b| b.targets.get(&slot).copied()),
+        );
         if let Some(res) = self.resources.as_mut() {
             let _ = self.world.step_field_vram_effects(&mut res.vram, false);
         }

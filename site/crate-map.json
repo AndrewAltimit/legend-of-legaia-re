@@ -1587,6 +1587,7 @@
    "lib": true,
    "modules": [
     "action_effect_script",
+    "battle_intro_parts",
     "effect_default_arm",
     "effect_ribbon",
     "effect_sprite_arm",
@@ -4286,6 +4287,7 @@
     "engine-motion-vm",
     "engine-scene",
     "engine-scene-host",
+    "engine-screens",
     "engine-system",
     "engine-title",
     "engine-ui",
@@ -4943,6 +4945,7 @@
     "xa"
    ],
    "dev_deps": [
+    "engine-effects",
     "overlay-images",
     "prot"
    ],

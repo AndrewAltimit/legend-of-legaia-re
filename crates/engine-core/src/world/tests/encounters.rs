@@ -589,6 +589,36 @@ fn prologue_handoff_fires_once_on_confirm_in_the_opening_chain() {
     assert_eq!(world.take_prologue_handoff(true), None);
 }
 
+/// The hosts' skip (`step_prologue_skip`): a held Select puts retail's
+/// `0x3C`-frame fade to black up and clears bit 26 on its frame, and the
+/// hand-off to `town01` comes when the fade has run, with the fade cleared
+/// for the scene behind it.
+#[test]
+fn the_intro_skip_fades_to_black_before_it_hands_off() {
+    let mut world = World::new();
+    world.set_active_scene_label(legaia_game_tables::new_game::OPENING_CUTSCENE_SCENE);
+    world.cutscene.opening_chain_active = true;
+    world.arm_prologue_handoff();
+    assert_eq!(world.step_prologue_skip(false), None);
+    assert!(world.presentation.fade.is_none());
+    assert_eq!(world.step_prologue_skip(true), None, "the press only fades");
+    assert_eq!(world.flags.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
+    let fade = world.presentation.fade.as_ref().expect("the fade is up");
+    assert_eq!(fade.kind, 2);
+    for _ in 0..0x3B {
+        assert_eq!(world.step_prologue_skip(true), None);
+        assert!(world.cutscene.opening_chain_active);
+    }
+    assert_eq!(
+        world.step_prologue_skip(false),
+        Some(legaia_game_tables::new_game::OPENING_SCENE)
+    );
+    assert!(world.presentation.fade.is_none());
+    assert!(world.cutscene.entering_town01_opening);
+    assert!(!world.cutscene.opening_chain_active);
+    assert_eq!(world.step_prologue_skip(true), None, "fires once");
+}
+
 /// The prologue skip's `town01` entry is not a free-roam picker visit. The
 /// skip clears the chain flag and the timeline before any host enters the
 /// scene, so a host that asked only "is the opening running?" (the browser
@@ -843,6 +873,7 @@ fn the_battle_intro_sm_runs_through_the_transition_phase() {
 
     // Phase 0 arms the audio cue, phase 1 clears mesh assembly, phase 2 is the
     // BGM + bundle load - three ticks reach it.
+    run_intro_load(&mut world);
     world.tick_encounter();
     assert!(
         world.battle.intro.is_some(),
@@ -921,6 +952,7 @@ fn the_battle_intro_phase_zero_enqueues_the_battle_start_cue() {
         roll_q8: 0,
     });
     world.set_encounter_session(Some(session));
+    run_intro_load(&mut world);
     world.tick_encounter();
     let cues = world.drain_battle_sfx_cues();
     assert_eq!(cues.len(), 1, "one battle-start cue: {cues:?}");
@@ -954,6 +986,7 @@ fn the_battle_intro_phase_zero_enqueues_the_battle_start_cue() {
         roll_q8: 0,
     });
     world.set_encounter_session(Some(session));
+    run_intro_load(&mut world);
     world.tick_encounter();
     let cues = world.drain_battle_sfx_cues();
     assert_eq!(
@@ -1030,6 +1063,7 @@ fn a_field_track_the_battle_shares_is_reattached_at_the_completion() {
         roll_q8: 0,
     });
     world.set_encounter_session(Some(session));
+    run_intro_load(&mut world);
     world.tick_encounter();
     let _ = world.drain_field_events();
     world.swap_to_battle_bgm();
@@ -1076,6 +1110,7 @@ fn the_intro_drops_an_emitters_key_latch() {
         roll_q8: 0,
     });
     world.set_encounter_session(Some(session));
+    run_intro_load(&mut world);
     world.tick_encounter();
     assert_ne!(world.ambient.fx[0].state.flags & EMITTER_STOP_FLAG, 0);
     assert!(
@@ -1193,6 +1228,7 @@ fn the_swirl_transition_runs_its_own_252_frames() {
             roll_q8: 0,
         });
         world.encounters.session = Some(session);
+        run_intro_load(&mut world);
         let mut ticks = 0;
         let mut last_elapsed = 0;
         while matches!(
@@ -1275,6 +1311,7 @@ fn the_intro_seeders_draw_off_the_world_stream() {
     let draws = intro_seeder_draws(choice.style, choice.sub_style);
     assert!(draws > 0, "the ordinary encounter's style draws");
 
+    run_intro_load(&mut world);
     world.tick_encounter();
     assert_eq!(world.battle.intro_rand_state, 0x0963_2944);
     let mut expect = 0x0963_2944u32;
@@ -1320,4 +1357,144 @@ fn an_abandoned_battle_hands_the_bgm_word_back_to_the_field() {
             "field {field:?}: {evs:?}"
         );
     }
+}
+
+/// Tick through the mode-`8` load window that opens every transition
+/// (`World::tick_encounter`), so the next tick is the transition's first.
+fn run_intro_load(world: &mut World) {
+    for _ in 0..crate::world::encounters::ENCOUNTER_JOLT_VSYNCS {
+        world.tick_encounter();
+        assert!(
+            world.battle.intro.is_none(),
+            "the load window ticks no entity"
+        );
+    }
+}
+
+/// The transition opens on the load window: the jolt rumbles, nothing
+/// counts down and no entity ticks for its six vsyncs, then the entity's
+/// first tick follows.
+#[test]
+fn a_transition_opens_on_the_mode_8_load_window() {
+    use legaia_engine_battle::encounter::{EncounterPhase, EncounterRoll};
+    let mut world = World::new();
+    let mut session = legaia_engine_battle::encounter::EncounterSession::new(
+        legaia_engine_battle::encounter::EncounterTracker::new(
+            legaia_engine_battle::encounter::EncounterTable::default(),
+        ),
+    );
+    session.trigger_with(EncounterRoll {
+        formation_id: 3,
+        row_index: 0,
+        roll_q8: 0,
+    });
+    world.set_encounter_session(Some(session));
+    let remaining = |w: &World| match w.encounters.session.as_ref().map(|s| s.phase()) {
+        Some(EncounterPhase::Transition {
+            frames_remaining, ..
+        }) => frames_remaining,
+        _ => panic!("left the transition"),
+    };
+    let before = remaining(&world);
+    run_intro_load(&mut world);
+    assert_eq!(
+        world.rumble.motors.level, 0xFF,
+        "the jolt runs through the window"
+    );
+    assert_eq!(remaining(&world), before, "the window does not count down");
+    world.tick_encounter();
+    assert!(
+        world.battle.intro.is_some(),
+        "the entity ticks after the window"
+    );
+}
+
+/// The intro init's audio half runs inside the mode-`8` window, on its
+/// third tick (retail's `T + 3`): its key-offs precede the init's display
+/// capture, so the field track and the cue voices stop before the entity's
+/// first tick, and only once.
+#[test]
+fn the_intro_init_keys_the_field_off_inside_the_load_window() {
+    use legaia_engine_battle::encounter::EncounterRoll;
+
+    let mut world = World::new();
+    let mut session = legaia_engine_battle::encounter::EncounterSession::new(
+        legaia_engine_battle::encounter::EncounterTracker::new(
+            legaia_engine_battle::encounter::EncounterTable::default(),
+        ),
+    );
+    session.trigger_with(EncounterRoll {
+        formation_id: 3,
+        row_index: 0,
+        roll_q8: 0,
+    });
+    world.set_encounter_session(Some(session));
+    world.set_battle_bgm(Some(2001));
+    let mut keyed = Vec::new();
+    for t in 0..crate::world::encounters::ENCOUNTER_JOLT_VSYNCS + 3 {
+        world.tick_encounter();
+        let evs = world.drain_field_events();
+        if evs
+            .iter()
+            .any(|e| matches!(e, FieldEvent::Bgm { sub_op: 3, .. }))
+        {
+            keyed.push((t, world.take_sfx_voice_stops()));
+        }
+    }
+    assert_eq!(
+        keyed,
+        vec![(
+            crate::world::encounters::INTRO_INIT_AUDIO_TICK,
+            (0x10..=0x17).collect::<Vec<u8>>()
+        )],
+        "one key-off, on the init's tick of the window"
+    );
+}
+
+/// A walked roll leads its load window by two frames: the roll's, and the
+/// mode-`8` store's a frame later. The jolt starts on the store, the init's
+/// key-off three ticks after it (retail's `T + 3`) and the entity's first
+/// tick seven after it (`T + 7`).
+#[test]
+fn a_walked_roll_stores_mode_8_a_frame_late_and_the_window_follows() {
+    use crate::world::encounters::{ENCOUNTER_JOLT_VSYNCS, INTRO_STORE_LEAD_TICKS};
+    use legaia_engine_battle::encounter::EncounterRoll;
+
+    let mut world = World::new();
+    let mut session = legaia_engine_battle::encounter::EncounterSession::new(
+        legaia_engine_battle::encounter::EncounterTracker::new(
+            legaia_engine_battle::encounter::EncounterTable::default(),
+        ),
+    );
+    session.trigger_with(EncounterRoll {
+        formation_id: 3,
+        row_index: 0,
+        roll_q8: 0,
+    });
+    world.set_encounter_session(Some(session));
+    world.set_battle_bgm(Some(2001));
+    // The roll's tick, as `live_field_tick` arms it.
+    world.encounters.intro_store_lead = INTRO_STORE_LEAD_TICKS;
+    let (mut keyed, mut first, mut jolt) = (None, None, None);
+    for t in 0..u32::from(INTRO_STORE_LEAD_TICKS + ENCOUNTER_JOLT_VSYNCS) + 3 {
+        world.tick_encounter();
+        if jolt.is_none() && world.rumble.motors.level == 0xFF {
+            jolt = Some(t);
+        }
+        if keyed.is_none()
+            && world
+                .drain_field_events()
+                .iter()
+                .any(|e| matches!(e, FieldEvent::Bgm { sub_op: 3, .. }))
+        {
+            keyed = Some(t);
+        }
+        if first.is_none() && world.battle.intro.is_some() {
+            first = Some(t);
+        }
+    }
+    // Tick 0 is the roll, tick 1 the store (`T`).
+    assert_eq!(jolt, Some(1), "the jolt starts with the store");
+    assert_eq!(keyed, Some(1 + 3), "the init keys the field off at T + 3");
+    assert_eq!(first, Some(1 + 7), "the entity first ticks at T + 7");
 }

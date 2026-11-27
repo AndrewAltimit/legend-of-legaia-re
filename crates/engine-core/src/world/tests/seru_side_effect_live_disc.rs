@@ -390,6 +390,8 @@ fn a_live_vera_cast_restores_the_module_amount() {
         w.actors[0].battle.max_hp = 4000;
         w.actors[0].battle.hp = 100;
         w.actors[0].battle.liveness = 1;
+        // The heal-numeral enhancement is opt-in; on, it throws the figure.
+        w.toggles.heal_numerals = true;
 
         let def = legaia_engine_battle::spells::SpellDef {
             id: spell_id,
@@ -409,7 +411,7 @@ fn a_live_vera_cast_restores_the_module_amount() {
         );
         // The module's restore is a bare HP store: neither image calls the
         // popup push `FUN_801F44A0`, so retail raises no number over the
-        // target. The heal numeral is the enhancement's (on by default).
+        // target. The heal numeral is the enhancement's (turned on above).
         let fx = w.drain_battle_hit_fx();
         assert!(
             fx.len() == 1 && fx[0].is_heal && u32::from(fx[0].amount) == want,

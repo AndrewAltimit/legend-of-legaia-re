@@ -8,27 +8,31 @@
     },
     "barra_summon_mid_cast": {
       "cast_core_corr": 0.9987,
-      "cast_core_level": 0.0004,
+      "cast_core_level": 0.0003,
       "cast_corr": 0.9952,
       "cast_level": 0.0018
     },
     "battle_gimard_tail_fire_a": {
       "cast_core_corr": 0.9837,
-      "cast_core_level": 0.0013,
+      "cast_core_level": 0.0012,
       "cast_corr": 0.9919,
-      "cast_level": -0.1037
+      "cast_level": -0.1039
     },
     "battle_melee_hit_spark": {
+      "cast_core_corr": 0.8116,
+      "cast_core_level": -1.2958,
+      "cast_corr": 0.9993,
+      "cast_level": 0.0119,
       "xa_corr": 0.999,
       "xa_level": -0.1319
     },
     "cort_guilty_cross_mid_cast": {
       "cast_core_corr": 0.9921,
-      "cast_core_level": 0.0369,
+      "cast_core_level": 0.0367,
       "cast_core_steps_corr": 0.9921,
       "cast_core_steps_level": 0.0093,
       "cast_corr": 0.9813,
-      "cast_level": 0.007,
+      "cast_level": 0.0068,
       "cast_steps_corr": 0.9813,
       "cast_steps_level": -0.0234
     },
@@ -51,34 +55,34 @@
       "track_level": 0.0057
     },
     "evil_medallion_rage_battle": {
-      "cast_core_corr": 0.0853,
-      "cast_core_level": 0.0606,
-      "cast_corr": 0.3848,
-      "cast_level": -0.0032
+      "cast_core_corr": 0.0914,
+      "cast_core_level": 0.0367,
+      "cast_corr": 0.3878,
+      "cast_level": 0.0615
     },
     "freed_summon_mid_cast": {
       "cast_core_corr": 0.9939,
-      "cast_core_level": 0.1387,
+      "cast_core_level": 0.1388,
       "cast_corr": 0.9867,
       "cast_level": 0.1448
     },
     "gilium_summon_mid_cast": {
       "cast_core_corr": 0.9959,
-      "cast_core_level": 0.0191,
+      "cast_core_level": 0.019,
       "cast_corr": 0.9908,
-      "cast_level": 0.01
+      "cast_level": 0.0101
     },
     "gizam_summon_mid_cast": {
       "cast_core_corr": 0.9992,
       "cast_core_level": 0.0133,
       "cast_corr": 0.9971,
-      "cast_level": 0.0287
+      "cast_level": 0.0286
     },
     "gola_gola_summon_mid_cast": {
       "cast_core_corr": 0.9992,
-      "cast_core_level": -0.0266,
+      "cast_core_level": -0.0271,
       "cast_corr": 0.9977,
-      "cast_level": -0.0207
+      "cast_level": -0.0208
     },
     "horn_summon_mid_cast": {
       "cast_core_corr": 0.9992,
@@ -88,7 +92,7 @@
     },
     "iota_summon_mid_cast": {
       "cast_core_corr": 0.9936,
-      "cast_core_level": -0.0722,
+      "cast_core_level": -0.0723,
       "cast_corr": 0.9913,
       "cast_level": -0.0452
     },
@@ -158,9 +162,9 @@
     },
     "mushura_summon_mid_cast": {
       "cast_core_corr": 0.9974,
-      "cast_core_level": -0.0097,
+      "cast_core_level": -0.0101,
       "cast_corr": 0.9938,
-      "cast_level": -0.0116
+      "cast_level": -0.0118
     },
     "name_input_ui": {
       "track_corr": 0.9992,
@@ -183,6 +187,12 @@
     "noa_levelup_field_pre": {
       "track_corr": 0.999,
       "track_level": 0.0033
+    },
+    "noa_levelup_fight_pre": {
+      "cast_core_corr": 1.0,
+      "cast_core_level": 0.0001,
+      "cast_corr": 0.9996,
+      "cast_level": 0.0
     },
     "nova_summon_mid_cast": {
       "cast_core_corr": 0.9985,
@@ -212,11 +222,21 @@
       "track_corr": 0.9997,
       "track_level": 0.0013
     },
+    "player_steal_skeleton_pre": {
+      "cast_core_corr": 0.5871,
+      "cast_core_level": 0.1844,
+      "cast_core_steps_corr": 0.587,
+      "cast_core_steps_level": 0.1694,
+      "cast_corr": 0.5658,
+      "cast_level": 0.157,
+      "cast_steps_corr": 0.4875,
+      "cast_steps_level": 0.1428
+    },
     "puera_summon_mid_cast": {
       "cast_core_corr": 0.9968,
       "cast_core_level": 0.007,
       "cast_corr": 0.9847,
-      "cast_level": 0.0715
+      "cast_level": 0.0716
     },
     "rimelm_npc_press_tetsu": {
       "emitter_corr": 0.9972,
@@ -242,17 +262,17 @@
     },
     "slippery_summon_mid_cast": {
       "cast_core_corr": 0.996,
-      "cast_core_level": -0.0011,
+      "cast_core_level": -0.0018,
       "cast_corr": 0.9897,
-      "cast_level": 0.0036
+      "cast_level": 0.0029
     },
     "swordie_summon_mid_cast": {
       "cast_core_corr": 0.9948,
-      "cast_core_level": -0.0074,
+      "cast_core_level": -0.007,
       "cast_core_steps_corr": 0.995,
       "cast_core_steps_level": -0.0052,
       "cast_corr": 0.9901,
-      "cast_level": -0.0114,
+      "cast_level": -0.0115,
       "cast_steps_corr": 0.9897,
       "cast_steps_level": -0.0149
     },
@@ -270,7 +290,7 @@
       "cast_core_corr": 0.9924,
       "cast_core_level": 0.1863,
       "cast_core_steps_corr": 0.9919,
-      "cast_core_steps_level": 0.3525,
+      "cast_core_steps_level": 0.353,
       "cast_corr": 0.9643,
       "cast_level": 0.1541,
       "cast_steps_corr": 0.9623,
@@ -306,25 +326,25 @@
     },
     "viguro_summon_mid_cast": {
       "cast_core_corr": 0.9976,
-      "cast_core_level": -0.1014,
+      "cast_core_level": -0.1019,
       "cast_corr": 0.9861,
-      "cast_level": -0.1291
+      "cast_level": -0.1295
     },
     "zenoir_summon_mid_cast": {
       "cast_core_corr": 0.9978,
-      "cast_core_level": -0.0744,
+      "cast_core_level": -0.0752,
       "cast_core_steps_corr": 0.9982,
-      "cast_core_steps_level": -0.0496,
+      "cast_core_steps_level": -0.0502,
       "cast_corr": 0.9971,
-      "cast_level": -0.077,
+      "cast_level": -0.0775,
       "cast_steps_corr": 0.9977,
-      "cast_steps_level": -0.0353
+      "cast_steps_level": -0.0358
     },
     "zeto_big_wave_mid_cast": {
       "cast_core_corr": 0.9982,
-      "cast_core_level": -0.045,
+      "cast_core_level": -0.0454,
       "cast_corr": 0.9863,
-      "cast_level": -0.032
+      "cast_level": -0.0324
     },
     "zeto_call_wave_mid_cast": {
       "cast_core_corr": 0.9998,
@@ -336,9 +356,9 @@
     },
     "zora_glare_petrify_post": {
       "cast_core_corr": 0.9999,
-      "cast_core_level": -0.0031,
+      "cast_core_level": -0.0032,
       "cast_corr": 0.9999,
-      "cast_level": 0.0046
+      "cast_level": 0.0047
     },
     "zora_glare_petrify_pre": {
       "cast_core_corr": 0.9959,

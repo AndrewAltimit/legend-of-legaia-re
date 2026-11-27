@@ -421,6 +421,12 @@ pub struct Actor {
     /// dispatcher.
     pub active: bool,
 
+    /// A pool actor allocated while a spawned record context's slice ran: its
+    /// retail node links at the tail of list `0` (`FUN_80020454`), behind the
+    /// record's. While one lives, the actor-list walk has a node past the
+    /// record ([`crate::world::World::glide_armed_after_walk`]).
+    pub spawned_after_records: bool,
+
     /// `+0x0C` - the actor's **per-frame handler**. Retail's actor identity:
     /// the allocator `FUN_80020DE0` stamps it from the spawn descriptor, the
     /// frame dispatcher `FUN_8002519C` calls it, and the find / retire

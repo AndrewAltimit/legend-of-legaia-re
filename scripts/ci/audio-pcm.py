@@ -175,6 +175,15 @@ CAST_STATES = [
     "mule_summon_mid_cast",
     "horn_summon_mid_cast",
     "jedo_summon_mid_cast",
+    # Party strikes and the fight's end: a melee impact, Vahn's arts string
+    # that kills a skeleton into its steal banner, and Noa's last blow into
+    # her level-up banner. `rim_elm_gimard_seru_capture_before` stands
+    # partway into its action and the gate replays from the action's start,
+    # about thirty vsyncs earlier than the recording opens, so it is not a
+    # row.
+    "battle_melee_hit_spark",
+    "player_steal_skeleton_pre",
+    "noa_levelup_fight_pre",
 ]
 # Cast states whose recording carries its own frame steps (`<label>.steps`) for
 # the `cast_steps` channel, and how many mednafen frames the stepping logs: a
@@ -667,7 +676,8 @@ def main() -> int:
         silent = silenced(label, "core", state)
         s = score(exe, ["--resume-state", str(silent), "--xa-wav", str(decoded),
                         "--xa-start", str(start)], wav, samples, work / f"{label}.xa.json")
-        results[label] = {"xa_corr": s["corr_median"], "xa_level": s["level_db"]}
+        results.setdefault(label, {})
+        results[label] |= {"xa_corr": s["corr_median"], "xa_level": s["level_db"]}
 
     if not results:
         print("[skip] no recordings (run with --capture)")

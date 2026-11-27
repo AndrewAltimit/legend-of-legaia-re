@@ -157,3 +157,40 @@ fn the_archive_reader_costs_its_part_frames() {
     }
     assert!(entries > 50, "{entries}");
 }
+
+/// The reader's instruction count off the codec's walk
+/// (`me_archive::reader_steps`), which an art commit's decode is priced
+/// from: every compressed `readef.DAT` entry within `0.2%` of the
+/// interpreter's own count.
+#[test]
+fn the_archive_reader_costs_its_selector_arms() {
+    not_a_differential!(
+        "measures the reader's instruction count; the decode itself is compared above"
+    );
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let bytes = d.read_entry(894).expect("readef");
+    let mut entries = 0;
+    for slot in bytes.chunks(SLOT) {
+        let Ok(arc) = me_archive::parse(slot) else {
+            continue;
+        };
+        cpu.mem.load(SRC, slot);
+        for n in 0..arc.len() {
+            let Some(model) = arc.entry_reader_steps(n) else {
+                continue;
+            };
+            assert_eq!(cpu.call(READ, &[SRC, DST, n as u32]), Stop::Returned);
+            let off = cpu.steps.abs_diff(u64::from(model));
+            assert!(
+                off * 500 <= cpu.steps,
+                "entry {n}: model {model} steps against {}",
+                cpu.steps
+            );
+            entries += 1;
+        }
+    }
+    assert!(entries > 50, "{entries}");
+}

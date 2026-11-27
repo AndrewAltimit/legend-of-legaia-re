@@ -35,6 +35,8 @@ const CONFIRM_B: u32 = 0x8008_46D4;
 const TEXT: u32 = 0x8014_0000;
 const ACTOR: u32 = 0x8015_0000;
 
+/// A box frame as `FUN_8002C69C` takes it: `(x, y, w, h)`.
+type StageBox = (i32, i32, i32, i32);
 /// `(state, counter, acc, hold, rows on page, scroll, speed, row leads)`.
 type Rec = (u8, i32, i32, i32, i32, i32, i32, Vec<usize>);
 
@@ -162,6 +164,21 @@ fn the_pager_pages_as_retail_pages() {
             }
         });
     }
+    // The reading box's frame (`FUN_8002C69C`) each call drew.
+    let boxes: std::rc::Rc<std::cell::RefCell<Vec<StageBox>>> = Default::default();
+    {
+        let b = boxes.clone();
+        cpu.hook(BOX_DRAW, move |r, _| {
+            b.borrow_mut().push((
+                r.r[psx_retail_exec::A0] as i16 as i32,
+                r.r[psx_retail_exec::A1] as i16 as i32,
+                r.r[psx_retail_exec::A2] as i16 as i32,
+                r.r[psx_retail_exec::A3] as i16 as i32,
+            ));
+        });
+    }
+    let world = legaia_engine_core::world::World::new();
+    let mut framed = 0u32;
     let mut rng = Rng(0x5041_4745);
     let (mut waits, mut taps, mut autos) = (0, 0, 0);
     let mut ends = std::collections::BTreeMap::<u32, u32>::new();
@@ -194,6 +211,12 @@ fn the_pager_pages_as_retail_pages() {
         cpu.mem.wr32(PACE, 1);
         cpu.mem.wr32(STATE, 2);
         cpu.mem.wr32(FEED, TEXT);
+        // The scene record's box seat (`+0x12` / `+0x14`) and its frame
+        // style word `+0x10` (`0`: style `0x61`).
+        cpu.mem.load(SCENE, &[0u8; 0x40]);
+        cpu.mem.wr16(SCENE + 0x12, 0x26);
+        cpu.mem.wr16(SCENE + 0x14, 0x10);
+        cpu.mem.wr32(SCENE_PTR, SCENE);
 
         let mut port = OwnedDialogPanel::at_segment(Arc::new(text.clone()), 0);
         port.frame_step = dt;
@@ -211,12 +234,14 @@ fn the_pager_pages_as_retail_pages() {
             // The draw's primitive cursor, so it never climbs into code.
             cpu.mem.wr32(0x1F80_03A0, 0x8018_0000);
             marks.set(0);
+            boxes.borrow_mut().clear();
             assert_eq!(
                 cpu.call(PAGER, &[ACTOR]),
                 Stop::Returned,
                 "{:x?}",
                 cpu.calls
             );
+            let mut drawn = boxes.borrow().clone();
             cpu.mem.wr32(PRESSED, 0);
             // The script feed sees a free state as the call returns - or a
             // call later, when the record runs ops first.
@@ -234,7 +259,9 @@ fn the_pager_pages_as_retail_pages() {
                 }
                 cpu.mem.wr32(0x1F80_03A0, 0x8018_0000);
                 marks.set(0);
+                boxes.borrow_mut().clear();
                 assert_eq!(cpu.call(PAGER, &[ACTOR]), Stop::Returned);
+                drawn = boxes.borrow().clone();
                 resumed |= idle_call(&mut cpu, &text, &retail_prev, &mut rng, &mut idles);
                 feed(&mut cpu, &text, &retail_prev);
                 retail_calls += 1;
@@ -290,6 +317,24 @@ fn the_pager_pages_as_retail_pages() {
                 "scenario {scenario} dt {dt}: calls"
             );
             resumes += usize::from(resumed);
+            // The frame: every state the player sees draws the box
+            // (`0x801D9938`, the flag `0x801D9674..0x801D969C` raises), at
+            // the port's stage layout for the panel.
+            let resumed_idle = resumed && drawn.is_empty();
+            if !resumed_idle {
+                let snap = legaia_engine_screens::dialog_screens::dialog_snapshot_from_panel(
+                    &world, &port, false,
+                )
+                .expect("a snapshot");
+                let main = legaia_engine_screens::dialog_screens::dialog_stage_layout(&snap).main;
+                assert_eq!(
+                    drawn,
+                    vec![main],
+                    "scenario {scenario} call {call} cap {capacity} state {:#x}: the box",
+                    retail.0
+                );
+                framed += 1;
+            }
             assert_eq!(
                 cpu.mem.rd16(AUTO_PRESS) as i16,
                 auto,
@@ -360,6 +405,7 @@ fn the_pager_pages_as_retail_pages() {
     );
     assert!(idles.iter().all(|&n| n > 50), "{idles:?}");
     assert!(resumes > 100, "{resumes}");
+    assert!(framed > 5000, "{framed}");
 }
 
 /// A pager call in a free state before the feed, as when the record runs

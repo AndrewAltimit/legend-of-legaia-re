@@ -800,6 +800,44 @@ impl World {
                 // Per-tick: one Cross/Circle edge feeds at most one of the
                 // script's 0x4C dialog poll or the interaction probe.
                 self.dialog.input_consumed = false;
+                // The player's tick leads the frame. Retail's actor-list walk
+                // (`FUN_80016444` -> `FUN_8002519C`) starts on list 0, and the
+                // player's node (tick `FUN_801D1344`: the pad step
+                // `FUN_801D01B0`, the settle `FUN_801D1BA0` with the clip
+                // tick `FUN_800204F8` at its tail) is that list's first live
+                // node, ahead of the dialogue pager, the system channel
+                // (`FUN_801DA51C`) and the scene's record contexts; the
+                // placements (list 2) tick last (a RAM walk of the lists in
+                // `town01`'s opening, `captures/w60-A/ld`). So a script reads
+                // the player as this frame left it: a record spinning on the
+                // player's clip end (`AD F8 08`) sees the latch the frame it
+                // lands, and the player steps against the placements where
+                // the frame before left them.
+                // The step runs the walk-regen tick ahead of the pad
+                // controller, behind the same gate
+                // (`World::tick_field_walk_regen`); its Incense zero edge
+                // raises the wear-off notice, which runs here.
+                self.locomotion.locked_at_walk_gate = self.field_player_movement_locked();
+                self.locomotion.let_through_at_player_tick = self.flags.story_flags
+                    & legaia_engine_field::camera::CAMERA_LOCKED_EASE_FLAG
+                    != 0;
+                self.step_field_locomotion();
+                self.tick_incense_notice();
+                // Vertical settle + ledge-hop trigger. Retail runs this as a
+                // separate per-frame controller after the walk commits, so
+                // it reads the step-delta pair the walk just wrote.
+                // PORT: FUN_801d1ba0
+                if let Some(pslot) = self.player_actor_slot {
+                    self.step_field_vertical(pslot as usize);
+                }
+                // Motion detection: diff every tracked actor's position
+                // against the last tick's, so a body a script or a leg moved
+                // (since the last tick) reads as moving for the clip pick.
+                self.detect_field_actor_motion();
+                // Locomotion animation: the clip tick at the settle's tail,
+                // off the pick the settle just made, folded into the
+                // player's `pose_frame` for the host's posed-mesh rebuild.
+                self.tick_field_player_anim();
                 // A committed battle suspends every field script context
                 // until the fight returns (`Self::field_scripts_held_for_battle`).
                 let scripts_held = self.field_scripts_held_for_battle();
@@ -849,61 +887,26 @@ impl World {
                 if self.clock.display_frame_step == 1 {
                     self.tick_field_npc_motions();
                 }
-                // Ambient facing channels (`FUN_80038158` ops 0x04 / 0x0D):
-                // the idle turn-in-place a standing town NPC runs between
-                // walk legs. Part of the actor pool, so it advances on the
-                // actor game tick, not per rendered frame - which is what
-                // keeps op 0x0D in lockstep with its ramp scheduler.
-                // REF: FUN_80038158, FUN_80036D80
-                // The battle intro rebuilt the actor lists, so no placement's
-                // driver runs under it (`Self::battle_intro_owns_frame`).
-                if actor_tick_fired && !self.battle_intro_owns_frame() {
-                    // The part list walks ahead of the placements'.
-                    self.run_banked_ambient_part_ticks();
-                    self.tick_field_npc_ambient();
-                    // The same driver's height arm (`FUN_8003BC08`), after
-                    // the tick moved anyone: the glide-class NPCs' Y.
-                    self.tick_field_npc_heights();
-                }
+                // Whether the battle intro already owns this frame, read before
+                // the carriers below can commit a fight: a carrier's commit
+                // (`3E FF`, the encounter SM `FUN_801DA51C`) stores mode `8`
+                // a frame after it arms, so the placements still walk on the
+                // frame it lands (`rim_elm_queen_bee_battle`: every wanderer
+                // steps on the commit's pass).
+                let intro_owns_walk = self.battle_intro_owns_frame();
                 self.tick_tile_board();
                 // Rebuild the tile-actor draw list from the current board +
                 // player cell (retail's per-frame board render pass).
                 self.refresh_tile_board_draw_list();
-                // The step runs the walk-regen tick ahead of the pad
-                // controller, behind the same gate
-                // (`World::tick_field_walk_regen`); its Incense zero edge
-                // raises the wear-off notice, which runs here.
-                self.locomotion.locked_at_walk_gate = self.field_player_movement_locked();
-                self.locomotion.let_through_at_player_tick = self.flags.story_flags
-                    & legaia_engine_field::camera::CAMERA_LOCKED_EASE_FLAG
-                    != 0;
-                self.step_field_locomotion();
-                self.tick_incense_notice();
-                // Vertical settle + ledge-hop trigger. Retail runs this as a
-                // separate per-frame controller after the walk commits, so
-                // it reads the step-delta pair the walk just wrote.
-                // PORT: FUN_801d1ba0
-                if let Some(pslot) = self.player_actor_slot {
-                    self.step_field_vertical(pslot as usize);
-                }
                 // The system channel's tick follows the player's: its
                 // per-tick store of the idle clip base lands after the settle
                 // has read the base.
                 self.tick_field_system_channel_clip_reset();
-                // Motion detection: diff every tracked actor's position
-                // against last frame's. Runs after EVERY mover in the frame
-                // (timeline, channels, field VM, NPC motion legs, locomotion)
-                // so the walk clip is selected by whether an actor moved, not
-                // by which subsystem moved it - the script paths commit a
-                // position and raise no flag of their own.
+                // The player's scale / tilt ramps, the NPC heading ramps and
+                // the look rotations.
                 self.tick_player_scale_ramp();
                 self.tick_npc_heading_ramps();
                 self.npcs.looks.tick(self.move_vm.ramp_ratio.max(1));
-                self.detect_field_actor_motion();
-                // Locomotion animation: idle vs walk off the movement flag
-                // the step above just set, folded into the player's
-                // `pose_frame` for the host's posed-mesh rebuild.
-                self.tick_field_player_anim();
                 // Placed-prop layer: advance the prop clips, step an
                 // in-flight prop record run (a door swing / cupboard search
                 // through the field VM), and start a run for a movement
@@ -933,6 +936,34 @@ impl World {
                     && !self.interaction_timeline_holds_talk_facing()
                 {
                     self.release_talk_facing();
+                }
+                // Ambient streams (`FUN_80038158`): the walk and turn programs
+                // a town's placements run between talks. Part of the actor
+                // pool, so they advance on the actor game tick, not per
+                // rendered frame - which is what keeps op 0x0D in lockstep
+                // with its ramp scheduler. They tick after the talk's probe,
+                // its record and its teardown above: retail's placements are
+                // the last list `FUN_8002519C` walks (list 2, after the
+                // player's node with its touch dispatch, the pager and the
+                // record contexts), and a placement's node runs its record
+                // (`0x8003BD34`) before its stream (`0x8003BD98`). So a talk
+                // that opens this frame stands every stream this frame, and
+                // one whose record ends on its `21` this frame starts the
+                // talker and the streams behind it on this frame
+                // (`World::ambient_engage_release_held`). Ticked ahead of
+                // the talk, every villager's resume trailed retail's by a
+                // game frame (`town01_npc16_dialogue_first_page`'s walk film).
+                // REF: FUN_8002519C, FUN_8003BC08, FUN_80038158, FUN_80036D80
+                // The battle intro rebuilt the actor lists, so no placement's
+                // driver runs under it (`Self::battle_intro_owns_frame`, read
+                // ahead of the carriers above).
+                if actor_tick_fired && !intro_owns_walk {
+                    // The part list walks ahead of the placements'.
+                    self.run_banked_ambient_part_ticks();
+                    self.tick_field_npc_ambient();
+                    // The same driver's height arm (`FUN_8003BC08`), after
+                    // the tick moved anyone: the glide-class NPCs' Y.
+                    self.tick_field_npc_heights();
                 }
                 // Screen-effect widgets (mask / sprite / panel / letterbox,
                 // the ending-scene op-0x43 family) tick after the script step

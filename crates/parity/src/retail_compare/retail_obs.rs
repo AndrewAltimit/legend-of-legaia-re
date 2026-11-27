@@ -180,6 +180,14 @@ pub struct RetailObs {
     /// stands the engine's where retail's is when the script gate meets, as
     /// the glide in flight is.
     pub timed_release: Option<(bool, i32, i32, bool)>,
+    /// The side-band request the state was captured under: the pair
+    /// `_DAT_8007BABC` / `_DAT_8007BAA0` when it is settled on a bank
+    /// (field and overworld classes). A record's request is history a card
+    /// load does not replay: `conc3`'s entry requests `2116`, the inn's
+    /// `P2[9]` `2070` (`36 01 80 16 08` at `+0xCD`), and the ceremony
+    /// `P2[10]` keys its rows out of `2070`'s bank until its own `2116` at
+    /// its end. Seated at the resume ([`seat_side_band`]).
+    pub side_band: Option<i16>,
     /// The live mode-3 CLUT-cell cyclers ([`retail_cell_fx`]), handed to the
     /// image child as `LEGAIA_SEAT_CLUT_FX` so the cycled palettes show the
     /// captured phase.
@@ -301,6 +309,10 @@ pub struct RetailObs {
     /// ([`retail_object_clips_ram`]): the walk film's seat, which runs on
     /// from the RAM's pass rather than drawing the displayed one.
     pub object_clips_ram: Vec<ObjectClipSeed>,
+    /// Each bind record's collision-exempt bits `+0x10 & 3`
+    /// ([`retail_object_exempt_bits`]): the walk film's seat of a door the
+    /// state holds open.
+    pub object_exempt: Vec<(u16, u32)>,
     /// The player's clip words ([`retail_player_clip`]), handed to the image
     /// child as `LEGAIA_SEAT_PLAYER_CLIP`.
     pub player_clip: Option<ObjectClipSeed>,
@@ -681,6 +693,11 @@ impl RetailObs {
             } else {
                 Vec::new()
             },
+            object_exempt: if matches!(class, StateClass::Field | StateClass::WorldMap) {
+                retail_object_exempt_bits(ram)
+            } else {
+                Vec::new()
+            },
             clear_rgb: matches!(class, StateClass::Field).then(|| retail_clear_rgb(ram)),
             curve_bias: matches!(class, StateClass::WorldMap)
                 .then(|| retail_curve_bias(ram))
@@ -711,6 +728,10 @@ impl RetailObs {
                 StateClass::Field | StateClass::WorldMap | StateClass::Minigame
             )
             .then(|| rd32(ram, legaia_engine_system::rand::BIOS_RAND_SEED_ADDR) as u32),
+            side_band: matches!(class, StateClass::Field | StateClass::WorldMap)
+                .then(|| (rd32(ram, SIDE_BAND_REQUESTED), rd32(ram, SIDE_BAND_ACKED)))
+                .filter(|&(req, ack)| req == ack && req >= 0)
+                .and_then(|(req, _)| i16::try_from(req).ok()),
             timed_release: matches!(class, StateClass::Field | StateClass::WorldMap).then(|| {
                 (
                     rd32(ram, TIMED_RELEASE_ARMED) != 0,
@@ -727,6 +748,22 @@ impl RetailObs {
             obs.walk = super::walk_rewind::walk_history(ram, &obs.camera);
         }
         obs
+    }
+}
+
+/// The side-band request / acknowledge pair (`_DAT_8007BABC` /
+/// `_DAT_8007BAA0`).
+const SIDE_BAND_REQUESTED: u32 = 0x8007_BABC;
+const SIDE_BAND_ACKED: u32 = 0x8007_BAA0;
+
+/// Stand the engine's side-band request on the state's, at the resume of the
+/// gate's record: the cues the record keys read their rows' programs out of
+/// that bank, and under the card load's request they key nothing. A record
+/// that requests again on its way to the gate replaces it, as retail's did.
+/// Harness seat: the request law is op `0x36` sub `1`'s.
+pub(crate) fn seat_side_band(world: &mut legaia_engine_core::world::World, retail: &RetailObs) {
+    if let Some(request) = retail.side_band {
+        world.seat_side_band_request(request);
     }
 }
 

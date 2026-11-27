@@ -8717,6 +8717,7 @@ expected_game_mode = 0x03
 expected_active_scene = "map01"
 ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
 topics = ["ending", "credits", "cutscene", "map01"]
+arrival = { from = "town0e", door = 6 }
 
 [[scenarios]]
 label = "credits_edteien_panel_pcsx"
@@ -8737,6 +8738,7 @@ expected_game_mode = 0x03
 expected_active_scene = "edbylon"
 ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
 topics = ["ending", "credits", "cutscene", "edbylon"]
+arrival = { from = "edteien" }
 
 [[scenarios]]
 label = "credits_edbylon_panel_pcsx"
@@ -8747,6 +8749,7 @@ expected_game_mode = 0x03
 expected_active_scene = "edbylon"
 ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
 topics = ["ending", "credits", "cutscene", "edbylon"]
+arrival = { from = "edteien" }
 
 [[scenarios]]
 label = "credits_edbubu_fullscreen_pcsx"
@@ -8757,6 +8760,7 @@ expected_game_mode = 0x03
 expected_active_scene = "edbubu"
 ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
 topics = ["ending", "credits", "cutscene", "edbubu"]
+kept_bgm = 2068
 
 [[scenarios]]
 label = "credits_edretoin_fullscreen_pcsx"
@@ -8767,6 +8771,7 @@ expected_game_mode = 0x03
 expected_active_scene = "edretoin"
 ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
 topics = ["ending", "credits", "cutscene", "edretoin"]
+kept_bgm = 2068
 
 [[scenarios]]
 label = "credits_edretoin_panel_pcsx"
@@ -8777,6 +8782,7 @@ expected_game_mode = 0x03
 expected_active_scene = "edretoin"
 ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
 topics = ["ending", "credits", "cutscene", "edretoin"]
+kept_bgm = 2068
 
 [[scenarios]]
 label = "credits_edkorout_window_pcsx"
@@ -8787,6 +8793,7 @@ expected_game_mode = 0x03
 expected_active_scene = "edkorout"
 ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
 topics = ["ending", "credits", "cutscene", "edkorout"]
+kept_bgm = 2068
 
 [[scenarios]]
 label = "credits_edkorout_panel_pcsx"
@@ -8797,6 +8804,7 @@ expected_game_mode = 0x03
 expected_active_scene = "edkorout"
 ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
 topics = ["ending", "credits", "cutscene", "edkorout"]
+kept_bgm = 2068
 
 [[scenarios]]
 label = "credits_eddoman_fullscreen_pcsx"
@@ -8807,6 +8815,7 @@ expected_game_mode = 0x03
 expected_active_scene = "eddoman"
 ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
 topics = ["ending", "credits", "cutscene", "eddoman"]
+kept_bgm = 2068
 
 [[scenarios]]
 label = "credits_edstati3_fullscreen_pcsx"
@@ -8817,6 +8826,7 @@ expected_game_mode = 0x03
 expected_active_scene = "edstati3"
 ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
 topics = ["ending", "credits", "cutscene", "edstati3"]
+kept_bgm = 2068
 
 [[scenarios]]
 label = "credits_edstati3_panel_pcsx"
@@ -8827,6 +8837,7 @@ expected_game_mode = 0x03
 expected_active_scene = "edstati3"
 ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
 topics = ["ending", "credits", "cutscene", "edstati3"]
+kept_bgm = 2068
 
 [[scenarios]]
 label = "credits_edson_fullscreen_pcsx"
@@ -8837,6 +8848,7 @@ expected_game_mode = 0x03
 expected_active_scene = "edson"
 ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
 topics = ["ending", "credits", "cutscene", "edson"]
+kept_bgm = 2068
 
 [[scenarios]]
 label = "credits_edson_panel_pcsx"
@@ -8847,6 +8859,7 @@ expected_game_mode = 0x03
 expected_active_scene = "edson"
 ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
 topics = ["ending", "credits", "cutscene", "edson"]
+kept_bgm = 2068
 
 [[scenarios]]
 label = "credits_edlast_casting_pcsx"
@@ -8857,6 +8870,7 @@ expected_game_mode = 0x03
 expected_active_scene = "edlast"
 ram_poked = ["Cort's HP written to 1 at round 1's prompt of the final fight (jouine), before this state"]
 topics = ["ending", "credits", "cutscene", "edlast"]
+kept_bgm = 2068
 
 [[scenarios]]
 label = "town0d_arrival_narration"
@@ -9175,3 +9189,39 @@ phase = "menu"
 expected_game_mode = 0x17
 memory_card = "playthrough-endgame-7saves.mcr"
 topics = ["menu", "save screen", "load", "SLOT 2", "block grid"]
+
+[[scenarios]]
+label = "jou_gala_heavens_drop_strike_h6"
+backup_fingerprint = "0d5425d5e59d7d69098b77de6c6409c3aa0d7cac5d9f44eb2780d878d8dcec90"
+description = "jou battle, formation [0x1B, 0x1B, 0x1B] (three Theeders): Gala (party seat 2) 6 vsyncs into his Heaven's Drop strike loop (art 0x2E, the only art record carrying clip ribbon tag 0x67). RETAIL disc, pad only, no pokes: jou_field_card_walk played forward by autorun_battle_harvest.lua with the formation forced through the harvester's region-row rewrite, LEGAIA_MONSTER_TOUGH=1 and LEGAIA_SPIRIT_ROUNDS=2; saved 5546 vsyncs in. A --ribbon-trace replay logs ten FUN_801E1D98 calls returning to 0x8004D248, every 3 vsyncs over vsyncs 761-788."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "arts", "Gala", "Heaven's Drop", "ribbon", "jou", "harvest"]
+
+[[scenarios]]
+label = "jou_gala_heavens_drop_strike_h30"
+backup_fingerprint = "75061f1d627bec2f8551c0bf892b4005ad26a75f788d10af6393f1a2df2d42f6"
+description = "jou battle, formation [0x1B, 0x1B, 0x1B] (three Theeders): Gala (party seat 2) 30 vsyncs into his Heaven's Drop strike loop (art 0x2E, clip ribbon tag 0x67). RETAIL disc, pad only, no pokes: the same harvest as jou_gala_heavens_drop_strike_h6 (jou_field_card_walk, autorun_battle_harvest.lua, forced formation, LEGAIA_MONSTER_TOUGH=1, LEGAIA_SPIRIT_ROUNDS=2), saved 5570 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "arts", "Gala", "Heaven's Drop", "ribbon", "jou", "harvest"]
+
+[[scenarios]]
+label = "rugi_caruban_2_pre_fire_breath"
+backup_fingerprint = "9133842e5abad4eb24fd363454f634ded7575d1020f19378df290ecb0407bee3"
+description = "rugi battle, formation [0xAB] (one Caruban): the monster's turn at action state 0x0A, 7 vsyncs before its Fire Breath cast begins. RETAIL disc, pad only, no pokes: rugi_field_card_boot played forward by autorun_battle_harvest.lua with LEGAIA_TOUGH=2, LEGAIA_SAVE_PRE=1 and LEGAIA_FINISH=1; saved 3072 vsyncs in. A pre-cast seat for the Fire Breath focus and camera rows."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rugi"
+topics = ["battle", "monster cast", "Caruban", "Fire Breath", "pre-cast", "rugi", "harvest"]
+
+[[scenarios]]
+label = "rugi_caruban_3_pre_fire_breath"
+backup_fingerprint = "6aea0ea36667c7ae89dbb9e1e5b76fd172768c614a78173f0e5e667418ab5ad5"
+description = "rugi battle, formation [0xAC] (Caruban): the monster's turn at action state 0x0A just before its Fire Breath cast. RETAIL disc, pad only, no pokes: rugi_field_card_boot played forward by autorun_battle_harvest.lua with LEGAIA_TOUGH=2, LEGAIA_SAVE_PRE=1 and LEGAIA_SPIRIT_ROUNDS=12; saved 3072 vsyncs in. A second pre-cast seat for the Fire Breath rows."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rugi"
+topics = ["battle", "monster cast", "Caruban", "Fire Breath", "pre-cast", "rugi", "harvest"]
