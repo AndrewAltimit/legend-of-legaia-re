@@ -26,6 +26,7 @@
 //   { hold: "ArrowUp", for: ms }       hold a key down
 //   { select: [selector, value] }      pick a <select> option
 //   { wheel: dy, at: [x, y], over: ms } scroll the wheel over a point
+//                                      (or `over_el`: an element's centre)
 //   { dragIn: selector, by: [dx0, dy0, dx1, dy1], over: ms }
 //                                      a drag measured from an element's centre
 //   { type: "text", into: selector }   type into a field
@@ -110,6 +111,10 @@ async function step(page, s) {
   if (s.select) return page.selectOption(s.select[0], s.select[1]);
   if (s.wheel !== undefined) {
     if (s.at) await page.mouse.move(s.at[0], s.at[1]);
+    if (s.over_el) {
+      const box = await page.locator(s.over_el).first().boundingBox();
+      if (box) await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    }
     const n = s.steps || 8;
     for (let i = 0; i < n; i++) {
       await page.mouse.wheel(0, s.wheel / n);

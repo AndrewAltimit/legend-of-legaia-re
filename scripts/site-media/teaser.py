@@ -297,17 +297,30 @@ def deflicker(row, work):
             i = j
         else:
             i += 1
-    # A one-frame spike: a frame far from both neighbours while they agree
-    # with each other (a blank canvas grab inside page chrome, which the
-    # uniform-region test above cannot see). A real cut or flash moves the
-    # frames after it too, so it is left.
+    # A one- or two-frame spike: frames that leave their neighbours the same
+    # way while the frames either side agree with each other - a blank canvas
+    # grab inside page chrome (which the uniform-region test above cannot
+    # see) or a half-drawn grab (a multi-pass scene caught after its ground
+    # and before its props). A real cut or flash moves the frames after it
+    # too, so it is left.
     lum = [ImageStat.Stat(_cropped(p, crop).convert("L").resize((96, 96))).mean[0] for p in frames]
-    for i in range(1, len(frames) - 1):
-        a, b, c = lum[i - 1], lum[i], lum[i + 1]
-        if abs(b - a) > 6 and abs(b - c) > 6 and abs(a - c) < 3:
-            shutil.copyfile(frames[i - 1], frames[i])
-            lum[i] = a
-            fixed += 1
+    i = 1
+    while i < len(frames) - 1:
+        a = lum[i - 1]
+        for span in (1, 2):
+            if i + span >= len(frames):
+                break
+            mid, c = lum[i:i + span], lum[i + span]
+            d = [m - a for m in mid]
+            least = min(abs(x) for x in d)
+            if least > 3 and (all(x > 0 for x in d) or all(x < 0 for x in d)) and abs(c - a) < 0.25 * least:
+                for k in range(i, i + span):
+                    shutil.copyfile(frames[i - 1], frames[k])
+                    lum[k] = a
+                    fixed += 1
+                i += span - 1
+                break
+        i += 1
     if fixed:
         log(f"{row['name']}: held {fixed} blank frame(s)")
 
@@ -440,6 +453,11 @@ def tile_audio(row, frames, work):
     return wav, tick * TICK_FRAMES
 
 
+def tile_shots(t):
+    """A tile's shot names: `shot` is one name or a list cut together."""
+    return [t["shot"]] if isinstance(t["shot"], str) else list(t["shot"])
+
+
 def audio_schedule(scene, shots, work, fps):
     """Which tile is heard when: the tiles with sound share the scene in turn.
 
@@ -450,7 +468,7 @@ def audio_schedule(scene, shots, work, fps):
         return []
     order = scene.get("audio")
     if order is None:
-        order = [i for i, t in enumerate(tiles) if shot_kind(shots[t["shot"]]) == "engine"]
+        order = [i for i, t in enumerate(tiles) if len(tile_shots(t)) == 1 and shot_kind(shots[t["shot"]]) == "engine"]
     if not order:
         return []
     stagger = scene.get("stagger", 0.14)
@@ -494,20 +512,29 @@ class SceneRenderer:
         self.rects = layout_rects(scene, area) if self.kind == "grid" else []
         self.tiles = []
         for t in scene["tiles"]:
-            row = shots[t["shot"]]
-            frames = frames_of(row, work / "shots" / row["name"])
-            if not frames:
-                sys.exit(f"teaser: {t['shot']}: no frames")
+            # A tile plays one shot, or a list of shots cut together, `each`
+            # seconds of every one but the last.
+            names = tile_shots(t)
+            seq = []
+            for n, name in enumerate(names):
+                row = shots[name]
+                frames = frames_of(row, work / "shots" / row["name"])
+                if not frames:
+                    sys.exit(f"teaser: {name}: no frames")
+                crop = shot_crop(row, work) or t.get("crop")
+                if n < len(names) - 1:
+                    frames = frames[: int(t.get("each", 3) * fps)]
+                seq += [(f, crop) for f in frames]
             skip = int(t.get("skip", 0) * fps)
-            self.tiles.append((t, row, frames[skip:] or frames))
+            self.tiles.append((t, shots[names[0]], seq[skip:] or seq))
         self.schedule = audio_schedule(scene, shots, work, fps)
-        self.crops = [shot_crop(row, work) or t.get("crop") for t, row, _ in self.tiles]
 
     def tile_frame(self, idx, k, size):
         t, row, frames = self.tiles[idx]
         speed = t.get("speed", 1.0)
         j = min(len(frames) - 1, max(0, int(k * speed)))
-        return fit(Image.open(frames[j]), size, self.crops[idx], t.get("anchor", 0.5))
+        path, crop = frames[j]
+        return fit(Image.open(path), size, crop, t.get("anchor", 0.5))
 
     def text(self, d, xy, s, f, fill, alpha):
         if alpha <= 0:
@@ -789,7 +816,7 @@ def main():
     fps = defaults["fps"]
     shots = {r["name"]: r for r in m["shot"]}
     scenes = m["scene"]
-    used = {t["shot"] for sc in scenes for t in sc["tiles"]}
+    used = {name for sc in scenes for t in sc["tiles"] for name in tile_shots(t)}
     missing = used - shots.keys()
     if missing:
         sys.exit(f"teaser: scenes name unknown shots: {sorted(missing)}")

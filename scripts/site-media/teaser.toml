@@ -108,6 +108,14 @@ to = 2700
 every = 2
 
 [[shot]]
+name = "g_soltower"
+scene = "korout"
+pad = "560:Cross,680:Cross"
+from = 60
+to = 760
+every = 2
+
+[[shot]]
 name = "g_menu"
 scene = "town01"
 args = ["--cheat-level", "25"]
@@ -198,10 +206,33 @@ name = "w_world"
 page = "world-overview.html"
 disc = true
 prep = [{ waitFor = "document.querySelector('#wo-status') && /Loaded/.test(document.querySelector('#wo-status').textContent)" }, { wait = 6000 },
-        { scrollTo = "#wo-canvas3d" }, { wait = 1500 }]
+        { eval = "document.querySelectorAll('.wo-tab')[0].click()" }, { wait = 9000 }, { scrollTo = "#wo-canvas3d" }, { wait = 1500 }, { wheel = -700, over_el = "#wo-canvas3d", over = 1000 }, { wait = 2500 }]
 cropTo = "#wo-canvas3d"
-steps = [{ wheel = -600, at = [640, 300], over = 1200 }, { dragIn = "#wo-canvas3d", by = [-120, 0, 140, -30], over = 3000 }, { wait = 300 }, { dragIn = "#wo-canvas3d", by = [140, -30, -60, 20], over = 3000 }]
-seconds = 8
+deflicker = true
+steps = [{ wait = 300 }, { dragIn = "#wo-canvas3d", by = [-60, 0, 90, -15], over = 1800 }]
+seconds = 3.2
+
+[[shot]]
+name = "w_world_sebucus"
+page = "world-overview.html"
+disc = true
+prep = [{ waitFor = "document.querySelector('#wo-status') && /Loaded/.test(document.querySelector('#wo-status').textContent)" }, { wait = 6000 },
+        { eval = "document.querySelectorAll('.wo-tab')[1].click()" }, { wait = 9000 }, { scrollTo = "#wo-canvas3d" }, { wait = 1500 }, { wheel = -700, over_el = "#wo-canvas3d", over = 1000 }, { wait = 2500 }]
+cropTo = "#wo-canvas3d"
+deflicker = true
+steps = [{ wait = 300 }, { dragIn = "#wo-canvas3d", by = [-60, 0, 90, -15], over = 1800 }]
+seconds = 3.2
+
+[[shot]]
+name = "w_world_karisto"
+page = "world-overview.html"
+disc = true
+prep = [{ waitFor = "document.querySelector('#wo-status') && /Loaded/.test(document.querySelector('#wo-status').textContent)" }, { wait = 6000 },
+        { eval = "document.querySelectorAll('.wo-tab')[2].click()" }, { wait = 9000 }, { scrollTo = "#wo-canvas3d" }, { wait = 1500 }, { wheel = -700, over_el = "#wo-canvas3d", over = 1000 }, { wait = 2500 }]
+cropTo = "#wo-canvas3d"
+deflicker = true
+steps = [{ wait = 300 }, { dragIn = "#wo-canvas3d", by = [-60, 0, 90, -15], over = 1800 }]
+seconds = 3.2
 
 [[shot]]
 name = "w_media"
@@ -412,7 +443,7 @@ tiles = [
   { shot = "g_caruban", label = "Boss fight" },
   { shot = "g_arts", label = "Tactical Arts" },
   { shot = "g_gimard", label = "Seru magic" },
-  { shot = "g_flyover", label = "Cutscenes" },
+  { shot = "g_soltower", label = "Cutscenes" },
 ]
 
 [[scene]]
@@ -465,7 +496,7 @@ aspect = [16, 9]
 tiles = [
   { shot = "w_play", label = "Play the port" },
   { shot = "w_viewer", label = "Asset viewer", skip = 0.4 },
-  { shot = "w_world", label = "World overview" },
+  { shot = ["w_world", "w_world_sebucus", "w_world_karisto"], each = 2.8, label = "World overview: all three kingdoms" },
   { shot = "w_media", label = "Music and FMV" },
 ]
 
