@@ -14,7 +14,11 @@
 #           [w, h] for the window, `ready` (seconds before recording),
 #           `seconds`, `pointer`, `actions` (each at `at` seconds: click,
 #           move, drag, scroll, key, type; coordinates inside the window)
-# Any shot may carry `crop` [x, y, w, h] in its frame's pixels.
+# Any shot may carry `crop` [x, y, w, h] in its frame's pixels. A page shot
+# with `deflicker = true` holds the previous frame wherever the cropped
+# region comes back blank: Chromium's screencast now and then grabs a WebGL
+# canvas between its clear and its draw. A number holds longer blank runs
+# (the asset viewer's canvas stays empty while the next model loads).
 #
 # A scene is `kind = "grid"` (a title, a subtitle and tiles laid out by
 # `layout` = "grid" with `cols`, or "feature" = one large tile and the rest
@@ -172,11 +176,12 @@ name = "w_play"
 page = "play.html"
 disc = true
 viewport = [1600, 900]
-prep = [{ waitFor = "!!window.__playRuntime" }, { eval = "document.querySelector('[data-scene=\"town01\"]').click()" },
-        { waitFor = "window.__playView && window.__playView.scene" }, { wait = 2500 }, { scrollTo = "#play-canvas" }, { eval = "document.querySelector('#play-canvas').focus()" }]
+prep = [{ waitFor = "!!window.__playRuntime" }, { eval = "document.querySelector('[data-scene=\"map01\"]').click()" },
+        { waitFor = "window.__playView && window.__playView.scene" }, { wait = 3000 }, { scrollTo = "#play-canvas" }, { eval = "document.querySelector('#play-canvas').focus()" }]
 cropTo = "#play-canvas"
-steps = [{ hold = "ArrowUp", for = 2600 }, { hold = "ArrowRight", for = 1400 }, { hold = "ArrowUp", for = 2000 }, { hold = "ArrowLeft", for = 1500 }]
-seconds = 8
+deflicker = true
+steps = [{ hold = "ArrowUp", for = 2200 }, { eval = "window.__playRuntime.debug_force_battle(-1)" }, { wait = 7000 }]
+seconds = 9.5
 
 [[shot]]
 name = "w_viewer"
@@ -184,6 +189,7 @@ page = "viewer.html"
 disc = true
 prep = [{ waitFor = "document.querySelectorAll('#viewer-list li').length > 10" }, { scrollTo = "#viewer-host" }]
 cropTo = "#viewer-host"
+deflicker = 30
 steps = [{ wait = 2500 }, { eval = "document.querySelector('#next-btn').click()" }, { wait = 2500 }, { eval = "document.querySelector('#fullscene-btn').click()" }, { wait = 3000 }]
 seconds = 8
 
@@ -458,7 +464,7 @@ cols = 2
 aspect = [16, 9]
 tiles = [
   { shot = "w_play", label = "Play the port" },
-  { shot = "w_viewer", label = "Asset viewer" },
+  { shot = "w_viewer", label = "Asset viewer", skip = 0.4 },
   { shot = "w_world", label = "World overview" },
   { shot = "w_media", label = "Music and FMV" },
 ]

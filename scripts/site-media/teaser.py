@@ -255,6 +255,63 @@ def shot_crop(row, work):
     return row.get("crop")
 
 
+def _cropped(p, crop):
+    im = Image.open(p)
+    if crop:
+        x, y, w, h = crop
+        im = im.crop((x, y, x + w, y + h))
+    return im
+
+
+def deflicker(row, work):
+    """Hold the last good frame over a screencast frame whose cropped region
+    came back blank (a WebGL canvas grabbed between its clear and its draw).
+    A frame is blank when its region is near-uniform while the frame before
+    it was not; a shot that is blank for a stretch on purpose (a fade) keeps
+    the stretch: runs longer than `deflicker` frames (6 for `true`) are left.
+    Every blank frame at the very start is left too (nothing came before).
+    Every page shot also gets the one-frame spike test below."""
+    from PIL import ImageStat
+    out = work / "shots" / row["name"]
+    frames = sorted(out.glob("f_*.jpg"))
+    crop = shot_crop(row, work)
+    def spread(p):
+        im = Image.open(p)
+        if crop:
+            x, y, w, h = crop
+            im = im.crop((x, y, x + w, y + h))
+        return ImageStat.Stat(im.convert("L").resize((64, 64))).stddev[0]
+    sd = [spread(p) for p in frames] if row.get("deflicker") else [99.0] * len(frames)
+    run = row["deflicker"] if isinstance(row.get("deflicker"), int) and not isinstance(row["deflicker"], bool) else 6
+    fixed, i = 0, 1
+    while i < len(frames):
+        if sd[i] < 4 and sd[i - 1] >= 4:
+            j = i
+            while j < len(frames) and sd[j] < 4:
+                j += 1
+            if j - i <= run:
+                for k in range(i, j):
+                    shutil.copyfile(frames[i - 1], frames[k])
+                    sd[k] = sd[i - 1]
+                    fixed += 1
+            i = j
+        else:
+            i += 1
+    # A one-frame spike: a frame far from both neighbours while they agree
+    # with each other (a blank canvas grab inside page chrome, which the
+    # uniform-region test above cannot see). A real cut or flash moves the
+    # frames after it too, so it is left.
+    lum = [ImageStat.Stat(_cropped(p, crop).convert("L").resize((96, 96))).mean[0] for p in frames]
+    for i in range(1, len(frames) - 1):
+        a, b, c = lum[i - 1], lum[i], lum[i + 1]
+        if abs(b - a) > 6 and abs(b - c) > 6 and abs(a - c) < 3:
+            shutil.copyfile(frames[i - 1], frames[i])
+            lum[i] = a
+            fixed += 1
+    if fixed:
+        log(f"{row['name']}: held {fixed} blank frame(s)")
+
+
 def frames_of(row, out):
     """The shot's frames in order, as paths."""
     if shot_kind(row) in ("engine", "str"):
@@ -773,6 +830,7 @@ def main():
                 for row in pages:
                     d = work / "shots" / row["name"]
                     if d.exists() and any(d.glob("f_*.jpg")):
+                        deflicker(row, work)
                         (d / ".key").write_text(shot_key(row))
         if a.sheet:
             for row in todo:
