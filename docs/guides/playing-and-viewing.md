@@ -476,7 +476,9 @@ Keyboard defaults are arrows = D-pad, then:
 | `RShift` | Select |
 
 Start opens the pause menu, and so does Triangle, the original game's menu
-button.
+button. Holding Select skips the New Game opening, as on the PlayStation (a
+press of Cross or Start does not); while it would work, the window names the
+key at its bottom left and the play page's status line does the same.
 
 `Esc` twice quits: the first press only shows *Press Esc again to quit* at
 the bottom left of the window, and a second press within three seconds closes it,

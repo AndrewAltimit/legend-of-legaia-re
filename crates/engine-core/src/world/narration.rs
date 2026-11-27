@@ -528,6 +528,17 @@ impl World {
         was_live
     }
 
+    /// Whether a held Select would skip the opening on this frame
+    /// ([`Self::step_prologue_skip`]'s press arm): the opening chain is
+    /// playing, its trigger bit is up and no skip fade is already running.
+    /// A read-only query for the hosts' "hold Select to skip" hint, so the
+    /// hint shows exactly while the press works.
+    pub fn prologue_skip_ready(&self) -> bool {
+        self.cutscene.opening_chain_active
+            && self.cutscene.prologue_skip_fade.is_none()
+            && self.flags.story_flags & PROLOGUE_HANDOFF_FLAG != 0
+    }
+
     /// One tick of the intro skip as the play hosts run it: the press
     /// ([`crate::world::prologue_skip_held`]) does what `FUN_801D1344` does on
     /// its frame - a `0x3C`-frame fade to black (`FUN_801D58F0(2, 0,

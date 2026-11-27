@@ -2733,7 +2733,13 @@ div.play-vis-head { cursor: default; }
      * them instead (a held Select once the first crawl is up, as on the
      * PlayStation). */
     if (/^op(deene|stati|urud)$/.test(running)) {
-      return `Running ${running}: the New Game opening. Hold Select (Right Shift) to skip to Rim Elm.`;
+      /* The key bound to Select, or the controller's own button once one
+       * was pressed last (the native window's hint names the same). */
+      let select = '';
+      try { if (typeof window.legaiaPadPromptFor === 'function') select = window.legaiaPadPromptFor('Select'); } catch (e) {}
+      if (select === 'RShift') select = 'Right Shift';
+      const key = select ? `Select (${select})` : 'Select (Right Shift)';
+      return `Running ${running}: the New Game opening. Hold ${key} to skip to Rim Elm.`;
     }
     let hint = '';
     /* Several retail scenes - every town, including Rim Elm - carry only

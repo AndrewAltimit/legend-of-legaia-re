@@ -114,6 +114,19 @@ impl PlayWindowApp {
             };
             rows.push((startup_line.as_str(), ink.heading));
         }
+        // The New Game opening takes no walking and retail says nothing of
+        // its skip (a held Select, `FUN_801D1344`): name the bound key while
+        // the press would work, as the play page's status line does. Timed
+        // chrome: a capture shows it only under `--screenshot-chrome`.
+        let skip_line;
+        if timed && !self.hotkey_help && self.session.host.world.prologue_skip_ready() {
+            let select = self
+                .mapping
+                .prompt_label("Select", self.last_pad)
+                .unwrap_or_else(|| "Select".into());
+            skip_line = crate::window::app_state::opening_skip_hint_line(&select);
+            rows.push((skip_line.as_str(), ink.key));
+        }
         // Bottom-left of the stage, stacking upward: the top-left is the
         // field party readout's seat.
         let mut y = legaia_engine_ui::BOOT_UI_STAGE_H as i32 - spacing::CHROME_INSET;

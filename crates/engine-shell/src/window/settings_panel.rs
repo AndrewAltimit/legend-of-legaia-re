@@ -1263,6 +1263,9 @@ mod tests {
                 }
             }
             assert!(width(&startup_hint_line("Z", "S")) <= 310);
+            // The opening's skip hint under the widest controller label.
+            let skip = crate::window::app_state::opening_skip_hint_line(a);
+            assert!(width(&skip) <= 310, "{skip}: {}", width(&skip));
             // The longest heading leaves room for the flip hint beside it,
             // on the keyboard and under the widest controller label.
             for row in SETTINGS_ROWS {
