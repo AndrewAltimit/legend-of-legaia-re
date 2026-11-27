@@ -69,8 +69,11 @@ def scope(cmd):
     return cmd
 
 
-def shoot_engine(row, out, defaults):
-    """One play-window run, a PNG every `every` ticks up to `to`."""
+def shoot_engine(row, out, defaults, audio_wav=None):
+    """One play-window run, a PNG every `every` ticks up to `to`.
+
+    With `audio_wav`, the run keeps its sound and writes its mix there
+    (`LEGAIA_CAPTURE_AUDIO_WAV`: tick N starts at stereo frame N * 735)."""
     work = out.parent / (out.name + ".run")
     shutil.rmtree(work, ignore_errors=True)
     work.mkdir(parents=True)
@@ -78,7 +81,8 @@ def shoot_engine(row, out, defaults):
     # whatever a player's own options file says.
     (work / "legaia-options.toml").write_text("")
     every = row.get("every", defaults["every"])
-    cmd = [str(ENGINE), "play-window", "--no-audio", "--extracted-root", str(extracted_root())]
+    cmd = [str(ENGINE), "play-window", *([] if audio_wav else ["--no-audio"]),
+           "--extracted-root", str(extracted_root())]
     if row.get("scene"):
         cmd += ["--scene", row["scene"]]
     cmd += row.get("args", [])
@@ -89,6 +93,8 @@ def shoot_engine(row, out, defaults):
     cmd += ["--screenshot-every", str(every), "--screenshot-dir", str(out),
             "--screenshot-last-tick", str(row["to"])]
     env = dict(os.environ, XMODIFIERS="@im=none", **row.get("env", {}))
+    if audio_wav:
+        env["LEGAIA_CAPTURE_AUDIO_WAV"] = str(audio_wav)
     timeout = max(120, row["to"] // 20 + 120)
     with open(work / "engine.log", "w") as logf:
         run(["timeout", "--kill-after=10s", f"{timeout}s", *scope(cmd)], cwd=work, env=env,
