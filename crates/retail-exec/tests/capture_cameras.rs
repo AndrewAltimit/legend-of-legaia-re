@@ -1724,11 +1724,10 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                     // each party seat's plane pair, height and heading against
                     // retail's arms 2..=5 (the marks `0x801F708C..0x801F70F8`,
                     // the pull `0x801F7488..0x801F76AC`, the let-down
-                    // `0x801F7AA8..0x801F7B94`). The engine ticks a vsync at a
-                    // time, so a pass at step > 1 grows the pull over several
-                    // ticks where retail grows it once: only step-1 passes
-                    // are compared.
-                    if (body.entry, body.va) == (942, DARK_TYPHOON) && step == 1 {
+                    // `0x801F7AA8..0x801F7B94`), at every step: the pull loop
+                    // runs once on the pass's opening tick at the pass's step,
+                    // as retail's one call grows it once by `2 * step`.
+                    if (body.entry, body.va) == (942, DARK_TYPHOON) {
                         for s in 0..3u32 {
                             let a = ACTOR + s * STRIDE;
                             let m = &w.actors[s as usize];

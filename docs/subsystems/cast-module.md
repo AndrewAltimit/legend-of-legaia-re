@@ -5681,9 +5681,15 @@ and the whole film `.976`, cues `1.000` (one pass an arm, `.331`). Grade
   where the pull left it (`FUN_80019B28(caster, seat) + 0x800` at `0x801F77D8`).
   Run after the fold, the swirl would leave a downed member one spin step short
   and every struck member on the swirl's heading. Arm 5 lets each seat back
-  down by `scalar * delta` a pass and its pass stands them on the floor. The engine
-  takes one tick as one pass of step 1, so its spin runs ahead of a retail run whose
-  heavy arms sit at step 3 or 4.
+  down by `scalar * delta` a pass and its pass stands them on the floor.
+  The pull grows once a pass by the whole `2 * delta` (the frame step `0x1F800393`,
+  `sll 1` at `0x801F7458`) and the spin by the grown pull once, so the engine runs the
+  pull loop on the tick that opens a pass, at the pass's step, and holds the pose
+  through the pass's other ticks. Grown on each of a pass's one-vsync ticks, the spin
+  took the pull `delta` times over: the kernel differential parted from retail on
+  every pass at step `2` to `4`, and on `battle_taiku_zora_dark_typhoon_mid_cast`
+  the party swung well past retail's bearings, so the struck members fell elsewhere
+  (film `.924` to `.944`, arm 4 `.938` to `.983`, the Done band `.864` to `.974`).
 - **0944** frames on the caster's facing, which the cast begin points at its
   target, so a replay is steered onto the capture's target too
   ([retail-compare](../tooling/retail-compare.md#driving-to-the-phase)).
