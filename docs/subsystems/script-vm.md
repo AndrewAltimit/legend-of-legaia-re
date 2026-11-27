@@ -1533,7 +1533,11 @@ drops its focus latch (`Camera::release_unheld_shot`) once no glide is in
 flight, no timeline runs and the player is free, without the hand-back snap,
 and drops its mirror of the staged slots there as APPLY does. A latch kept
 past the record freezes the follow camera on the shot for the rest of the
-scene. The census is
+scene. A cutscene timeline's shot hands back the same way: when the timeline
+ends with no glide in flight, the camera keeps the shot and the follow ease
+starts from it on the player's first step. A port-side snap to the zone pose
+on that edge read `vozz`'s Genesis Tree record (a glide, `4C CD`, `21`) about
+700 units off retail's focus for the rest of its film. The census is
 `engine-core/tests/field_camera_shot_census_disc.rs`; the executing checks
 are `engine-session/tests/talk_shot_release_disc.rs` and
 `record_shot_release_disc.rs`.

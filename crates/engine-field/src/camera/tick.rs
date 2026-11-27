@@ -206,21 +206,24 @@ impl Camera {
         // `H` equal the follow composer's staging descriptor at `0x801F3580`
         // field for field (see [`zone_camera_scene`]).
         if zone_scene {
-            // A scripted shot handing the camera back snaps. Retail's
-            // scripts do this themselves through the `[4C 39]` / `[4C 3E]`
-            // arms (`FUN_801DB8EC`), which is how every walkable
-            // post-opening state in the library holds a settled follow pose
-            // (live == staging) rather than an ease in flight from the
-            // cinematic shot. Those arms are wired now
-            // ([`CameraZoneRequest`]); the hand-back edge
-            // stays as the port's backstop for a shot the script drops
-            // without one, and it snaps from the resident block rather than
-            // re-querying (retail's hand-back does not re-query either).
-            // The arc's follow is an ease, not a hand-back: retail's
-            // watcher calls the ease, never the snap.
+            // A scripted shot handing the camera back stands. Retail's
+            // follow step `FUN_801DB510` asks nothing of the staging block:
+            // it composes and eases only on a pass the player moved, so a
+            // shot a record leaves up without a `[4C 39]` / `[4C 3E]` snap
+            // (`FUN_801DB8EC`) or an APPLY holds until the player walks, as
+            // a talk's does ([`Self::release_unheld_shot`]). `vozz`'s Genesis
+            // Tree record glides to its last shot, waits on `4C CD` and ends
+            // on `21`: retail's globals hold the shot for the rest of the
+            // film where the port's old backstop snapped to the resident
+            // block and the focus clamp, about 700 units off. The ease reads
+            // the globals the shot left, and the settle test the spot the
+            // player stands on now.
+            // REF: FUN_801DB510, FUN_801DB8EC
             if self.zone.prev_scripted && !scripted && !arc_follow {
-                self.zone.snap_pending = true;
-                self.zone.prev_player = None;
+                self.zone.focus_held = Some([self.globals.0[6], self.globals.0[8]]);
+                self.zone.prev_player = world
+                    .active_actor_pos(self.follow_slot as usize)
+                    .map(|(x, y, z)| [x, y, z]);
             }
             self.zone.prev_scripted = scripted;
             self.zone.script_view = scripted && self.mode == CameraMode::Follow;
