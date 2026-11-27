@@ -394,6 +394,7 @@ impl PlayWindowApp {
             &self.session,
             &self.menu_runtime,
         );
+        self.record_capture_audio();
         redraw_present::capture_sweep_frame(
             r,
             &|| target(&scene),

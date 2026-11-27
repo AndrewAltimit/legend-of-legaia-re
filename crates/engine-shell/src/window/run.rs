@@ -435,7 +435,10 @@ pub(super) fn cmd_play_window_with_record(
         // `LEGAIA_AUDIO_DETACHED=1`: the director over a device-less output,
         // so a capture child (the cast-sequence recorder's `sfx.csv`) routes
         // every cue on a machine whose sound device it must not hold.
-        audio_detached: std::env::var_os("LEGAIA_AUDIO_DETACHED").is_some_and(|v| v != "0"),
+        // `LEGAIA_CAPTURE_AUDIO_WAV` records the mix the same way, pulled a
+        // tick at a time instead of by a device.
+        audio_detached: std::env::var_os("LEGAIA_AUDIO_DETACHED").is_some_and(|v| v != "0")
+            || std::env::var_os("LEGAIA_CAPTURE_AUDIO_WAV").is_some_and(|v| !v.is_empty()),
         world_map,
         boot_ui,
         save_dir,

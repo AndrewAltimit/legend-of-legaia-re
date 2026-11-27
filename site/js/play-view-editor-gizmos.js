@@ -65,7 +65,10 @@ void main() {
     x: [0.95, 0.32, 0.30, 0.95], z: [0.30, 0.55, 0.98, 0.95], plane: [0.98, 0.86, 0.30, 0.75],
     ring: [0.35, 0.92, 0.45, 0.9], scale: [0.98, 0.62, 0.20, 0.95], hot: [1, 1, 1, 1],
     sel: [1, 1, 1, 0.16], ghost: [1, 1, 1, 0.16], edge: [1, 1, 1, 0.5], hover: [0.85, 0.95, 1, 0.3],
-    lamp: [1.0, 0.85, 0.35, 0.75], emitter: [0.45, 0.9, 0.95, 0.35], decor: [0.45, 0.85, 0.45, 0.55],
+    // A decoration draws as itself and gets no box of its own (a filled box
+    // on every one buried the map under green); hovered or selected, it takes
+    // the white `hover` / `sel` box like any object.
+    lamp: [1.0, 0.85, 0.35, 0.75], emitter: [0.45, 0.9, 0.95, 0.35],
     brush: [1, 1, 1, 0.9], inner: [1, 0.85, 0.4, 0.8], up: [0.55, 0.85, 0.45, 0.55], down: [0.85, 0.45, 0.35, 0.55],
     paint: [0.45, 0.95, 1.0, 0.5],
     ok: [0.35, 0.95, 0.45, 0.95], okFill: [0.35, 0.95, 0.45, 0.35], bad: [1.0, 0.3, 0.25, 0.95], badFill: [1.0, 0.3, 0.25, 0.4],

@@ -1,0 +1,567 @@
+# The project teaser: scenes of clip grids, read by `teaser.py` beside this file.
+#
+# [[shot]] rows are the sources; [[scene]] rows lay them out. A shot is one of:
+#   engine  `scene` / `args` / `pad` / `keys` / `from` / `to` / `every`, as in
+#           media.toml (a `legaia-engine play-window` run; `every` world ticks
+#           per frame, 60 ticks a second, so 2 = the teaser's 30 fps in real
+#           time). The run also records its mix (LEGAIA_CAPTURE_AUDIO_WAV)
+#   str     a movie segment, as in media.toml
+#   page    a site page: `page`, `disc` (read the disc first), `prep` and
+#           `steps` (teaser-browser.mjs's step list), `seconds`, `viewport`
+#   app     a desktop app on the private display: `app` (argv; {explorer},
+#           {engine}, {asset_viewer}, {disc}, {extracted}, {work} expand),
+#           `env`, `files` (written under the run's own home first), `size`
+#           [w, h] for the window, `ready` (seconds before recording),
+#           `seconds`, `pointer`, `actions` (each at `at` seconds: click,
+#           move, drag, scroll, key, type; coordinates inside the window)
+# Any shot may carry `crop` [x, y, w, h] in its frame's pixels. A page shot
+# with `deflicker = true` holds the previous frame wherever the cropped
+# region comes back blank: Chromium's screencast now and then grabs a WebGL
+# canvas between its clear and its draw. A number holds longer blank runs
+# (the asset viewer's canvas stays empty while the next model loads).
+#
+# A scene is `kind = "grid"` (a title, a subtitle and tiles laid out by
+# `layout` = "grid" with `cols`, or "feature" = one large tile and the rest
+# stacked beside it, at `aspect`) or `kind = "card"` (a blurred mosaic of
+# its tiles under centred `lines`). A tile names its `shot`, a `label`, and
+# optionally `skip` (seconds into the shot), `speed` and `gain`.
+#
+# Sound: a grid scene's engine tiles take turns being heard (in tile order, or
+# the scene's `audio` list of tile indexes); the heard tile wears a gold ring
+# and a speaker badge, and the soundtrack plays its own mix at that instant.
+# A scene with no engine tile plays its `bed` instead: `{ shot, skip, gain }`,
+# that shot's mix from `skip` seconds into it.
+
+[defaults]
+fps = 30
+every = 2
+
+[style]
+bg_top = "#0a0e16"
+bg_bottom = "#111a28"
+accent = "#2a5bd7"
+gold = "#e3b54a"
+muted = "#9fb0c8"
+border = "#2c3a50"
+title_size = 64
+subtitle_size = 32
+label_size = 26
+header_height = 188
+crossfade_frames = 10
+
+audio_rms = 0.12
+
+[video]
+crf = 17
+
+# The committed copy the site's home page plays and the README links to
+# (`teaser.py --web`): 720p at a size git can carry, and a poster frame.
+[web]
+video = "site/assets/teaser.mp4"
+poster = "site/img/teaser-poster.jpg"
+poster_play = "site/img/teaser-poster-play.jpg"
+width = 1280
+crf = 27
+audio_bitrate = "112k"
+poster_frame = 380
+
+# ------------------------------------------------------------ game (engine)
+
+[[shot]]
+name = "g_rimelm"
+scene = "town01"
+pad = "40-1200:Up,40-420:Right,420-900:Left"
+from = 80
+to = 1000
+every = 2
+
+[[shot]]
+name = "g_worldmap"
+scene = "map01"
+pad = "20-1100:Up,500-700:Left"
+from = 60
+to = 980
+every = 2
+
+[[shot]]
+name = "g_caruban"
+scene = "rikuroa"
+args = ["--battle", "17", "--cheat-level", "40", "--cheat-restore", "--no-player-battle"]
+from = 140
+to = 1060
+every = 2
+
+[[shot]]
+name = "g_arts"
+scene = "map03"
+args = ["--battle", "first", "--party", "vahn", "--cheat-level", "30", "--cheat-arts", "--cheat-max-ap", "--cheat-restore"]
+pad = "370:Cross,400:Left,430:Right,460:Up,475:Down,490:Up,505:Up,520:Up,535:Down,550:Up,580:Cross,620:Cross,660:Cross,700:Cross"
+from = 600
+to = 1520
+every = 2
+
+[[shot]]
+name = "g_gimard"
+scene = "map03"
+args = ["--battle", "first", "--party", "vahn", "--learn-spell", "0x81", "--cheat-level", "30", "--cheat-restore"]
+pad = "370:Cross,400:Right,440:Cross,480:Cross,520:Cross,560:Cross"
+from = 700
+to = 1620
+every = 2
+
+[[shot]]
+name = "g_flyover"
+scene = "rikuroa"
+args = ["--battle", "17", "--cheat-level", "99", "--cheat-restore", "--no-player-battle"]
+pad = "1450:Cross,1520:Cross,1590:Cross,1660:Cross,1730:Cross,1800:Cross"
+from = 1780
+to = 2700
+every = 2
+
+[[shot]]
+name = "g_soltower"
+scene = "korout"
+pad = "560:Cross,680:Cross"
+from = 60
+to = 760
+every = 2
+
+[[shot]]
+name = "g_menu"
+scene = "town01"
+args = ["--cheat-level", "25"]
+pad = "60:Start,150:Down,170:Down,190:Down,220:Cross,300:Cross,420:Circle,480:Down,540:Cross,640:Circle"
+from = 80
+to = 780
+every = 2
+
+[[shot]]
+name = "g_newgame"
+args = ["--boot-ui"]
+pad = "420:Start,760:Start,860:Start,1090:Right,1250:Right"
+keys = "930:W,990:W,1050:W,1150:W,1200:W"
+from = 820
+to = 1540
+every = 2
+
+[[shot]]
+name = "g_dance"
+scene = "town01"
+keys = "30:K"
+pad = "400:Cross,500:Cross,600:Cross,700:Cross"
+from = 1100
+to = 1820
+every = 2
+
+[[shot]]
+name = "g_slots"
+scene = "town01"
+keys = "30:O"
+pad = "150:Cross,250:Square,290:Cross,330:Circle,450:Cross,550:Square,590:Cross,630:Circle"
+args = ["--cheat-coins", "500"]
+from = 140
+to = 860
+every = 2
+
+[[shot]]
+name = "g_fishing"
+scene = "town01"
+keys = "30:L"
+pad = "200:Cross,300:Cross,400-460:Cross,600:Cross,700:Cross"
+from = 140
+to = 860
+every = 2
+
+[[shot]]
+name = "g_baka"
+scene = "town01"
+keys = "30:B"
+pad = "300:Start,400:Cross,500:Cross,600:Square,614:Cross,628:Circle,642:Square,656:Cross,670:Circle,684:Square,698:Cross,712:Circle,726:Square,740:Cross,754:Circle,768:Square,782:Cross,796:Circle,810:Square,824:Cross,838:Circle,852:Square,866:Cross,880:Circle,894:Square,908:Cross,922:Circle,936:Square,950:Cross,964:Circle,978:Square,992:Cross,1006:Circle,1020:Square,1034:Cross,1048:Circle,1062:Square,1076:Cross,1090:Circle,1104:Square,1118:Cross,1132:Circle"
+from = 440
+to = 1160
+every = 2
+
+[[shot]]
+name = "g_movie"
+str = "MOV/MV1.STR"
+from = 800
+to = 1520
+every = 2
+
+# ------------------------------------------------------------ browser (site)
+
+[[shot]]
+name = "w_play"
+page = "play.html"
+disc = true
+viewport = [1600, 900]
+prep = [{ waitFor = "!!window.__playRuntime" }, { eval = "document.querySelector('[data-scene=\"map01\"]').click()" },
+        { waitFor = "window.__playView && window.__playView.scene" }, { wait = 3000 }, { scrollTo = "#play-canvas" }, { eval = "document.querySelector('#play-canvas').focus()" }]
+cropTo = "#play-canvas"
+deflicker = true
+steps = [{ hold = "ArrowUp", for = 2200 }, { eval = "window.__playRuntime.debug_force_battle(-1)" }, { wait = 7000 }]
+seconds = 9.5
+
+[[shot]]
+name = "w_viewer"
+page = "viewer.html"
+disc = true
+prep = [{ waitFor = "document.querySelectorAll('#viewer-list li').length > 10" }, { scrollTo = "#viewer-host" }]
+cropTo = "#viewer-host"
+deflicker = 30
+steps = [{ wait = 2500 }, { eval = "document.querySelector('#next-btn').click()" }, { wait = 2500 }, { eval = "document.querySelector('#fullscene-btn').click()" }, { wait = 3000 }]
+seconds = 8
+
+[[shot]]
+name = "w_world"
+page = "world-overview.html"
+disc = true
+prep = [{ waitFor = "document.querySelector('#wo-status') && /Loaded/.test(document.querySelector('#wo-status').textContent)" }, { wait = 6000 },
+        { eval = "document.querySelectorAll('.wo-tab')[0].click()" }, { wait = 9000 }, { scrollTo = "#wo-canvas3d" }, { wait = 1500 }, { wheel = -700, over_el = "#wo-canvas3d", over = 1000 }, { wait = 2500 }]
+cropTo = "#wo-canvas3d"
+deflicker = true
+steps = [{ wait = 300 }, { dragIn = "#wo-canvas3d", by = [-60, 0, 90, -15], over = 1800 }]
+seconds = 3.2
+
+[[shot]]
+name = "w_world_sebucus"
+page = "world-overview.html"
+disc = true
+prep = [{ waitFor = "document.querySelector('#wo-status') && /Loaded/.test(document.querySelector('#wo-status').textContent)" }, { wait = 6000 },
+        { eval = "document.querySelectorAll('.wo-tab')[1].click()" }, { wait = 9000 }, { scrollTo = "#wo-canvas3d" }, { wait = 1500 }, { wheel = -700, over_el = "#wo-canvas3d", over = 1000 }, { wait = 2500 }]
+cropTo = "#wo-canvas3d"
+deflicker = true
+steps = [{ wait = 300 }, { dragIn = "#wo-canvas3d", by = [-60, 0, 90, -15], over = 1800 }]
+seconds = 3.2
+
+[[shot]]
+name = "w_world_karisto"
+page = "world-overview.html"
+disc = true
+prep = [{ waitFor = "document.querySelector('#wo-status') && /Loaded/.test(document.querySelector('#wo-status').textContent)" }, { wait = 6000 },
+        { eval = "document.querySelectorAll('.wo-tab')[2].click()" }, { wait = 9000 }, { scrollTo = "#wo-canvas3d" }, { wait = 1500 }, { wheel = -700, over_el = "#wo-canvas3d", over = 1000 }, { wait = 2500 }]
+cropTo = "#wo-canvas3d"
+deflicker = true
+steps = [{ wait = 300 }, { dragIn = "#wo-canvas3d", by = [-60, 0, 90, -15], over = 1800 }]
+seconds = 3.2
+
+[[shot]]
+name = "w_media"
+page = "media.html"
+disc = true
+prep = [{ waitFor = "document.querySelectorAll('#sound-test-list li').length > 5" }, { scrollTo = "#browse" }]
+steps = [{ wait = 600 }, { scroll = 500, over = 3000, in = "#sound-test-list" }, { wait = 500 }, { click = "button.audio-tab:nth-of-type(2)" }, { wait = 3500 }]
+seconds = 8
+crop = [340, 40, 940, 529]
+
+[[shot]]
+name = "w_discmap"
+page = "disc-map.html"
+disc = true
+prep = [{ wait = 4000 }, { scrollTo = "h2, .dm-wrap, svg" }]
+steps = [{ scroll = 420, over = 2500 }, { wait = 800 }, { move = [520, 300], over = 800 }, { wait = 2500 }]
+seconds = 7
+crop = [340, 40, 940, 529]
+
+[[shot]]
+name = "w_monsters"
+page = "monsters.html"
+disc = true
+prep = [{ waitFor = "document.querySelectorAll('#enemy-table-body tr').length > 20" }, { scrollTo = "#enemy-table-toolbar" }]
+steps = [{ wait = 600 }, { type = "knight", into = "#enemy-table-filter" }, { wait = 1200 }, { eval = "const r = document.querySelector('#enemy-table-body tr'); if (r) r.click();" }, { wait = 4000 }]
+seconds = 7
+crop = [340, 40, 940, 529]
+
+[[shot]]
+name = "w_chars"
+page = "characters.html"
+disc = true
+prep = [{ waitFor = "document.querySelectorAll('.char-clip-btn').length > 10" }, { scrollTo = "#char-stage" }]
+steps = [{ eval = "[...document.querySelectorAll('.char-clip-btn')].find(b => /Cyclone/.test(b.textContent)).click()" }, { wait = 3200 },
+         { eval = "[...document.querySelectorAll('.char-seg-btn')].find(b => /Noa/.test(b.textContent)).click()" }, { wait = 3500 }]
+seconds = 7
+crop = [340, 40, 940, 529]
+
+[[shot]]
+name = "w_arts"
+page = "arts.html"
+disc = true
+prep = [{ waitFor = "/Disc loaded/.test(document.querySelector('#arts-status').textContent)" }, { scrollTo = "#arts-motion" },
+        { eval = "document.querySelector('#arts-panels button, #arts-panels [data-art]').click()" }, { wait = 1500 }]
+steps = [{ wait = 7000 }]
+seconds = 7
+crop = [340, 120, 940, 529]
+
+[[shot]]
+name = "w_magic"
+page = "magic.html"
+disc = true
+prep = [{ waitFor = "document.querySelectorAll('.summon-card').length > 10" }, { scrollTo = "#stage" },
+        { eval = "[...document.querySelectorAll('.summon-card')].find(b => /Vera/.test(b.textContent)).click()" }, { wait = 3500 }]
+steps = [{ wait = 7000 }]
+seconds = 7
+crop = [340, 120, 940, 529]
+
+[[shot]]
+name = "w_patcher"
+page = "tooling/rom-patcher.html"
+disc = true
+prep = [{ wait = 3000 }, { scrollTo = "#patch" }]
+steps = [{ eval = "document.querySelectorAll('details.rom-group').forEach(d => d.open = true)" }, { wait = 400 }, { scroll = 1400, over = 5500 }]
+seconds = 7
+crop = [340, 40, 940, 529]
+
+[[shot]]
+name = "w_crates"
+page = "crates.html"
+prep = [{ wait = 2500 }, { scrollTo = ".cm-stage" }, { scroll = 120, over = 300 }]
+cropTo = ".cm-stage"
+steps = [{ wait = 400 }, { move = [520, 300], over = 700 }, { wait = 1100 }, { move = [760, 420], over = 700 }, { wait = 1100 }, { move = [600, 560], over = 700 }, { wait = 1100 }, { move = [450, 200], over = 700 }, { wait = 900 }]
+seconds = 7
+
+[[shot]]
+name = "w_subsystems"
+page = "subsystems/index.html"
+prep = [{ wait = 2000 }, { scrollTo = "figure.diagram" }]
+cropTo = "figure.diagram"
+steps = [{ wait = 600 }, { move = [520, 260], over = 700 }, { wait = 1000 }, { move = [700, 330], over = 700 }, { wait = 1000 }, { move = [860, 300], over = 700 }, { wait = 1000 }, { move = [600, 420], over = 700 }, { wait = 900 }]
+seconds = 7
+
+[[shot]]
+name = "w_arch"
+page = "architecture.html"
+prep = [{ wait = 2000 }, { scrollTo = "figure.vm-graph" }]
+cropTo = "figure.vm-graph"
+steps = [{ wait = 600 }, { move = [500, 200], over = 900 }, { wait = 1200 }, { move = [800, 300], over = 900 }, { wait = 1200 }, { move = [650, 420], over = 900 }, { wait = 1200 }]
+seconds = 7
+
+[[shot]]
+name = "w_format"
+page = "formats/tmd.html"
+prep = [{ wait = 2000 }]
+steps = [{ wait = 500 }, { scroll = 1400, over = 6000 }]
+seconds = 7
+crop = [345, 40, 700, 394]
+
+[[shot]]
+name = "w_xw_place"
+page = "tooling/expansion-workbench.html"
+disc = true
+viewport = [1600, 900]
+prep = [{ waitFor = "!!document.querySelector('[data-start=sample]') && document.querySelector('[data-start=sample]').offsetParent" }, { wait = 1500 },
+        { click = "[data-start=sample]" }, { wait = 6000 }, { waitFor = "document.querySelector('.xw-map-pick') && document.querySelector('.xw-map-pick').options.length > 5" }, { eval = "const s = document.querySelector('.xw-map-pick'); s.value = 'isles_village'; s.dispatchEvent(new Event('change', { bubbles: true }));" }, { wait = 16000 },
+        { eval = "const g=[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='Got it'); if (g) g.click();" },
+        { click = "button:has-text('Place objects')" }, { wait = 1500 }, { wheel = -2400, at = [800, 470], over = 1200 }, { wait = 1500 }]
+steps = [{ wait = 400 }, { click = "button:has-text('round stone cottage 3')" }, { wait = 400 }, { move = [700, 470], over = 500 }, { clickAt = [700, 470] }, { wait = 1400 },
+         { click = "button:has-text('bent tree')" }, { wait = 300 }, { move = [880, 520], over = 500 }, { clickAt = [880, 520] }, { wait = 1400 },
+         { click = "button:has-text('round stone cottage 4')" }, { wait = 300 }, { move = [1000, 430], over = 500 }, { clickAt = [1000, 430] }, { wait = 2000 }]
+seconds = 9
+crop = [84, 60, 1512, 851]
+
+[[shot]]
+name = "w_xw_terrain"
+page = "tooling/expansion-workbench.html"
+disc = true
+viewport = [1600, 900]
+prep = [{ waitFor = "!!document.querySelector('[data-start=sample]') && document.querySelector('[data-start=sample]').offsetParent" }, { wait = 1500 },
+        { click = "[data-start=sample]" }, { wait = 6000 }, { waitFor = "document.querySelector('.xw-map-pick') && document.querySelector('.xw-map-pick').options.length > 5" }, { eval = "const s = document.querySelector('.xw-map-pick'); s.value = 'isles_beach'; s.dispatchEvent(new Event('change', { bubbles: true }));" }, { wait = 16000 },
+        { eval = "const g=[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='Got it'); if (g) g.click();" },
+        { click = "button:has-text('Paint terrain')" }, { wait = 1000 }, { clickAt = [114, 192] }, { wait = 500 }, { clickAt = [157, 229] }, { wait = 600 }, { clickAt = [114, 192] }, { wait = 5000 }]
+steps = [{ wait = 500 }, { drag = [1180, 640, 1330, 650], over = 1500 }, { wait = 1200 }, { drag = [1330, 680, 1200, 700], over = 1500 }, { wait = 1200 },
+         { drag = [1200, 600, 1400, 600], over = 1500 }, { wait = 2000 }]
+seconds = 9
+crop = [84, 60, 1512, 851]
+
+[[shot]]
+name = "w_modes"
+page = "modes.html"
+viewport = [1600, 900]
+prep = [{ wait = 5000 }, { scrollTo = "#in-3d" }]
+steps = [{ wait = 800 }, { scroll = 560, over = 3500 }, { wait = 600 }, { scroll = 560, over = 3500 }]
+seconds = 9
+crop = [420, 40, 1180, 664]
+
+# ------------------------------------------------------------ desktop apps
+
+[[shot]]
+name = "x_arts"
+app = ["{explorer}", "{disc}"]
+env = { LEGAIA_EXPLORER_ACTOR = "char:0@20:0" }
+size = [1280, 720]
+ready = 14
+seconds = 8
+actions = [{ at = 0.5, key = "space" }]
+
+[[shot]]
+name = "x_model"
+app = ["{explorer}", "{disc}"]
+env = { LEGAIA_EXPLORER_ACTOR = "char:1" }
+size = [1280, 720]
+ready = 14
+seconds = 8
+actions = [{ at = 0.2, click = [120, 221] }, { at = 0.4, type = "caruban" }, { at = 1.4, click = [80, 244] }, { at = 2.2, key = "space" },
+           { at = 2.8, drag = [700, 420, 950, 400], over = 2.4 }, { at = 5.4, drag = [950, 400, 760, 440], over = 2.4 }]
+
+[[shot]]
+name = "x_textures"
+app = ["{explorer}", "{disc}"]
+env = { LEGAIA_EXPLORER_SELECT = "183", LEGAIA_EXPLORER_TAB = "textures" }
+size = [1280, 720]
+ready = 14
+seconds = 8
+actions = [{ at = 0.8, click = [520, 156] }, { at = 2.0, click = [520, 300] }, { at = 3.2, click = [520, 396] }, { at = 4.4, click = [520, 540] },
+           { at = 5.6, click = [520, 636] }, { at = 6.8, click = [520, 180] }]
+
+[[shot]]
+name = "x_movies"
+app = ["{explorer}", "{disc}"]
+env = { LEGAIA_EXPLORER_MEDIA = "MOV/MV1.STR@300" }
+size = [1280, 720]
+ready = 14
+seconds = 8
+actions = [{ at = 0.3, click = [286, 134] }]
+
+[[shot]]
+name = "x_launcher"
+app = ["{engine}"]
+size = [1280, 720]
+ready = 8
+seconds = 7
+files = { "cfg/legaia-engine/launcher.toml" = "disc = \"{disc}\"\n" }
+actions = [{ at = 0.8, key = "Down" }, { at = 1.3, key = "Down" }, { at = 1.8, key = "Tab" }, { at = 2.4, key = "Down" }, { at = 2.9, key = "Down" }, { at = 3.4, key = "Down" }, { at = 3.9, key = "Right" }, { at = 4.6, key = "Down" }, { at = 5.1, key = "Down" }, { at = 5.6, key = "Right" }]
+
+# ------------------------------------------------------------ scenes
+
+[[scene]]
+kind = "card"
+seconds = 4.5
+bed = { shot = "g_newgame", skip = 0, gain = 0.8 }
+cols = 3
+tiles = [{ shot = "g_rimelm" }, { shot = "g_caruban" }, { shot = "g_worldmap" }, { shot = "g_gimard" }, { shot = "g_movie" }, { shot = "g_arts" }]
+lines = [
+  { text = "Legend of Legaia", size = 104 },
+  { text = "reverse-engineered, documented and rebuilt in Rust", size = 44, weight = "Regular", color = "muted" },
+]
+
+[[scene]]
+title = "A native port you can play"
+subtitle = "The whole game, start to credits, on a from-scratch Rust engine"
+seconds = 9
+cols = 3
+tiles = [
+  { shot = "g_rimelm", label = "Rim Elm" },
+  { shot = "g_worldmap", label = "The world map" },
+  { shot = "g_caruban", label = "Boss fight" },
+  { shot = "g_arts", label = "Tactical Arts" },
+  { shot = "g_gimard", label = "Seru magic" },
+  { shot = "g_soltower", label = "Cutscenes" },
+]
+
+[[scene]]
+title = "Minigames, menus and movies"
+subtitle = "Every side game, every screen, the FMVs decoded by the port"
+seconds = 7.5
+cols = 3
+tiles = [
+  { shot = "g_dance", label = "Dance" },
+  { shot = "g_fishing", label = "Fishing" },
+  { shot = "g_slots", label = "Slots" },
+  { shot = "g_baka", label = "Baka Fighter" },
+  { shot = "g_menu", label = "Menus" },
+  { shot = "g_movie", label = "Movies" },
+]
+
+[[scene]]
+title = "New Game, your way"
+subtitle = "Randomizer and tuning options in the port, a ROM patcher in the browser"
+seconds = 7.5
+layout = "feature"
+aspect = [4, 3]
+tiles = [
+  { shot = "g_newgame", label = "New Game setup" },
+  { shot = "x_launcher", label = "Launcher" },
+  { shot = "w_patcher", label = "ROM patcher" },
+]
+
+[[scene]]
+title = "Desktop apps"
+bed = { shot = "g_worldmap", skip = 0 }
+subtitle = "Legaia Explorer: browse, preview and export everything on the disc"
+seconds = 8.5
+cols = 2
+aspect = [16, 9]
+tiles = [
+  { shot = "x_arts", label = "Characters and their arts" },
+  { shot = "x_model", label = "3D models" },
+  { shot = "x_textures", label = "Textures" },
+  { shot = "x_movies", label = "Movies and voice" },
+]
+
+[[scene]]
+title = "In your browser"
+bed = { shot = "g_rimelm", skip = 0 }
+subtitle = "The port and its tools compiled to WebAssembly; bring your own disc"
+seconds = 8.5
+cols = 2
+aspect = [16, 9]
+tiles = [
+  { shot = "w_play", label = "Play the port" },
+  { shot = "w_viewer", label = "Asset viewer", skip = 0.4 },
+  { shot = ["w_world", "w_world_sebucus", "w_world_karisto"], each = 2.8, label = "World overview: all three kingdoms" },
+  { shot = "w_media", label = "Music and FMV" },
+]
+
+[[scene]]
+title = "Explore the disc"
+bed = { shot = "g_worldmap", skip = 8 }
+subtitle = "Enemies, characters, arts and magic, read live from your copy"
+seconds = 8.5
+cols = 3
+aspect = [16, 9]
+tiles = [
+  { shot = "w_discmap", label = "Disc map" },
+  { shot = "w_monsters", label = "Enemy table" },
+  { shot = "w_chars", label = "Characters" },
+  { shot = "w_arts", label = "Tactical Arts" },
+  { shot = "w_magic", label = "Seru magic" },
+]
+
+[[scene]]
+title = "Documented to the byte"
+bed = { shot = "g_rimelm", skip = 8 }
+subtitle = "Formats, subsystems and every crate, traced from the disassembly"
+seconds = 8.5
+cols = 2
+aspect = [16, 9]
+tiles = [
+  { shot = "w_crates", label = "Crate map" },
+  { shot = "w_subsystems", label = "How the game works" },
+  { shot = "w_arch", label = "How the layers stack" },
+  { shot = "w_format", label = "Format specs" },
+]
+
+[[scene]]
+title = "Make your own"
+subtitle = "The expansion workbench: build maps, place objects, shape terrain, add game modes"
+seconds = 7.5
+layout = "feature"
+aspect = [16, 9]
+bed = { shot = "g_dance", skip = 0 }
+tiles = [
+  { shot = "w_xw_place", label = "Place objects" },
+  { shot = "w_xw_terrain", label = "Terrain, 2D beside 3D" },
+  { shot = "w_modes", label = "Custom game modes" },
+]
+
+[[scene]]
+kind = "card"
+seconds = 5
+bed = { shot = "g_flyover", skip = 0, gain = 0.8 }
+cols = 3
+tiles = [{ shot = "g_dance" }, { shot = "w_world" }, { shot = "g_flyover" }, { shot = "x_model" }, { shot = "g_baka" }, { shot = "w_crates" }]
+lines = [
+  { text = "Legend of Legaia RE", size = 84 },
+  { text = "A playable port and modding hub. No game data included: bring your own disc.", size = 34, weight = "Regular", color = "muted" },
+  { text = "github.com/AndrewAltimit/legend-of-legaia-re", size = 40, weight = "Medium", color = "gold" },
+  { text = "andrewaltimit.github.io/legend-of-legaia-re", size = 40, weight = "Medium", color = "gold" },
+]
