@@ -2287,6 +2287,17 @@ The pager `FUN_801D84D0` zeroes the pad word while the automatic press counts, c
 on the tick it takes its stop request, with no move-VM run and no clamps. The BGM poller's stage walk `FUN_800243F0`,
 run call by call against `BgmSwapPoller` at one call a game frame, matches.
 
+A mutation sample of the checked arms found arms no test compared, and two of
+them disagreed once a test did. The field VM's op `35 .. .. 07`
+stores the battle sound set `_DAT_8007B880` as `-1` when the operand's high
+byte is `0xFF` (`lbu v1,0x1(s6)` over the little-endian halfword) and as the
+signed halfword otherwise; the port tested the low byte and stored it
+unsigned, which no shipped operand (`0..=8`, `0xFFFF`) tells apart but a
+script's `0x00FF` or `0x80xx` does. Op `43`'s arc jump hands `FUN_801D25EC`
+the landing, apex and frames `ScriptArcRequest::landing` builds. The list-order
+page in `FUN_801DA2A0` tests its page keys Right then Left, so a frame with
+both pages forward and back; the port took Right alone.
+
 The list kernel `FUN_80032A44`'s header and page triangles, run on random node rects, showed the battle item
 and magic lists drawing both one pixel low and the next-page triangle one pixel left: their seats were read off a
 capture rather than the live node `(174, 36, 131, 120)` the kernel draws from. A walk of PROT 0963's Genocidal Cannon
