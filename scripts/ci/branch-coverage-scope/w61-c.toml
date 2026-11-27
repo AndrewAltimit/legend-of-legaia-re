@@ -81,3 +81,45 @@ image = "3ca017e44535b38f"
 range = "0x801D6134..0x801D6134"
 verdict = "unreachable"
 reason = "PROT 0976 HUD quad emitter: the same fix-up for the cell height * record scale; positive on every shipped widget record."
+
+[[arm]]
+entry = "0x801DC6B4"
+image = "a1c58af6ef79ef56"
+range = "0x801DC6C8..0x801DC70C"
+verdict = "unported"
+reason = "PROT 0899 pause driver: the menu's own curtain ramp (_DAT_8007B440 += DAT_801E46A0 * frame step, clamped to 0..0xF2, the delta zeroed at either end) ahead of FUN_8003479C; the port draws the field-side pause wipe (engine-system pause_wipe, FUN_801ED308) and keeps no menu-side level."
+
+[[arm]]
+entry = "0x801DC6B4"
+image = "a1c58af6ef79ef56"
+range = "0x801DC784..0x801DC784"
+verdict = "unreachable"
+reason = "PROT 0899 pause driver: the jump table's default (state word _DAT_8007B43C >= 9); the driver stores 0, 1 and 2, the Use screens 4 and 5, and the close arm adds 3, so the word never passes 8."
+
+[[arm]]
+entry = "0x801DC6B4"
+image = "a1c58af6ef79ef56"
+range = "0x801DC93C..0x801DC9CC"
+verdict = "unported"
+reason = "PROT 0899 pause driver states 1, 2 and 4/5: the wait for the curtain under 0x79, the sub-screen dispatch through the 0x801E4F40 table with its step reset, and the close wait for 0xF2 with no pending window; the port's FieldMenuSession phases and the per-screen sessions replace the state word, so no kernel steps _DAT_8007B43C."
+
+[[arm]]
+entry = "0x801D1C5C"
+image = "b074b33f8684800f"
+range = "0x801D1CA8..0x801D1CA8"
+verdict = "unported"
+reason = "PROT 0972 rod actor, swing word 0: retire at once (+0x10 |= 0xA) and zero the bob triple 0x801D9134; the session machine stores the 0 as it tears a cast down (0x801CF92C, 0x801CFE60), and the port's PondSession drops its RodActor at the same edge instead of ticking a zero state."
+
+[[arm]]
+entry = "0x801D1C5C"
+image = "b074b33f8684800f"
+range = "0x801D1F8C..0x801D1F8C"
+verdict = "unreachable"
+reason = "PROT 0972 rod actor: the +0x10 & 0x1000 test ahead of the model-slot fetch FUN_8001C604; the tick raises the bit itself at 0x801D1EC8 (ori 0x1000) on every path, so the skip is never taken."
+
+[[arm]]
+entry = "0x801D1C5C"
+image = "b074b33f8684800f"
+range = "0x801D2018..0x801D2018"
+verdict = "unreachable"
+reason = "PROT 0972 rod actor: the same +0x10 & 0x1000 test ahead of the model-slot store after the draw; the bit is raised at 0x801D1EC8 on every path."

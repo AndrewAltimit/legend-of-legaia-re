@@ -1935,3 +1935,134 @@ fn every_instruction_leaves_the_host_globals_as_retail_leaves_them() {
         );
     }
 }
+
+/// `43 00` / `01` / `0A` / `0B`, the scripted arc jump, against
+/// `ScriptArcRequest::landing`: the landing triple the arm builds at
+/// `sp+0x30` and hands `FUN_801D25EC` (`0x801DF418..0x801DF5B0`), with the
+/// apex, the frame count, the halt mask and the camera-follow class. The
+/// floor sample `FUN_80019278` runs with the actor moved onto the landing
+/// tile, so the hook answers from the actor's `+0x14` / `+0x18` at the call,
+/// and the port's sampler from the `(x, z)` it is handed. Each shipped arc
+/// runs with its tile bytes, apex, frames and Y dealt afresh, half-tile bits
+/// and the hop-in-place `00 00` pair included. The step's own context writes
+/// are `every_instruction_leaves_its_context_as_retail_leaves_it`'s.
+#[test]
+fn the_arc_jump_hands_the_arc_the_landing_retail_hands_it() {
+    use legaia_engine_vm::field_ledge_hop_arc::ScriptArcRequest;
+    differential!(prot(897, VM));
+    let Some(mut cpu) = retail_vm() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    const ARC: u32 = 0x801D_25EC;
+    const FLOOR: u32 = 0x8001_9278;
+    let floor = |x: i16, z: i16| (x as i32 * 3 - z as i32 * 5) as i16;
+    cpu.hook(FLOOR, move |r, m| {
+        let a = r.r[4];
+        r.r[2] = floor(m.rd16(a + 0x14) as i16, m.rd16(a + 0x18) as i16) as i32 as u32;
+    });
+    type Arc = ((i16, i16, i16), i16, i16, u32, u32);
+    let seen = std::rc::Rc::new(std::cell::RefCell::new(None::<Arc>));
+    let s = seen.clone();
+    cpu.hook(ARC, move |r, m| {
+        let (t, sp) = (r.r[5], r.r[29]);
+        let h = |m: &mut psx_retail_exec::Memory, a: u32| m.rd16(a) as i16;
+        *s.borrow_mut() = Some((
+            (h(m, t), h(m, t + 2), h(m, t + 4)),
+            r.r[6] as i16,
+            r.r[7] as i16,
+            m.rd32(sp + 0x14),
+            m.rd32(sp + 0x18),
+        ));
+    });
+    let gp = cpu.regs.r[GP];
+    let clean = cpu.mem.clone();
+    let mut rng = Rng(0x4152_4321);
+    let (mut ran, mut in_place, mut half, mut wide) = (0u32, 0u32, 0u32, 0u32);
+    let mut differ: BTreeMap<String, (u32, String)> = BTreeMap::new();
+    for (script, pc, label) in corpus() {
+        if !matches!(label.as_str(), "43 00" | "43 01" | "43 0A" | "43 0B") {
+            continue;
+        }
+        let operand = pc + 1 + usize::from(script[pc] & 0x80 != 0);
+        for variant in 0..40 {
+            let mut script = script.clone();
+            if variant > 0 {
+                let end = if script[operand] >= 0xA { 8 } else { 6 };
+                let op = &mut script[operand + 1..];
+                if rng.below(6) == 0 {
+                    op[0] = 0;
+                    op[1] = 0;
+                } else {
+                    op[0] = rng.next() as u8;
+                    op[1] = rng.next() as u8;
+                }
+                for b in &mut op[2..end] {
+                    *b = rng.next() as u8;
+                }
+            }
+            let Some(req) = ScriptArcRequest::decode(&script[operand..]) else {
+                continue;
+            };
+            cpu.mem = clean.clone();
+            cpu.regs.r[GP] = gp;
+            cpu.mem.load(SCRIPT, &script);
+            cpu.mem.wr32(CTX + 0x94, SCRIPT);
+            for (name, off, width) in FIELDS {
+                let mut v = rng.next();
+                if name == "flags" {
+                    v &= !0x400;
+                }
+                if width == 2 {
+                    v &= 0xFFFF;
+                } else if width == 1 {
+                    v &= 0xFF;
+                }
+                wr(&mut cpu, off, width, v);
+            }
+            let actor = (
+                rd(&mut cpu, 0x14, 2) as i16,
+                rd(&mut cpu, 0x16, 2) as i16,
+                rd(&mut cpu, 0x18, 2) as i16,
+            );
+            *seen.borrow_mut() = None;
+            if cpu.call(VM, &[SCRIPT, pc as u32, CTX]) != Stop::Returned {
+                continue;
+            }
+            let Some(retail) = *seen.borrow() else {
+                continue;
+            };
+            ran += 1;
+            in_place += u32::from(req.landing_xz().is_none());
+            half += u32::from((req.tile_x | req.tile_z) & 0x80 != 0);
+            wide += u32::from(req.explicit_y.is_some());
+            let t = req.landing(actor, floor);
+            let port = (
+                (t.x, t.y, t.z),
+                req.apex,
+                req.frames,
+                0x400,
+                u32::from(req.camera_follow()),
+            );
+            if retail != port {
+                let e = differ.entry(label.clone()).or_default();
+                e.0 += 1;
+                if e.0 == 1 {
+                    e.1 = format!(
+                        "bytes {:02x?} actor {actor:?}: retail {retail:?} port {port:?}",
+                        &script[pc..(operand + 9).min(script.len())]
+                    );
+                }
+            }
+        }
+    }
+    let report: Vec<String> = differ
+        .iter()
+        .map(|(k, (n, ex))| format!("{k}: {n} e.g. {ex}"))
+        .collect();
+    assert!(report.is_empty(), "{}", report.join("\n"));
+    assert!(
+        ran > 2000 && in_place > 200 && half > 1000 && wide > 200,
+        "{ran} {in_place} {half} {wide}"
+    );
+}

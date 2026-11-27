@@ -744,3 +744,87 @@ fn a_cast_runs_through_the_lure_tick_as_retail_runs_it() {
         "{ends:?} {frames_in:?}"
     );
 }
+
+/// The rod actor `FUN_801D1C5C` alone, one frame at a time from every swing
+/// state, against `RodActor::tick`: the cast dip to `-0x2BC`, the hold, the
+/// recover rise to `0x400` with its retire, and the finished rod; the lift
+/// bleeding to zero from either side and the bend from above, at frame steps
+/// `1..=4`. Compared: the swing word, the bob, the bend, the lift, the pitch
+/// and roll the actor's `+0x24` / `+0x28` carry, the morph weight `+0xA0`
+/// and the retire bit. The matrix, model and draw calls stay stubbed; the
+/// draw itself is `rod_faces`'s.
+#[test]
+fn the_rod_swings_and_bleeds_as_retail_does() {
+    use legaia_engine_fishing::fishing_actors::{RodActor, RodSwing};
+    differential!(prot(972, ROD_TICK));
+    let Some(mut cpu) = rig(Rc::new(Cell::new(0)), Rc::new(Cell::new(0))) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mut rng = Rng(0x524F_4453);
+    let swings = [
+        (1u32, RodSwing::Cast),
+        (2, RodSwing::Hold),
+        (0xA, RodSwing::Recover),
+        (0x14, RodSwing::Done),
+    ];
+    let (mut dipped, mut rose, mut negative_lift, mut bled) = (0u32, 0u32, 0u32, 0u32);
+    for round in 0..40_000 {
+        let (word, swing) = swings[rng.below(4) as usize];
+        let mut rod = RodActor {
+            swing,
+            bob: rng.below(0xA00) as i16 - 0x500,
+            bend: [0, rng.below(0x2000) as i32, -(rng.below(0x100) as i32)][rng.below(3) as usize],
+            lift: rng.below(0x800) as i32 - 0x400,
+            lean: rng.below(0x400) as i32 - 0x200,
+            lean_target: 0,
+            yaw: rng.below(0x800) as i32 - 0x400,
+            tip: None,
+            pose: None,
+        };
+        let step = 1 + rng.below(4);
+        cpu.mem.wr32(SWING, word);
+        cpu.mem.wr16(BOB, rod.bob as u16);
+        cpu.mem.wr32(BEND, rod.bend as u32);
+        cpu.mem.wr32(LIFT, rod.lift as u32);
+        cpu.mem.wr32(SWAY, rod.lean as u32);
+        cpu.mem.wr32(YAW, rod.yaw as u32);
+        cpu.mem.wr8(FRAME_STEP, step as u8);
+        let flags = rng.next() & !0x8;
+        cpu.mem.wr32(ROD_ACTOR + 0x10, flags);
+        let before = rod;
+        assert_eq!(cpu.call(ROD_TICK, &[ROD_ACTOR]), Stop::Returned);
+        rod.tick(None, 0, step as i32);
+        let pose = rod.pose.expect("a ticked rod has a pose");
+        let word_after = swings.iter().find(|s| s.1 == rod.swing).map(|s| s.0);
+        let retail = (
+            cpu.mem.rd32(SWING),
+            cpu.mem.rd16(BOB) as i16,
+            cpu.mem.rd32(BEND) as i32,
+            cpu.mem.rd32(LIFT) as i32,
+            cpu.mem.rd16(ROD_ACTOR + 0x24) as i16,
+            cpu.mem.rd16(ROD_ACTOR + 0x28) as i16,
+            cpu.mem.rd16(ROD_ACTOR + 0xA0) as i16,
+            cpu.mem.rd32(ROD_ACTOR + 0x10) & 8 != 0,
+        );
+        let port = (
+            word_after.unwrap_or(u32::MAX),
+            rod.bob,
+            rod.bend,
+            rod.lift,
+            pose.rot_x,
+            pose.rot_z,
+            pose.weight,
+            before.swing == RodSwing::Recover && rod.retired(),
+        );
+        assert_eq!(retail, port, "round {round} step {step} from {before:?}");
+        dipped += u32::from(before.swing == RodSwing::Cast && rod.swing == RodSwing::Hold);
+        rose += u32::from(port.7);
+        negative_lift += u32::from(before.lift < 0);
+        bled += u32::from(before.lift != 0 && rod.lift == 0);
+    }
+    assert!(
+        dipped > 500 && rose > 500 && negative_lift > 10_000 && bled > 500,
+        "{dipped} {rose} {negative_lift} {bled}"
+    );
+}
