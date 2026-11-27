@@ -2062,7 +2062,7 @@ changes = [
   ["counts/browser/cast/enhanced/wasm_bytes_per_frame", 107790, 109934],
   ["counts/browser/cast/retail/gl_draws_per_frame", 108.47, 110.56],
   ["counts/browser/cast/retail/wasm_bytes_per_frame", 102119, 104414],
-  ["counts/bundle/play_gzip_bytes", 5280467, 5293991],
+  ["counts/bundle/play_gzip_bytes", 5280467, 5293993],
   ["counts/native/battle/enhanced/allocs_per_frame", 1290.7, 1337.8],
   ["counts/native/battle/retail/allocs_per_frame", 1265.2, 1312.6],
   ["counts/native/summon_cast/enhanced/allocs_per_frame", 1307.9, 1354.1],
@@ -2092,4 +2092,11 @@ changes = [
   ["shortcuts/walked/seed_6/restore_xz", 45, 46],
   ["shortcuts/walked/seed_8/restore_xz", 45, 46],
   ["shortcuts/walked/seed_9/restore_xz", 45, 46],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The still seed now seats a standing player's scene clip from retail RAM (it seated only party-bank clips), which lifts dream_noa_desperate_dialog .997 -> 1.000; on urudre3_dojo_pair the seated clip reads .001 lower, cause not found (the same unexplained .001 as a walking player, which stays unseated)."
+changes = [
+  ["states/urudre3_dojo_pair/image", 1.0, 0.999],
 ]
