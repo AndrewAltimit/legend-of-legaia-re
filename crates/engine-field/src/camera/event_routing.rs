@@ -96,10 +96,15 @@ impl Camera {
                         }
                     }
                     let target = RetailCamGlobals::commit_staged(staged);
+                    let after_walk = world.take_glide_arm_after_walk();
                     if apply_trigger == 0 {
                         self.globals = target;
                         self.mover = None;
                     } else {
+                        // A fresh mover linked behind the walk's last node
+                        // steps from the next frame; a live one keeps its
+                        // node and steps this frame.
+                        self.mover_first_step_waits = after_walk && self.mover.is_none();
                         let mut mv = self.mover.take().unwrap_or_default();
                         mv.arm(self.globals.0, target.0, apply_trigger, mode);
                         self.mover = Some(mv);
@@ -136,7 +141,10 @@ impl Camera {
                     apply_trigger,
                     mode,
                 } => {
+                    let after_walk = world.take_glide_arm_after_walk();
+                    let fresh = self.mover.is_none();
                     self.apply_follow_shot(world, apply_trigger, mode);
+                    self.mover_first_step_waits = after_walk && fresh && self.mover.is_some();
                     applied += 1;
                 }
                 // Op `4C D7`: the mover's dead bit. The globals keep the

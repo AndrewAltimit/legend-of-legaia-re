@@ -12,6 +12,47 @@ use legaia_engine_field::camera::*;
 use crate::world::World;
 use legaia_engine_field::field_events::FieldEvent;
 
+impl World {
+    /// Whether an op-`0x45` glide staged now comes from a context the
+    /// frame's actor-list walk has no node after, so the mover it allocates
+    /// (linked at the tail of list `0`, `FUN_80020454`) is not reached this
+    /// frame: a spawned record context (the modal timeline or a helper; the
+    /// record contexts are the newest nodes of list `0`) or a placement's or
+    /// object's record (list `2`, walked after list `0`). The system script's
+    /// slice runs from an earlier node of list `0`, so its glide steps on the
+    /// frame it arms.
+    ///
+    /// Three PCSX-Redux walk films show a record's glide taking its first
+    /// step a game frame after the op: `vozz_genesis_tree_gala_at_tree`
+    /// (`P2[12]`'s `45 C0 74 00` at vsync `434`, the camera first moving at
+    /// `436`), `bylon_mist_gala_goes_ahead` (`62` / `64`) and
+    /// `nilboa_delilas_family_pose` (`176` / `178`).
+    ///
+    /// REF: FUN_801DD310, FUN_80020DE0, FUN_80020454, FUN_8002519C
+    pub(crate) fn glide_armed_after_walk(&self) -> bool {
+        // A placement's or object's record runs on list `2`, walked after
+        // the whole of list `0`, so its mover never steps on the arming frame.
+        if self.dialog.inline.is_some() && !self.field_vm.in_spawned_record_slice {
+            return true;
+        }
+        if !self.field_vm.in_spawned_record_slice {
+            return false;
+        }
+        // A pool actor a record spawned (an op-`0x34` colour tween, say)
+        // links at the tail of list `0` behind the records, so while one
+        // lives the walk goes on past the record and reaches the new mover
+        // the same frame: `taiku2_field_door_hop`'s `P2[0]` fades
+        // (`34 01 ..`) and, twenty vsyncs on, glides from vsync `112`, the
+        // camera moving on `112`. One the scene or the system script spawned
+        // sits ahead of the records and does not count
+        // (`chapter2_garmel_pre_zeto`).
+        !self
+            .actors
+            .iter()
+            .any(|a| a.active && a.spawned_after_records)
+    }
+}
+
 impl CameraWorld for World {
     fn camera_frame_step(&self) -> u8 {
         self.clock.frame_step
@@ -83,6 +124,10 @@ impl CameraWorld for World {
 
     fn credited_frames(&self) -> u64 {
         self.clock.credited_frames
+    }
+
+    fn take_glide_arm_after_walk(&mut self) -> bool {
+        std::mem::take(&mut self.camera.glide_arm_after_walk)
     }
 
     fn display_frames(&self) -> u64 {

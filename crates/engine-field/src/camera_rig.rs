@@ -95,6 +95,17 @@ pub struct CameraRig {
     /// (noaru's ice-floor backdrop). The three-actor talk's leader swap
     /// writes it when it moves the focus onto the new leader.
     pub focus_stored: [i32; 2],
+    /// Set by an op-`0x45` glide (Configure with `apply != 0`, Apply) staged
+    /// from a context the actor-list walk has no node after: a spawned
+    /// record context, the last node of list `0`, or a placement's or
+    /// object's record on list `2`. The mover the op allocates
+    /// (`FUN_801DD310` -> `FUN_80020DE0`) links at the tail of list `0`
+    /// (`FUN_80020454`), and the walk `FUN_8002519C` reads each node's next
+    /// pointer before its tick (`0x800251D8`), so a mover linked behind the
+    /// last node visited takes its first step on the next frame. The field
+    /// camera takes it with the glide it arms
+    /// ([`crate::camera::CameraWorld::take_glide_arm_after_walk`]).
+    pub glide_arm_after_walk: bool,
 }
 
 impl CameraRig {
@@ -111,6 +122,7 @@ impl CameraRig {
             zone_requests: Vec::new(),
             script_focus: [0, 0],
             focus_stored: [0, 0],
+            glide_arm_after_walk: false,
         }
     }
 }

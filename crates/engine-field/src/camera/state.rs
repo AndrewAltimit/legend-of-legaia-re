@@ -150,6 +150,10 @@ pub struct Camera {
     /// advances in retail display frames rather than sim ticks (retail's
     /// `DAT_1F800393` credit - see `camera_mover`'s module docs).
     pub(super) last_field_frame: u64,
+    /// The mover just armed takes no step this frame: its retail actor was
+    /// linked behind the walk's last node
+    /// ([`crate::camera_rig::CameraRig::glide_arm_after_walk`]).
+    pub(super) mover_first_step_waits: bool,
     /// Display frame the follow ease last banked to: the ease counts its
     /// passes on the vsync clock, not on the mover's credited one, which
     /// lands a whole step at once.
@@ -485,6 +489,7 @@ impl Default for Camera {
             globals: RetailCamGlobals::default(),
             mover: None,
             last_field_frame: 0,
+            mover_first_step_waits: false,
             last_display_frame: 0,
             script_owns_focus: false,
             knob_blend: KNOB_BLEND_FULL,

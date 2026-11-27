@@ -88,6 +88,8 @@ impl FieldHostImpl<'_> {
         // marks every live mover dead.
         // REF: FUN_801DE084
         self.world.camera.state.glide_frames = i32::from(apply_trigger);
+        self.world.camera.glide_arm_after_walk =
+            apply_trigger > 0 && self.world.glide_armed_after_walk();
         // The event still carries only THIS beat's params (the per-beat delta):
         // the `Camera` controller's `route_camera_events` applies them per-axis
         // onto its own persistent eye/look-at, matching the same retail model.

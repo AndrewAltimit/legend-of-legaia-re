@@ -138,10 +138,12 @@ impl World {
     /// player. Top-down keeps the two populations apart in the one pool.
     pub fn spawn_handler_actor(&mut self, handler: ActorHandler) -> Option<usize> {
         let slot = self.actors.iter().rposition(|a| !a.active)?;
+        let after_records = self.field_vm.in_spawned_record_slice;
         let a = &mut self.actors[slot];
         *a = Actor::new();
         a.active = true;
         a.handler = handler;
+        a.spawned_after_records = after_records;
         Some(slot)
     }
 
