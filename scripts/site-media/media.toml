@@ -1,0 +1,209 @@
+# Site media manifest: the hero montage clips and the game-screenshot tiles.
+#
+# Read by `site-media.py` beside this file. Every clip is a `legaia-engine
+# play-window` run in the default (enhanced) mode, its frames taken every
+# `every` world ticks (100 ticks a second; 5 ticks = the montage's 20 fps),
+# or a movie segment through `mdec decode-str` (`str = "MOV/..."`).
+#
+# Clip fields:
+#   name      cache directory and `--only` handle
+#   caption   what the clip shows (the README / home page alt text lists these)
+#   scene     `--scene` (the scene picker's entry: full party, story flags staged)
+#   args      further play-window flags (`--battle`, `--party`, cheats, ...)
+#   pad       `--pad-script` (TICK:BUTTON, FIRST-LAST:BUTTON holds)
+#   keys      `--key-script` (minigame hotkeys: K dance, O slots, L fishing, B Baka Fighter)
+#   from, to  the tick window kept for the montage (the run stops at `to`)
+#   cut       true = hard cut into this clip instead of the cross-fade
+#   str, start_frame, end_frame, fps   a movie clip (the window is in montage ticks)
+#
+# Tile fields: `file` under site/img/tiles/, `size` [w, h] (kept as the file's
+# own), `clip` + `tick` to take a montage clip's frame, or a run of its own
+# with the clip fields above and `tick` naming its frame.
+
+[defaults]
+fps = 20
+every = 5
+crossfade_frames = 5
+poster_frame = 24
+
+[defaults.video]
+webm_bitrate = "760k"
+mp4_bitrate = "800k"
+
+[defaults.webp]
+# The README embeds the animated webp; at the videos' size it runs to tens
+# of MB, so it is a smaller, slower cut of the same frames.
+width = 560
+height = 420
+fps = 12
+max_bytes = 4800000
+quality = [75, 68, 60, 52, 45, 38]
+
+[[clip]]
+name = "rimelm"
+caption = "Rim Elm"
+scene = "town01"
+pad = "40-400:Up,40-400:Right"
+from = 80
+to = 330
+
+[[clip]]
+name = "worldmap"
+caption = "the world map"
+scene = "map01"
+pad = "20-400:Up"
+from = 60
+to = 260
+
+[[clip]]
+name = "caruban"
+caption = "a burst into the Caruban boss fight"
+scene = "rikuroa"
+args = ["--battle", "17", "--cheat-level", "40", "--cheat-restore", "--no-player-battle"]
+from = 140
+to = 380
+
+[[clip]]
+name = "arts"
+caption = "Vahn's Somersault and Cyclone arts"
+scene = "map03"
+args = ["--battle", "first", "--party", "vahn", "--cheat-level", "30", "--cheat-arts", "--cheat-max-ap", "--cheat-restore"]
+pad = "370:Cross,400:Left,430:Right,460:Up,475:Down,490:Up,505:Up,520:Up,535:Down,550:Up,580:Cross,620:Cross,660:Cross,700:Cross"
+from = 720
+to = 960
+
+[[clip]]
+name = "gimard"
+caption = "a Gimard summon"
+scene = "map03"
+args = ["--battle", "first", "--party", "vahn", "--learn-spell", "0x81", "--cheat-level", "30", "--cheat-restore"]
+pad = "370:Cross,400:Right,440:Cross,480:Cross,520:Cross,560:Cross"
+from = 1060
+to = 1300
+
+[[clip]]
+name = "viguro"
+caption = "a Viguro summon"
+scene = "map03"
+args = ["--battle", "first", "--party", "vahn", "--learn-spell", "0x87", "--cheat-level", "30", "--cheat-restore"]
+pad = "370:Cross,400:Right,440:Cross,480:Cross,520:Cross,560:Cross"
+from = 880
+to = 1120
+
+[[clip]]
+name = "flyover"
+caption = "the flight down to Snowdrift Cave after the Caruban fight"
+scene = "rikuroa"
+args = ["--battle", "17", "--cheat-level", "99", "--cheat-restore", "--no-player-battle"]
+pad = "1450:Cross,1520:Cross,1590:Cross,1660:Cross,1730:Cross,1800:Cross"
+from = 1900
+to = 2140
+
+[[clip]]
+name = "menu"
+caption = "the pause menu and status screen"
+scene = "town01"
+pad = "60:Start,150:Down,170:Down,190:Down,220:Cross,300:Cross"
+from = 100
+to = 300
+args = ["--cheat-level", "25"]
+
+[[clip]]
+name = "newgame"
+caption = "the port's New Game setup and its tabs"
+args = ["--boot-ui"]
+pad = "420:Start,760:Start,860:Start,1090:Right"
+keys = "930:W,990:W,1050:W"
+from = 830
+to = 1180
+
+[[clip]]
+name = "dance"
+caption = "Noa's dance"
+scene = "town01"
+keys = "30:K"
+pad = "400:Cross,500:Cross,600:Cross,700:Cross"
+from = 1240
+to = 1480
+
+[[clip]]
+name = "slots"
+caption = "the slot machine"
+scene = "town01"
+keys = "30:O"
+pad = "150:Cross,250:Square,290:Cross,330:Circle"
+from = 140
+to = 340
+args = ["--cheat-coins", "500"]
+
+[[clip]]
+name = "fishing"
+caption = "fishing"
+scene = "town01"
+keys = "30:L"
+pad = "200:Cross,300:Cross,400-460:Cross,600:Cross"
+from = 140
+to = 380
+
+[[clip]]
+name = "baka"
+caption = "Baka Fighter"
+scene = "town01"
+keys = "30:B"
+pad = "300:Start,400:Cross,500:Cross,600:Square,614:Cross,628:Circle,642:Square,656:Cross,670:Circle,684:Square,698:Cross,712:Circle,726:Square,740:Cross,754:Circle,768:Square,782:Cross,796:Circle,810:Square,824:Cross,838:Circle,852:Square,866:Cross,880:Circle,894:Square,908:Cross,922:Circle,936:Square,950:Cross,964:Circle,978:Square,992:Cross"
+from = 470
+to = 670
+
+[[clip]]
+name = "movie"
+caption = "the opening movie"
+str = "MOV/MV1.STR"
+from = 1000
+to = 1240
+
+# Game-screenshot tiles on the home page. The other tiles are app or
+# asset-viewer screenshots (explorer, viewer, patcher, media, disc-map, world,
+# wo, chars, npcs, monsters, shops, arts, magic) or expansion-pack modes
+# (modes-*), and are not shot here.
+
+[[tile]]
+name = "play-main"
+file = "play-main.jpg"
+size = [960, 720]
+clip = "rimelm"
+tick = 250
+
+[[tile]]
+name = "play-side1"
+file = "play-side1.jpg"
+size = [640, 480]
+clip = "gimard"
+tick = 1180
+
+[[tile]]
+name = "play-side2"
+file = "play-side2.jpg"
+size = [640, 480]
+clip = "worldmap"
+tick = 200
+
+[[tile]]
+name = "mg-main"
+file = "mg-main.jpg"
+size = [960, 720]
+clip = "dance"
+tick = 1400
+
+[[tile]]
+name = "mg-side1"
+file = "mg-side1.jpg"
+size = [640, 480]
+clip = "slots"
+tick = 250
+
+[[tile]]
+name = "mg-side2"
+file = "mg-side2.jpg"
+size = [640, 480]
+clip = "fishing"
+tick = 205

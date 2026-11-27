@@ -36,6 +36,7 @@ not analysis one-offs:
 | `models/` | Blender-side mesh generators for the custom monster-model track (`generate_twintail_duelist.py`, `lu_twintails_mod.py`) - authoring companions to `legaia-patcher monster-model`. |
 | `profile/` | CPU sampling profiler for a machine where `perf` is refused: `sampler.c` (an `LD_PRELOAD` library) and `report.py` (self / inclusive by symbol). Usage in [`docs/tooling/build-and-test-speed.md`](../docs/tooling/build-and-test-speed.md#profiling-without-perf). |
 | `engine/` | Engine-side `scenarios.toml` for the determinism replay harness (distinct from the capture manifest above). |
+| `site-media/` | `site-media.py` shoots the site's hero montage (`site/assets/hero-montage.*`, poster `hero.jpg`) and the game-screenshot tiles from the port (`play-window --screenshot-every`, `mdec decode-str` for the movie), clips and tiles listed in `media.toml`; frames stay under `captures/`. |
 | `replays/` | `j-replay-v1` record/replay fixtures for the determinism tests, plus the committed ladder baselines the disc-gated replay tests ratchet (`*_baseline.toml`, e.g. `full_game_baseline.toml` for [`full-game-ladder.md`](../docs/tooling/full-game-ladder.md)) and the spine scripts they drive (`chapter1_spine.toml`, `full_game_spine.toml`). |
 
 ### ci/
