@@ -255,7 +255,7 @@ name = "w_magic"
 page = "magic.html"
 disc = true
 prep = [{ waitFor = "document.querySelectorAll('.summon-card').length > 10" }, { scrollTo = "#stage" },
-        { eval = "[...document.querySelectorAll('.summon-card')].find(b => /Viguro/.test(b.textContent)).click()" }, { wait = 1500 }]
+        { eval = "[...document.querySelectorAll('.summon-card')].find(b => /Vera/.test(b.textContent)).click()" }, { wait = 3500 }]
 steps = [{ wait = 7000 }]
 seconds = 7
 crop = [340, 120, 940, 529]
