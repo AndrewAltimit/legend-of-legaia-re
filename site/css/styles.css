@@ -3584,6 +3584,10 @@ kbd {
 
 /* Disc slot:THE prominent global "insert your .bin" affordance. One place,
    instead of a NEEDS-DISC label repeated on every tile. */
+/* The home page's tour video (#tour): a framed 16:9 player, not autoplayed. */
+.tour-video { max-width: 960px; margin: 0 auto; border: 1px solid var(--line-soft); border-radius: 10px; overflow: hidden; background: #0b0e13; }
+.tour-video video { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; }
+
 .disc-slot {
   margin-top: 0.9rem;
   display: flex;

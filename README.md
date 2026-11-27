@@ -6,6 +6,10 @@
 
 [![The port in motion: Rim Elm, the Drake Kingdom world map, a burst into the Caruban boss fight, Vahn's Somersault and Cyclone arts, a Gimard summon, a Viguro summon, the flight down to Snowdrift Cave after Caruban, the pause menu and status screen, the port's New Game setup and its randomizer tab, Noa's dance, the slot machine, fishing, Baka Fighter and the opening movie](site/assets/hero-montage.webp)](https://andrewaltimit.github.io/legend-of-legaia-re/)
 
+**Watch the 72-second tour, with sound:** the port, the minigames, the desktop apps, the browser tools and the docs, all recorded from the project itself.
+
+[![A tour of the project: the native port, the minigames, menus and movies, the New Game setup, Legaia Explorer, the browser port and viewers, the game-data pages, the documentation maps and the expansion workbench](site/img/teaser-poster-play.jpg)](https://andrewaltimit.github.io/legend-of-legaia-re/assets/teaser.mp4)
+
 This repository is code and documentation only. **You bring the disc**: nothing Sony owns is committed or distributed, and everything browser-side reads your image locally in the tab - it is never uploaded. See [You bring the disc](#you-bring-the-disc).
 
 ## What you can do with it

@@ -54,6 +54,17 @@ audio_rms = 0.12
 [video]
 crf = 17
 
+# The committed copy the site's home page plays and the README links to
+# (`teaser.py --web`): 720p at a size git can carry, and a poster frame.
+[web]
+video = "site/assets/teaser.mp4"
+poster = "site/img/teaser-poster.jpg"
+poster_play = "site/img/teaser-poster-play.jpg"
+width = 1280
+crf = 27
+audio_bitrate = "112k"
+poster_frame = 380
+
 # ------------------------------------------------------------ game (engine)
 
 [[shot]]

@@ -16,16 +16,20 @@ Every window opens on that private display, so a run leaves the desktop alone.
 Each shot is cached under a hash of its row (and its binary), so an edited
 row re-shoots only itself. Scenes then lay the shots out as titled grids, and
 the frames are encoded to `--out` (default `captures/teaser/teaser.mp4`).
+`--web` also writes the site's smaller copy and its poster (`[web]`), which
+are committed: the master is too large for git.
 
     scripts/site-media/teaser.py                       # shoot what changed, compose, encode
     scripts/site-media/teaser.py --only ex_arts --sheet   # re-shoot one shot, preview sheet
     scripts/site-media/teaser.py --no-shoot --scenes 3    # recompose one scene from the cache
     scripts/site-media/teaser.py --build               # cargo build the binaries first
+    scripts/site-media/teaser.py --no-shoot --web      # also refresh the site's copy and poster
 
 Needs `LEGAIA_DISC_BIN` and an `extracted/` tree, a built site (`site/wasm`
 and `python3 site/_gen.py`), playwright-core (see `scripts/ci/browser-session.mjs`),
 Xvfb, xdotool, ffmpeg and Pillow. The output holds game footage rendered from
-the disc: it lives under `captures/` (gitignored) and is not committed.
+the disc: the master lives under `captures/` (gitignored); only the `--web`
+copy is committed, as the hero montage is.
 """
 import argparse
 import hashlib
@@ -793,6 +797,34 @@ def encode(seq, fps, out, v):
     log(f"{out}: {out.stat().st_size / 1e6:.1f} MB")
 
 
+def web_copy(master, seq, w):
+    """The site's copy: the master scaled down and re-encoded small enough to
+    commit (`[web]` in the manifest), and a poster frame."""
+    dest = REPO / w["video"]
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    site_media.run(["ffmpeg", "-loglevel", "error", "-y", "-i", str(master),
+                    "-vf", f"scale={w['width']}:-2:flags=lanczos", "-c:v", "libx264", "-preset", "slow",
+                    "-crf", str(w.get("crf", 27)), "-profile:v", "high", "-pix_fmt", "yuv420p",
+                    "-movflags", "+faststart", "-c:a", "aac", "-b:a", w.get("audio_bitrate", "128k"), str(dest)])
+    poster = REPO / w["poster"]
+    poster.parent.mkdir(parents=True, exist_ok=True)
+    frames = sorted(seq.glob("*.jpg"))
+    pick = frames[min(len(frames) - 1, int(w.get("poster_frame", 0)))]
+    Image.open(pick).resize((w["width"], w["width"] * 9 // 16), Image.LANCZOS).save(poster, quality=85, optimize=True)
+    if w.get("poster_play"):
+        # The README's still: the poster with a play button, since a README
+        # cannot play the video in place and links out to it.
+        im = Image.open(poster).convert("RGBA")
+        ov = Image.new("RGBA", im.size, (0, 0, 0, 0))
+        d = ImageDraw.Draw(ov)
+        cx, cy, r = im.size[0] // 2, im.size[1] // 2, im.size[1] // 9
+        d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=(8, 12, 20, 200), outline=(*hexrgb("#e3b54a"), 255), width=max(3, r // 14))
+        k = r * 0.42
+        d.polygon([(cx - k * 0.7, cy - k), (cx - k * 0.7, cy + k), (cx + k, cy)], fill=(255, 255, 255, 255))
+        Image.alpha_composite(im, ov).convert("RGB").save(REPO / w["poster_play"], quality=85, optimize=True)
+    log(f"{dest}: {dest.stat().st_size / 1e6:.1f} MB; poster {poster}")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--manifest", type=Path, default=HERE / "teaser.toml")
@@ -805,6 +837,7 @@ def main():
     ap.add_argument("--scenes", help="comma-separated scene indexes to re-render (the others reuse their frames)")
     ap.add_argument("--sheet", action="store_true", help="a preview sheet per shot shot and per scene")
     ap.add_argument("--silent", action="store_true", help="no soundtrack")
+    ap.add_argument("--web", action="store_true", help="also write the site's copy and poster ([web] in the manifest)")
     ap.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 4) - 2))
     ap.add_argument("--build", action="store_true", help="cargo build the engine, mdec, Explorer and the asset viewer")
     a = ap.parse_args()
@@ -875,7 +908,10 @@ def main():
     v = dict(m.get("video", {}))
     if not a.silent:
         v["audio"] = str(soundtrack(scenes, shots, work, fps, style, n, work / "soundtrack.wav"))
-    encode(seq, fps, a.out or work / "teaser.mp4", v)
+    out = a.out or work / "teaser.mp4"
+    encode(seq, fps, out, v)
+    if a.web:
+        web_copy(out, seq, m["web"])
 
 
 if __name__ == "__main__":
