@@ -691,12 +691,15 @@ pub(super) fn pad_walk(
             // eight units a frame over its own earlier cells, west round the
             // P1[16] plug, and read as stalled after 300 of them.
             visited.clear();
-            // So are the rides: a walk the fights keep re-planning from
-            // where each one left it rides the same lift again on purpose.
-            // `tower`'s lift maze (seed 13) took three fights on one walk to
-            // `teien`, re-rode (10, 75) -> (9, 47) after each, and read the
-            // fourth landing as a loop.
+            // So are the rides and the scripts on the way: a walk the fights
+            // keep re-planning from where each one left it rides the same
+            // lift again on purpose. `tower`'s lift maze took three fights on
+            // one walk to `teien` (seed 13), re-rode (10, 75) -> (9, 47) after
+            // each and read the fourth landing as a loop; with seven fights
+            // (part C) the lift's own script at (9, 47) read as fired 25
+            // times for nothing.
             landings.clear();
+            refires.clear();
             best = dist(here(session));
             continue;
         }
