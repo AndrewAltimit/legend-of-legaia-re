@@ -1519,6 +1519,7 @@ impl PlayWindowApp {
         // `LEGAIA_DIAG_CAST_PARTS=1`: `tint.csv` (no header), per tick and
         // per retail seat 0..7 the tint state machine's words - colour
         // `+0x04`, blend `+0x0C`, state `+0x21C`, impact selector `+0x21F` -
+        // then the Arts banner's stage and level (`ctx[+0x28B]` / `+0x28C`):
         // the engine half of the probe's `tint.csv` (`--retail-parts`).
         if std::env::var_os("LEGAIA_DIAG_CAST_PARTS").is_some()
             && let Ok(f) = std::fs::OpenOptions::new()
@@ -1549,7 +1550,13 @@ impl PlayWindowApp {
             {
                 cols[7] = tint(a);
             }
-            let _ = writeln!(f, "{tick},{}", cols.join(","));
+            let _ = writeln!(
+                f,
+                "{tick},{},{},{}",
+                cols.join(","),
+                w.battle_ctx.arts_banner_stage,
+                w.battle_ctx.arts_banner_level
+            );
         }
         // `rates.csv` (no header): per tick, then per retail seat 0..7 the
         // animation rate `+0x21D` and the node cursor `+0x68` (`-1` with no

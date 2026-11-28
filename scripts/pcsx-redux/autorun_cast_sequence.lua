@@ -303,11 +303,13 @@ function probe.cast_parts_row(cast_seen, elapsed, st7, cx)
     end
     -- tint.csv: per vsync and per pool slot 0..7 the tint state machine's
     -- words (FUN_80050120): colour +0x04, blend +0x0C, state +0x21C, impact
-    -- selector +0x21F (`-1` columns for an empty slot).
+    -- selector +0x21F (`-1` columns for an empty slot); then the Arts
+    -- banner's stage and level ctx[+0x28B] / ctx[+0x28C] (FUN_801E2524).
     if probe.cast_tint == nil then
         local cols = {}
         for k = 0, 7 do cols[#cols + 1] = string.format("s%dcol,s%dblend,s%dstate,s%dsel", k, k, k, k) end
-        probe.cast_tint = probe.csv_open(probe.out_path("tint.csv"), "vsync,st7,phase," .. table.concat(cols, ","))
+        probe.cast_tint = probe.csv_open(probe.out_path("tint.csv"),
+            "vsync,st7,phase," .. table.concat(cols, ",") .. ",banner_stage,banner_level")
     end
     local tint = {}
     for k = 0, 7 do
@@ -318,7 +320,8 @@ function probe.cast_parts_row(cast_seen, elapsed, st7, cx)
             tint[#tint + 1] = "-1,-1,-1,-1"
         end
     end
-    probe.cast_tint:row("%d,%d,%d,%s", elapsed, st7, u8(cx + 0x279), table.concat(tint, ","))
+    probe.cast_tint:row("%d,%d,%d,%s,%d,%d", elapsed, st7, u8(cx + 0x279), table.concat(tint, ","),
+        u8(cx + 0x28B), u8(cx + 0x28C))
     local pool = u32(0x8007BD30)
     if pool >= 0x80000000 and pool < 0x80200000 then
         for k = 0, 127 do
