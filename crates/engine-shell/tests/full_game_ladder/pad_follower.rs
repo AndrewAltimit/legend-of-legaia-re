@@ -691,6 +691,12 @@ pub(super) fn pad_walk(
             // eight units a frame over its own earlier cells, west round the
             // P1[16] plug, and read as stalled after 300 of them.
             visited.clear();
+            // So are the rides: a walk the fights keep re-planning from
+            // where each one left it rides the same lift again on purpose.
+            // `tower`'s lift maze (seed 13) took three fights on one walk to
+            // `teien`, re-rode (10, 75) -> (9, 47) after each, and read the
+            // fourth landing as a loop.
+            landings.clear();
             best = dist(here(session));
             continue;
         }
@@ -1350,6 +1356,14 @@ pub(super) fn pad_walk(
         if d < best || visited.insert(cell_of(px, pz)) {
             best = best.min(d);
             since = 0;
+        } else if session.host.world.battle_intro_owns_frame() {
+            // A fight rolled on the walk holds the player through its intro
+            // (the transition, until the battle opens): those frames are the
+            // fight's, not the walk's, and the fight's own return re-judges
+            // the walk. Counted,
+            // a walk back over its own cells into the tower's lift (`tower`
+            // (32, 41), seed 13) tipped past the stall on the intro's frames
+            // and wrote the lift off as a dead contact.
         } else {
             since += 1;
             if since >= PAD_STALL_FRAMES {
