@@ -1719,6 +1719,22 @@ therefore the arts shout's census ratio (`ARTS_SHOUT_CENSUS_RATIO_MILLI`, `3.2`)
 `345` / `445` where retail's work between the interrupt spans is `136` / `650` (arms 5 and 9), so a ratio
 change moves its steps and the `rand()` picks behind them. Grade `capture`.
 
+Megaton Press's arms are not mis-counted. A `--gpu-cost` recording of it holds each frame's
+GPU table, and the census lands within `3%` of the table's polygons on every arm but two:
+arm 5's table holds `694` where the census counts `369` (and arm 6's `335`, the census `332`),
+and arm 11's `1399` against `1541`. Arm 5's extra primitives are not the party seat its arms 5
+and 6 hide (`+0x21C = 0xFF` on seat 0 from arm 5's first frame on both sides) and cost the
+frame about `17` hblanks over arm 6's. The `345` the recorder's `work` reads on arms 5 and 7 is
+the arm table's measured base, not the census's. What the census cannot read is where the
+frame waits: arm 15 is unpolled and costs `736` where its census work is `385`, because the
+GPU draws its `2331` polygons in about `690` hblanks and the frame waits on `DrawSync`; the
+polled arms 9 to 11 stretch past their census by the polls' share. Both run on the arm table's
+step, so neither the GPU wait (`WorldToggles::battle_gpu_cost_step`) nor a poll ratio moves the
+film's timing, only the line's wall-clock span: on the census ratio over the leaves' work
+Megaton Press reads `.943` to `.933` and Plasma Strike, the same duel, `.923` to `.906`, while
+Lapis Wave reads `.987` to `.997`, Zeto's Big Wave `.972` to `.985` and Orb's Heal `.948` to
+`.959`. Grade `capture`.
+
 Port: `frame_clock::polygon_frame_work` (`POLY_FRAME_BASE`, `POLY_WORK_MILLI`) and
 `xa_polled_work_cost` (`XA_POLL_WORK_RATIO_MILLI`), behind
 `WorldToggles::battle_poly_frame_cost` (`LEGAIA_BATTLE_POLY_COST=1`). The count is the
