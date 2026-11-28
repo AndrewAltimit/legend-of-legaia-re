@@ -130,12 +130,33 @@ tables, of the `1385` untextured semi prims `65` carry an ABR the last `E1` does
 not name, and all of them sit among a battle body's own packets while its colour
 word forces semi-transparency (the near-camera pass `0x83000000`, the capture
 fade): the body's textured prims carry the monster's TMD ABR `1` ORed with the
-word's, and the body's untextured groups follow in that mode. The port draws a
-battle body's textured prims only (`tmd_to_vram_mesh_posed_rot` and the rest
-mesh skip a prim with no UVs), so none of those reaches a host. Every other
-untextured semi prim the port draws follows an `E1` or a textured prim at ABR
-`0`: the overworld pointer (`world_map_display_map01_retail`), the screen
-washes and fades. The dispatcher never writes ABR into an untextured packet
+word's, and the body's untextured groups follow in that mode. Every other
+untextured semi prim follows an `E1` or a textured prim at ABR `0`: the
+overworld pointer (`world_map_display_map01_retail`), the screen washes and
+fades.
+
+**A battle body's untextured half.** The body draw `FUN_80048A08` hands every
+group of the body's TMD to the prim dispatcher, the `F*` / `G*` ones to its
+untextured leaves, while the textured builders (`tmd_to_vram_mesh_posed_rot`,
+the rest mesh) skip a prim with no UVs. So both hosts draw the untextured groups
+as a second mesh of the same body, under the same word, cue, NCLIP word and
+floor clip (`battle_draws::battle_body_color_mesh` and its posed twin; natively
+`build_battle_body_color_meshes`, on the page a companion scene mesh posed by
+its own object ids from the `play_battle_actor_color_*` streams). Each blend
+word carries the ABR the body's textured packets leave in the register
+(`legaia_tmd::mesh::textured_abr`, `1` on every monster that has such groups),
+and the colour word's ABE and ABR OR over it
+(`BattleActorDrawPlan::apply_body_blend_color`); the opaque body keeps the
+groups opaque. Songi, Tetsu, the Ogres, Spoon, Jette and Cort carry untextured
+groups (`4` to `20` triangles each), and so does a party form: the grey `G4`s
+retail draws under the near-camera pass beside a faded Scale Lizard, Kabuki Rat or
+Acid Slime are the party body's own, linked among the monster's buckets. The
+halves are small - on the battle stills the image channel moves nowhere, and
+the largest change is `152` pixels of `battle_map03_scale_lizard_earthquake_mid_cast`,
+which close on retail's. A header walk skips a body with no untextured group,
+and a body with one costs a `20`-triangle build a frame (about `35` µs for
+Songi). Not modelled: the after-image ghosts' and a shattering body's
+untextured halves. The dispatcher never writes ABR into an untextured packet
 (`apply_render_state_color` in `summon/part_draw.rs`), so the port's mode `0`
 is the carried mode for each of them.
 
@@ -151,8 +172,14 @@ The Call Wave film's (`garmel_zeto_pre_call_wave__55`) dark disc behind Zeto is
 not a draw-mode case: retail draws it as a textured `GT4` (`0x3E`, page `0x3F`,
 the default arm's patch at ABR `1`), the port draws the same packets the same way,
 and on the pairs where both hold the same ring radii the frames agree. The
-capture-3 drop is the ring emitter's expand-to-contract switch, which retail
-takes about seventeen frames sooner.
+drop is pacing: every ring (`0x801F7928`, `0x801F79C0`, `0x801F7A08`) closes in
+from `2048` at its record's channel rates, `-512` a pass at the step's `8`ths,
+and the caller `0x801F78CC` seats a set every eleven vsyncs, so a ring's radius
+is the frame step's sum. Retail's step falls from `4` to `3` at vsync `531`, the
+pass after its frame cost leaves the XA stream's clamp (`700` from vsync `37`,
+`494` vsyncs for clip `10`'s `479`); the port holds the clamp `519` ticks, to
+the capture-3 opening, so its rings run a step long for about forty vsyncs
+([frame span](battle-stage-camera.md#a-frames-span)).
 
 **A draw can force semi-transparency on every prim.** Retail's prim
 dispatcher `FUN_80043390` reads the actor's colour word (`+0x74`) top byte as
