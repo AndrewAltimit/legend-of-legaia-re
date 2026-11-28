@@ -126,3 +126,29 @@ entry = "0x80034E4C"
 range = "0x80034EF0..0x80034F04"
 verdict = "unreachable"
 reason = "The nine-place decimal writer's leading-zero arm reads gp+0x15C, which the routine sets to 1 at its entry (0x80034E7C) and after every cell it draws (0x80034F68) and clears only at its exit; the glyph call FUN_8003C11C between stores nothing there, so `bnez` at 0x80034EF0 is always taken and the suppression arm behind it (0x80034EF8..0x80034F10) is dead: the writer always prints all nine places."
+
+[[arm]]
+entry = "0x801F0450"
+image = "a1445dd6c9461d8b"
+range = "0x801F048C..0x801F048C"
+verdict = "unreachable"
+reason = "PROT 0898 auto-combo fill: the per-seat loop is skipped when ctx[+0] (the party count) is zero; a battle always seats at least one member."
+
+[[arm]]
+entry = "0x801F0450"
+image = "a1445dd6c9461d8b"
+range = "0x801F06F0..0x801F06F0"
+verdict = "unreachable"
+reason = "PROT 0898 auto-combo fill: the pool arm exits on a zero roster id at 0x8007BD10[seat] for a seat below ctx[+0]; the party seats are packed from 0, so every seat the loop visits holds a member and the exit is never taken."
+
+[[arm]]
+entry = "0x801DBD94"
+range = "0x801DBDC4..0x801DBDC4"
+verdict = "unreachable"
+reason = "PROT 0899 sell stepper: the step switch's case chain on the pause step word 0x801E46AC: past `beq 1` and `slti 2`, `beqz` sees a step below 1, and the word is only ever stored as 0..6 or incremented from those, so the default `j` behind it is dead."
+
+[[arm]]
+entry = "0x80034358"
+range = "0x80034504..0x80034504"
+verdict = "unreachable"
+reason = "The arts list's AP numeral: the place walk's zero-terminator exit on the first word of the power table at 0x80073DCC, which is 400000000; the exit never fires."

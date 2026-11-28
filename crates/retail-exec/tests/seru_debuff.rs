@@ -77,6 +77,9 @@ fn a_stager_call_stages_what_retail_stages() {
         let spell = 0x81 + rng.below(0x0B) as u8;
         let level = 1 + rng.below(9) as u8;
         let summon_el = rng.below(7) as u8;
+        // The spell sits anywhere in the learned list, behind other Seru
+        // spells (the level walk `0x801F3DB0..0x801F3DCC`).
+        let at = rng.below(11) as usize;
         let scripted = rng.below(2) == 0;
         let monsters = 1 + rng.below(4) as u8;
         let els: [u8; 4] = std::array::from_fn(|_| rng.below(8) as u8);
@@ -112,8 +115,23 @@ fn a_stager_call_stages_what_retail_stages() {
             cpu.mem.wr8(rec + 0x13D + i, 0);
             cpu.mem.wr8(rec + 0x161 + i, 0);
         }
-        cpu.mem.wr8(rec + 0x13D, spell);
-        cpu.mem.wr8(rec + 0x161, level);
+        let mut ids = [0u8; 11];
+        let mut levels = [0u8; 11];
+        let mut other = 0x81u8;
+        for k in 0..at {
+            if other == spell {
+                other += 1;
+            }
+            ids[k] = other;
+            levels[k] = 1 + rng.below(9) as u8;
+            other += 1;
+        }
+        ids[at] = spell;
+        levels[at] = level;
+        for k in 0..=at {
+            cpu.mem.wr8(rec + 0x13D + k as u32, ids[k]);
+            cpu.mem.wr8(rec + 0x161 + k as u32, levels[k]);
+        }
         cpu.mem.wr32(SUMMON_RECORD, MONSTER + 4 * 0x80);
         cpu.mem.wr8(MONSTER + 4 * 0x80 + 0x1D, summon_el);
         for m in 0..4u32 {
@@ -143,8 +161,9 @@ fn a_stager_call_stages_what_retail_stages() {
         // Port.
         let mut party = Party::zeroed(3);
         let mut list = party.members[usize::from(caster)].spell_list();
-        list.ids[0] = spell;
-        list.levels[0] = level;
+        list.ids[..=at].copy_from_slice(&ids[..=at]);
+        list.levels[..=at].copy_from_slice(&levels[..=at]);
+        list.count = at as u8 + 1;
         party.members[usize::from(caster)].set_spell_list(list);
         w.load_party(party);
         w.enter_battle(3, monsters);
