@@ -23,8 +23,17 @@
 //! ```text
 //! R  test  entry  image-hash  branches  jump-tables  truncated
 //! B  test  entry  image-hash  branch-pc  mask      (1 = taken, 2 = fell through)
+//! G  test  entry  image-hash  branch-pc      (a divide guard, below)
 //! T  test  milliseconds from the first routine noted to the thread's end
 //! ```
+//!
+//! A `G` line marks one of the compiler's divide guards: the `bnez divisor`
+//! over `break 7`, and the `bne divisor,-1` / `bne dividend,0x80000000` pair
+//! over `break 6`, that every `div` / `divu` carries. No shipped game state
+//! takes the trap side of the first, and only a divisor of `-1` tells the
+//! second's two directions apart, so `scripts/ci/branch-coverage.py` takes
+//! them out of the ported arms (and so out of the checked-arms population)
+//! the way a scope row would. They stay in the `R` count and the `B` lines.
 //!
 //! The `T` line is the test's run time, which `scripts/ci/checked-arms.py` uses to
 //! pick the cheapest tests to rerun under a [`branch_flip`](crate::branch_flip).
@@ -84,6 +93,7 @@ pub(crate) fn is_conditional(w: u32) -> bool {
 
 struct Routine {
     branches: Vec<(u32, u32)>,
+    guards: Vec<u32>,
     jump_tables: u32,
     truncated: bool,
 }
@@ -117,6 +127,9 @@ impl Drop for Table {
                     "B\t{name}\t{entry:08x}\t{hash:016x}\t{:08x}\t{mask}\n",
                     key.0
                 ));
+            }
+            for pc in &r.guards {
+                out.push_str(&format!("G\t{name}\t{entry:08x}\t{hash:016x}\t{pc:08x}\n"));
             }
         }
         if let Some(t) = self.started {
@@ -192,6 +205,40 @@ fn ahead_in_routine(mem: &mut Memory, seen: &HashSet<u32>, entry: u32, target: u
         pc = pc.wrapping_add(4);
     }
     true
+}
+
+/// `break 7`, the divide-by-zero trap.
+const BREAK_7: u32 = 0x0007_000D;
+/// `break 6`, the divide-overflow trap.
+const BREAK_6: u32 = 0x0006_000D;
+/// `lui at,0x8000`, the overflow guard's dividend constant.
+const LUI_AT_8000: u32 = 0x3C01_8000;
+
+/// Whether the conditional branch `w` at `pc` is one of the compiler's divide
+/// guards: `bnez rs,+2` over `break 7`, `bne rs,at,+4` with `lui at,0x8000`
+/// in its slot ahead of the `break 6` its partner guards, or that partner
+/// `bne rs,at,+2` over `break 6`.
+fn is_divide_guard(mem: &mut Memory, pc: u32, w: u32) -> bool {
+    let op = w >> 26;
+    let rt = (w >> 16) & 31;
+    let imm = w & 0xFFFF;
+    if op != 5 {
+        return false;
+    }
+    let mut at = |o: u32| {
+        let v = mem.rd32(pc.wrapping_add(o));
+        if mem.bad.take().is_some() {
+            None
+        } else {
+            Some(v)
+        }
+    };
+    match (rt, imm) {
+        (0, 2) => at(8) == Some(BREAK_7),
+        (1, 2) => at(8) == Some(BREAK_6),
+        (1, 4) => at(4) == Some(LUI_AT_8000) && at(16) == Some(BREAK_6),
+        _ => false,
+    }
 }
 
 fn walk(mem: &mut Memory, entry: u32) -> Routine {
@@ -300,8 +347,14 @@ fn walk(mem: &mut Memory, entry: u32) -> Routine {
             pc = pc.wrapping_add(4);
         }
     }
+    let guards = branches
+        .iter()
+        .filter(|&&(pc, w)| is_divide_guard(mem, pc, w))
+        .map(|&(pc, _)| pc)
+        .collect();
     Routine {
         branches: branches.into_iter().collect(),
+        guards,
         jump_tables,
         truncated,
     }
@@ -385,6 +438,37 @@ mod tests {
         );
         let r = walk(&mut mem, base);
         assert_eq!(pcs(&r), [base + 0x18]);
+    }
+
+    /// A `div`'s three guards are marked; an ordinary `bnez` is not.
+    #[test]
+    fn the_divide_guards_are_marked() {
+        let mut mem = Memory::default();
+        let base = 0x8001_0000;
+        routine(
+            &mut mem,
+            base,
+            &[
+                0x0045_001A, // 00 div v0,a1
+                0x14A0_0002, // 04 bnez a1,+2
+                0x0000_0000, // 08
+                0x0007_000D, // 0C break 7
+                0x2401_FFFF, // 10 addiu at,zero,-1
+                0x14A1_0004, // 14 bne a1,at,+4
+                0x3C01_8000, // 18 lui at,0x8000
+                0x1441_0002, // 1C bne v0,at,+2
+                0x0000_0000, // 20
+                0x0006_000D, // 24 break 6
+                0x0000_3812, // 28 mflo a3
+                0x14E0_0002, // 2C bnez a3,+2 (no trap behind it)
+                0x0000_0000, // 30
+                0x03E0_0008, // 34 jr ra
+                0x0000_0000, // 38
+            ],
+        );
+        let r = walk(&mut mem, base);
+        assert_eq!(pcs(&r), [base + 4, base + 0x14, base + 0x1C, base + 0x2C]);
+        assert_eq!(r.guards, [base + 4, base + 0x14, base + 0x1C]);
     }
 
     /// Case arms only the table reaches are swept up to the epilogue.

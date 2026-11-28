@@ -74,6 +74,7 @@ class Routine:
         self.masks: dict[str, int] = defaultdict(int)
         self.tests: set[str] = set()
         self.scoped: set[str] = set()
+        self.guards: set[str] = set()
 
     def counts(self, scoped: bool = False) -> tuple[int, int, int]:
         ms = [m for pc, m in self.masks.items() if not (scoped and pc in self.scoped)]
@@ -96,7 +97,7 @@ def read(path: Path) -> dict[tuple[str, str], Routine]:
     out: dict[tuple[str, str], Routine] = {}
     for line in path.read_text().splitlines():
         f = line.split("\t")
-        if f[0] not in ("R", "B"):
+        if f[0] not in ("R", "B", "G"):
             continue  # `T` (a test's run time) is checked-arms.py's
         key = (f[2], f[3])
         if f[0] == "R":
@@ -104,6 +105,8 @@ def read(path: Path) -> dict[tuple[str, str], Routine]:
             r.tests.add(f[1])
         elif f[0] == "B":
             out[key].masks[f[4]] |= int(f[5])
+        elif f[0] == "G":
+            out[key].guards.add(f[4])
     return out
 
 
@@ -130,8 +133,12 @@ def load_scope(path: Path = SCOPE) -> list[dict]:
     return rows
 
 
-def apply_scope(table: dict[tuple[str, str], Routine], rows: list[dict]) -> None:
+def apply_scope(table: dict[tuple[str, str], Routine], rows: list[dict], guards: bool = True) -> None:
+    """Mark the branches each row covers, and (unless `guards` is false) the
+    compiler's divide guards the walk found, as out of the ported arms."""
     for (_, h), r in table.items():
+        if guards:
+            r.scoped |= r.guards & set(r.masks)
         for row in rows:
             if row["entry"] != r.entry or (row["image"] and row["image"] != h):
                 continue
@@ -234,7 +241,9 @@ def routine_report(table, entry: str, worksheet: bool, rows: list[dict]) -> None
                 scope = [row for row in rows if row["entry"] == e and row["lo"] <= x <= row["hi"]
                          and (not row["image"] or row["image"] == h)]
                 cited = [loc for loc, lo, hi, _ in tags if lo and lo <= x <= hi]
-                if scope:
+                if pc in r.guards:
+                    note = "  [divide guard]"
+                elif scope:
                     note = f"  [scope: {scope[0]['verdict']}]"
                 elif cited:
                     note = f"  [cited: {cited[0]}{' +' if len(cited) > 1 else ''}]"
@@ -274,6 +283,8 @@ def main() -> int:
     ap.add_argument("--addr", help="one routine's branches")
     ap.add_argument("--worksheet", help="one routine's branches with tag ranges and scope rows")
     ap.add_argument("--check-scope", action="store_true", help="validate the rows under branch-coverage-scope/")
+    ap.add_argument("--keep-divide-guards", action="store_true",
+                    help="count the compiler's divide guards in the ported arms (the figure before they left)")
     args = ap.parse_args()
     if args.record:
         return record(args.table)
@@ -282,7 +293,7 @@ def main() -> int:
         return 2
     table = read(args.table)
     rows = load_scope()
-    apply_scope(table, rows)
+    apply_scope(table, rows, not args.keep_divide_guards)
     if args.check_scope:
         return check_scope(table, rows)
     if args.addr or args.worksheet:
@@ -295,8 +306,11 @@ def main() -> int:
           f"{len(tagged)} routine image(s), {sum(1 for r in tagged if r.jump_tables)} with a jump table, "
           f"{sum(1 for r in tagged if r.truncated)} walk(s) truncated")
     summary("all branches", tagged, False)
-    scoped_n = sum(len(r.scoped) for r in tagged)
+    guard_n = 0 if args.keep_divide_guards else sum(len(r.guards & set(r.masks)) for r in tagged)
+    scoped_n = sum(len(r.scoped) for r in tagged) - guard_n
     print(f"  {len(rows)} scope row(s) take {scoped_n} branch(es) out (unported / unreachable / cannot-drive)")
+    if guard_n:
+        print(f"  {guard_n} divide guard(s) out (`bnez` over `break 7`, `bne` -1 / 0x80000000 over `break 6`)")
     summary("ported arms", tagged, True)
     with_branches = [r for r in tagged if len(r.masks) - len(r.scoped) > 0]
     print("  routines by ported-arm coverage:",

@@ -72,7 +72,7 @@ mod save_flags;
 mod scripted_seats;
 mod walk_film;
 mod walk_rewind;
-pub use minigame_run::RetailMinigame;
+pub use minigame_run::{RetailMinigame, run_minigame_listening};
 pub use scripted_seats::*;
 #[cfg(test)]
 mod tests;

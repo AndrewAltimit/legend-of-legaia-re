@@ -543,7 +543,21 @@ impl<S: AudioSink> BootSession<S> {
         if self.host.world.cast_drive_blocks_frame() {
             return Some(SfxFrameReport::default());
         }
+        // A New Game's `LaunchFade`: the title theme under the black takes
+        // the arm's level store after the frame's apply, and the launch
+        // frame (the fade handed over) ends the hold.
+        let launch = self.host.world.launch_fade.map(|f| f.ramp);
+        if launch.is_none() && bgm.launch_holding() {
+            bgm.end_launch_hold();
+        }
         let report = bgm.tick_audio_frame(configured);
+        if let Some(ramp) = launch
+            && bgm.launch_holding()
+        {
+            bgm.store_audio_level(legaia_engine_menus::save_select::launch_fade_music_level(
+                ramp,
+            ));
+        }
         for (id, voice) in &report.fired {
             log::debug!("SFX cue {id:#04x} fired on voice {voice}");
         }

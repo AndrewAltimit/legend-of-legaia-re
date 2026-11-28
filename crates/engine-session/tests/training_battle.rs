@@ -539,6 +539,15 @@ fn training_reaches_battle_via_interaction_probe() {
     session.host.world.actors[pslot].move_state.world_x = cx;
     session.host.world.actors[pslot].move_state.world_z = cz;
 
+    // The talk probe sits behind the player tick's walk gate: stand out the
+    // post-load pad hold `_DAT_8007B6B4` first.
+    for _ in 0..0x40 {
+        if session.host.world.field_warp_words().1 == 0 {
+            break;
+        }
+        session.host.world.input.set_pad(0);
+        let _ = session.host.world.tick();
+    }
     // Talk: the probe opens the carrier's dialogue and arms the engage.
     session.host.world.input.set_pad(PadButton::Cross.mask());
     let _ = session.host.world.tick();

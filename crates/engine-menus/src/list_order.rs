@@ -172,14 +172,18 @@ impl ListOrderSession {
                 self.cursor = cursor as usize;
                 ListOrderEvent::Moved
             }
+            // Retail tests the two page keys one after the other
+            // (`0x801DA8AC` Right, `0x801DA92C` Left), so both at once page
+            // forward and then back.
             CursorNav::None => {
+                let mut event = ListOrderEvent::None;
                 if pressed & PadButton::Right.mask() != 0 {
-                    self.page_forward()
-                } else if pressed & PadButton::Left.mask() != 0 {
-                    self.page_back()
-                } else {
-                    ListOrderEvent::None
+                    event = self.page_forward();
                 }
+                if pressed & PadButton::Left.mask() != 0 {
+                    event = self.page_back();
+                }
+                event
             }
         };
         self.clamp_window();

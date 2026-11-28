@@ -738,6 +738,18 @@ fn object_clips_back(ram: &[u8], lag_frames: u16) -> Vec<ObjectClipSeed> {
 /// `0x80020534`). `record` is `0` for a party-bank clip and `1` for one of
 /// the scene's own records (the bit down: `dream`'s Noa on scene clip `6`).
 pub fn retail_player_clip(ram: &[u8]) -> Option<ObjectClipSeed> {
+    player_clip_seed(ram, true)
+}
+
+/// The player's clip words as the RAM holds them, for a seat that runs on
+/// from the state's own pass (the walk film's): no rewind to the displayed
+/// frame and no skip of a walking player, whose position the film seats
+/// from the same RAM.
+pub fn retail_player_clip_ram(ram: &[u8]) -> Option<ObjectClipSeed> {
+    player_clip_seed(ram, false)
+}
+
+fn player_clip_seed(ram: &[u8], displayed: bool) -> Option<ObjectClipSeed> {
     let p = game_anchors::player_ptr(ram)?;
     let scene = game_anchors::u32_at(ram, p + 0x10)
         & legaia_engine_field::field_player_clip::PARTY_BANK_FLAG
@@ -746,7 +758,8 @@ pub fn retail_player_clip(ram: &[u8]) -> Option<ObjectClipSeed> {
     // `+0x18` where the tick began, `+0x1C` / `+0x20`): a script walking the
     // player (`credits_rimelm_walkaway_pcsx`) draws its pose beside a
     // position the seat does not take back to the displayed frame.
-    if scene
+    if displayed
+        && scene
         && (game_anchors::u16_at(ram, p + 0x14) != game_anchors::u16_at(ram, p + 0x1C)
             || game_anchors::u16_at(ram, p + 0x18) != game_anchors::u16_at(ram, p + 0x20))
     {
@@ -759,16 +772,21 @@ pub fn retail_player_clip(ram: &[u8]) -> Option<ObjectClipSeed> {
     let frames = game_anchors::u16_at(ram, rec + 2);
     let gated = game_anchors::u8_at(ram, rec + 1) & 1 != 0;
     let div = game_anchors::u8_at(ram, rec + 6);
-    let cursor = rewind_clip_cursor(
-        game_anchors::i16_at(ram, p + 0x68),
-        flags,
-        frames,
-        clip_display_lag_units(
-            legaia_engine_vm::actor_tick::clip_step(rate as u16, gated, div),
-            crate::retail_compare_battle::frame_step(ram).max(1),
-            crate::retail_compare_battle::DISPLAY_LAG_PASSES,
-        ),
-    );
+    let raw = game_anchors::i16_at(ram, p + 0x68);
+    let cursor = if displayed {
+        rewind_clip_cursor(
+            raw,
+            flags,
+            frames,
+            clip_display_lag_units(
+                legaia_engine_vm::actor_tick::clip_step(rate as u16, gated, div),
+                crate::retail_compare_battle::frame_step(ram).max(1),
+                crate::retail_compare_battle::DISPLAY_LAG_PASSES,
+            ),
+        )
+    } else {
+        raw
+    };
     (1..0x100).contains(&clip).then_some(ObjectClipSeed {
         record: u16::from(scene),
         clip: clip as u8,

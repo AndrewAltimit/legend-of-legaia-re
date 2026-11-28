@@ -430,7 +430,15 @@ impl World {
         // context resumed by the same touch, so it takes the same state-1
         // snap (`town0c` `P1[21]`, Nene's "Bees!" beat, turns to the player
         // before the Queen Bee ambush).
-        self.face_field_npc_at_player(slot);
+        // The script runner snaps the talker when its record lands on a text
+        // byte, after any prologue ops ([`Self::snap_talker_to_player`]); the
+        // inline runner makes that snap. Without it (the simplified
+        // dialogue) or for a boss stager, the touch snaps.
+        if self.toggles.use_vm_dialogue && !self.props.boss_stagers.contains_key(&slot) {
+            self.save_talk_facing(slot);
+        } else {
+            self.face_field_npc_at_player(slot);
+        }
         // A pack map's NPC talks through the pack, not a MAN record.
         if self.expansion_npc_interact(interact_id, slot) {
             return;
@@ -657,6 +665,23 @@ impl World {
         if self.script_context_engages_player() {
             return;
         }
+        // The rest of the walk gate the controller sits behind: the system
+        // lock `0x1F800394 & 0x400`, a kind-0 warp in flight and the pad
+        // hold `_DAT_8007B6B4` (`0x801D16C8..0x801D16E4`). The script
+        // runner's release leaves that hold at `0x10` frames, so a press in
+        // the half second after a record lets the player go talks to no one:
+        // retail's `vozz` Genesis Tree record releases the player at vsync
+        // `555`, ignores a Cross at `560` with the hold at `10`, and takes
+        // one at `570` on the frame the hold reaches `0`.
+        //
+        // REF: FUN_801D1344 (`0x801D16C8..0x801D16E4`)
+        if !legaia_engine_field::field_warp_tile::player_tick_walks(
+            false,
+            self.flags.story_flags & crate::world::save::FIELD_SYSTEM_LOCK_BIT != 0,
+            &self.locomotion.warp,
+        ) {
+            return;
+        }
         // Retail geometry: a single facing-indexed compass probe 64 units
         // ahead, box-tested at ±72 against each NPC
         // ([`Self::field_interact_probe_slot`]). A hit posts the touch event
@@ -665,11 +690,17 @@ impl World {
         // (`flags & 0x20010 == 0x20000`), which every talk NPC is
         // (capture-pinned by `rimelm_npc_press_tetsu`).
         if !self.npcs.positions.is_empty()
-            && let Some(npc_slot) = self.field_interact_probe_slot()
+            && let Some((npc_slot, at)) = self.field_interact_probe_hit()
         {
             self.dialog.input_consumed = true;
             self.trigger_field_interact(0, npc_slot);
-            self.face_field_npc(npc_slot);
+            // Toward the actor the probe landed in (the `+0x98` partner):
+            // a talk proxy's own spot, not its speaker's. `casino`'s ticket
+            // counter talk runs a speaker a thousand units to the player's
+            // left, and retail's touch turns the player a few degrees, toward
+            // the counter's proxy.
+            // REF: FUN_801D5B5C
+            self.face_field_point(at);
             return;
         }
         // The same button probe fires the **interact-gated props** (retail's

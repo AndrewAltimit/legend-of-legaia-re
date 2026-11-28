@@ -448,6 +448,10 @@ impl SceneHost {
                             // re-arm the fade.
                             acted += 1;
                         }
+                        super::BGM_SUB_OP_ENGINE_DECRESCENDO => {
+                            director.decrescendo(super::BGM_DECRESCENDO_AMOUNT, i32::from(text_id));
+                            acted += 1;
+                        }
                         super::BGM_SUB_OP_ENGINE_STOP => {
                             self.bgm_latched = None;
                             self.bgm_ending_source = false;

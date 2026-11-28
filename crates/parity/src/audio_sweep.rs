@@ -150,6 +150,14 @@ pub struct RetailAudio {
     pub cue_sounds: usize,
     /// Sounding sequence-owned voices.
     pub seq_voices: u32,
+    /// The card manager's `LaunchFade` under a Continue's Load, when the
+    /// state stands in it: the hold word `0x801EF104` and the ramp word
+    /// `0x801EF154`, read when master mode `0x17` holds sub-mode `0x16`
+    /// (`0x801F0204`) with the result word `0x801EF158` on a load and the
+    /// title's entry word `0x8007BB00` up - the arm that stores the live
+    /// audio level ([`crate::retail_compare::run_front_end_listening`]).
+    #[serde(default)]
+    pub card_launch: Option<(i32, i32)>,
 }
 
 /// What the engine's director is doing after the seed.
@@ -167,6 +175,14 @@ pub struct EngineAudio {
     pub bgm_voices_peak: u32,
     /// Every cue id that keyed a voice during the settle window.
     pub cues_fired: BTreeSet<u16>,
+    /// The same keys in order, each on the listener's tick count (the
+    /// audio frames heard so far): the cue timeline a retail key-on census
+    /// (`autorun_keyon_census.lua`'s `cuekey` rows) lines up against.
+    #[serde(default)]
+    pub cue_ticks: Vec<(u32, u16)>,
+    /// Audio frames heard ([`listen_frame`] calls).
+    #[serde(default)]
+    pub ticks: u32,
     /// `(sfx, bgm)` sounding-voice counts of the last [`LISTEN_SPAN`] ticks.
     #[serde(skip)]
     recent: Vec<(u32, u32)>,
@@ -378,6 +394,11 @@ impl RetailAudio {
             cue_voices,
             cue_sounds,
             seq_voices,
+            card_launch: (rd16(0x8007_B83C) == 0x17
+                && rd32(0x801F_0204) == 0x16
+                && rd32(0x801E_F158) == 1
+                && rd32(0x8007_BB00) != 0)
+                .then(|| (rd32(0x801E_F104) as i32, rd32(0x801E_F154) as i32)),
         }
     }
 
@@ -399,15 +420,18 @@ impl RetailAudio {
 /// Frames of one 60 Hz video frame at the SPU rate.
 const FRAMES_PER_TICK: usize = (SPU_INTERNAL_RATE / 60) as usize;
 /// The span, in ticks before the sample, the sounding-voice peaks cover.
-const LISTEN_SPAN: usize = (SETTLE_TICKS / 2) as usize;
+pub(crate) const LISTEN_SPAN: usize = (SETTLE_TICKS / 2) as usize;
 
 /// One settle tick of the listener: the play hosts' audio frame
 /// ([`legaia_engine_session::BootSession::step_audio_frame`], which both
 /// hosts run once per sim tick), one video frame of samples pulled through
 /// the output's mix core, then the SPU's sounding voices by bus.
 pub fn listen_frame<S: AudioSink>(session: &mut BootSession<S>, obs: &mut EngineAudio) {
+    obs.ticks += 1;
     if let Some(r) = session.step_audio_frame() {
         obs.cues_fired.extend(r.fired.iter().map(|(id, _)| *id));
+        let t = obs.ticks;
+        obs.cue_ticks.extend(r.fired.iter().map(|(id, _)| (t, *id)));
     }
     let Some(d) = session.bgm.as_ref() else {
         return;
@@ -662,7 +686,26 @@ pub fn run_sweep(
             row.channels = c;
             row.detail = d;
         }
-        if !matches!(obs.class, StateClass::Field | StateClass::WorldMap) {
+        // A minigame is seeded as the image corpus seeds it: the venue's
+        // card load, the warp and the phase's drive.
+        if obs.class == StateClass::Minigame {
+            match crate::retail_compare::run_minigame_listening(extracted, &obs, &cdname, None) {
+                Ok(engine) => {
+                    let (c, d) = score(&row.retail, &engine, &bank);
+                    row.channels = c;
+                    row.detail = d;
+                    row.engine = Some(engine);
+                }
+                Err(e) => row.unseeded = Some(format!("seed failed: {e:#}")),
+            }
+            return row;
+        }
+        // A menu state is the field seed with the screen driven open, as
+        // the image corpus drives it, and is heard on the screen.
+        if !matches!(
+            obs.class,
+            StateClass::Field | StateClass::WorldMap | StateClass::Menu
+        ) {
             row.unseeded = Some(format!("{:?}: not a walkable state", obs.class));
             return row;
         }
@@ -674,13 +717,29 @@ pub fn run_sweep(
             .iter()
             .find(|sc| sc.label == entry.label)
             .and_then(|sc| sc.arrival.as_ref());
+        // No track word yet: the front end, which no field seed reaches.
+        let front_end = obs.class == StateClass::Menu && row.retail.track_word == 0;
         let run = match door {
-            Some(d) => crate::retail_compare::run_engine_listening_through_door(extracted, &obs, d),
-            None => crate::retail_compare::run_engine_listening(extracted, &obs),
+            _ if front_end => crate::retail_compare::run_front_end_listening(
+                extracted,
+                &obs,
+                row.retail.card_launch,
+            )
+            .map(|a| ((), a)),
+            Some(d) => crate::retail_compare::run_engine_listening_through_door(extracted, &obs, d)
+                .map(|(_, a)| ((), a)),
+            None => {
+                crate::retail_compare::run_engine_listening(extracted, &obs).map(|(_, a)| ((), a))
+            }
         };
         match run {
             Ok((_, engine)) => {
-                let (c, d) = score(&row.retail, &engine, &bank);
+                let (mut c, mut d) = score(&row.retail, &engine, &bank);
+                // A menu screen is seated, not pressed to: the cue a retail
+                // press left ringing is drive history the seat has none of.
+                if obs.class == StateClass::Menu && c.remove("ambient").is_some() {
+                    d.remove("ambient");
+                }
                 row.channels = c;
                 row.detail = d;
                 row.engine = Some(engine);
@@ -803,6 +862,34 @@ mod tests {
         assert!(a.seqs.is_empty());
         assert!(a.cue_voices.is_empty());
         assert_eq!(a.seq_voices, 0);
+    }
+
+    /// A state inside a Continue's `LaunchFade` hands its hold and ramp to
+    /// the front-end seat; the same words outside sub-mode `0x16`, or on the
+    /// pause menu's Load (entry word down), hand nothing.
+    #[test]
+    fn a_continue_load_state_reads_its_launch_position() {
+        let mut ram = row_ram();
+        let put32 = |ram: &mut [u8], va: u32, v: u32| {
+            let o = (va & 0x1F_FFFF) as usize;
+            ram[o..o + 4].copy_from_slice(&v.to_le_bytes());
+        };
+        put32(&mut ram, 0x8007_B83C, 0x17);
+        put32(&mut ram, 0x801F_0204, 0x16);
+        put32(&mut ram, 0x801E_F158, 1);
+        put32(&mut ram, 0x8007_BB00, 1);
+        put32(&mut ram, 0x801E_F104, 63);
+        put32(&mut ram, 0x801E_F154, 0);
+        let bank = TrackBank { tracks: Vec::new() };
+        assert_eq!(
+            RetailAudio::from_ram(&ram, &bank, None).card_launch,
+            Some((63, 0))
+        );
+        put32(&mut ram, 0x8007_BB00, 0);
+        assert_eq!(RetailAudio::from_ram(&ram, &bank, None).card_launch, None);
+        put32(&mut ram, 0x8007_BB00, 1);
+        put32(&mut ram, 0x801F_0204, 0x0B);
+        assert_eq!(RetailAudio::from_ram(&ram, &bank, None).card_launch, None);
     }
 
     /// Two records of one cue with no SPU envelope to vouch for them (a

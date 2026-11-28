@@ -373,3 +373,41 @@ fn a_door_entered_fishing_session_has_the_prize_exchange() {
         );
     }
 }
+
+/// The door-entered venue plays its own music on the page, through the
+/// director both hosts share: the warp releases the departure's track
+/// (`FUN_800266E0(0x8007052C)` in the fishing init `FUN_801CF070`,
+/// `0x801CF26C..0x801CF274`) and the shore starts the venue's track, which the
+/// init stages at the asset buffer's head (raw TOC `0x3EF`,
+/// `0x801CF2CC..0x801CF2E0`), whatever the departure scene played. The
+/// venue's own event-scripts container is the runtime SFX bank.
+#[test]
+fn a_door_entered_fishing_session_plays_the_venue_track() {
+    let Some(mut rt) = loaded_in_town() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    // The page's director, as `audio_init` builds it (off wasm, over the
+    // device-free sink).
+    assert!(rt.audio_director().is_some(), "the page's director builds");
+    for _ in 0..4 {
+        rt.tick_frame().expect("tick_frame");
+    }
+    let venue = legaia_engine_mode::minigame_entry::FISHING_VENUE_BGM_ID;
+    assert!(rt.play_mg_debug_warp(0), "a scene must be loaded");
+    let mut started = None;
+    for _ in 0..240 {
+        rt.tick_frame().expect("tick_frame");
+        started = rt.scene_host.director().and_then(|d| d.last_started);
+        if started == Some(venue) {
+            break;
+        }
+    }
+    assert_eq!(rt.scene_mode(), "Fishing", "the door warp lands in fishing");
+    assert_eq!(started, Some(venue), "the shore starts the venue's track");
+    assert!(
+        rt.debug_session()
+            .is_some_and(|s| !s.host.world.minigames.fishing_sfx_bundle.is_empty()),
+        "the venue's own SFX bank is installed"
+    );
+}

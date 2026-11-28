@@ -522,6 +522,13 @@ impl World {
         self.resync_ambient_start_headings();
     }
 
+    /// One frame's channel-lifetime sweep: the queued `4C D2` re-seats, then
+    /// the retires.
+    #[cfg(feature = "test-drivers")]
+    pub fn drive_field_channel_sweep(&mut self) {
+        self.sweep_field_channel_lifetimes();
+    }
+
     /// Whether placement `slot`'s context has retired this visit.
     pub fn field_placement_retired(&self, slot: u8) -> bool {
         self.field_vm

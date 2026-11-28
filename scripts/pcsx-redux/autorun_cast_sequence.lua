@@ -301,6 +301,27 @@ function probe.cast_parts_row(cast_seen, elapsed, st7, cx)
         probe.cast_fxpool = probe.csv_open(probe.out_path("fxpool.csv"),
             "vsync,st7,phase,slot,frames,cursor,x,y,z")
     end
+    -- tint.csv: per vsync and per pool slot 0..7 the tint state machine's
+    -- words (FUN_80050120): colour +0x04, blend +0x0C, state +0x21C, impact
+    -- selector +0x21F (`-1` columns for an empty slot); then the Arts
+    -- banner's stage and level ctx[+0x28B] / ctx[+0x28C] (FUN_801E2524).
+    if probe.cast_tint == nil then
+        local cols = {}
+        for k = 0, 7 do cols[#cols + 1] = string.format("s%dcol,s%dblend,s%dstate,s%dsel", k, k, k, k) end
+        probe.cast_tint = probe.csv_open(probe.out_path("tint.csv"),
+            "vsync,st7,phase," .. table.concat(cols, ",") .. ",banner_stage,banner_level")
+    end
+    local tint = {}
+    for k = 0, 7 do
+        local a = u32(ACTOR_TABLE + 4 * k)
+        if a >= 0x80000000 and a < 0x80200000 then
+            tint[#tint + 1] = string.format("0x%08X,0x%04X,%d,%d", u32(a + 0x04), u32(a + 0x0C), u8(a + 0x21C), u8(a + 0x21F))
+        else
+            tint[#tint + 1] = "-1,-1,-1,-1"
+        end
+    end
+    probe.cast_tint:row("%d,%d,%d,%s,%d,%d", elapsed, st7, u8(cx + 0x279), table.concat(tint, ","),
+        u8(cx + 0x28B), u8(cx + 0x28C))
     local pool = u32(0x8007BD30)
     if pool >= 0x80000000 and pool < 0x80200000 then
         for k = 0, 127 do
@@ -330,6 +351,36 @@ function probe.cast_parts_row(cast_seen, elapsed, st7, cx)
             n = u32(n)
         end
     end
+end
+-- LEGAIA_WATCH_W's breakpoint: who stores this byte, per write.
+function probe.arm_watch(addr)
+    probe.arm_breakpoint(addr, "Write", 1, "watch", function()
+        local R = PCSX.getRegisters()
+        local n = R.GPR.n
+        local function w(v)
+            v = tonumber(v) or 0
+            return v < 0 and v + 0x100000000 or v
+        end
+        local c = u32(CTX_PTR)
+        probe.watch_csv:row("%d,%d,0x%08X,0x%08X,0x%08X,0x%08X,0x%08X,0x%08X", probe.cast_elapsed or 0,
+            c >= 0x80000000 and u8(c + 7) or -1, addr, w(R.pc), w(n.ra), w(n.v0), w(n.v1), w(n.a1))
+    end)
+end
+-- The seat-relative watches (`sN+0xOFF`), armed once their slot holds an actor.
+function probe.arm_pending_watches()
+    local pending = probe.watch_pending
+    if pending == nil or #pending == 0 then return end
+    local left = {}
+    for _, e in ipairs(pending) do
+        local a = u32(ACTOR_TABLE + 4 * e[1])
+        if a >= 0x80000000 and a < 0x80200000 then
+            PCSX.log(string.format("[cast-seq] watch s%d+0x%X at 0x%08X", e[1], e[2], a + e[2]))
+            probe.arm_watch(a + e[2])
+        else
+            left[#left + 1] = e
+        end
+    end
+    probe.watch_pending = left
 end
 local function ptr_ok(p) return p >= 0x80000000 and p < 0x80200000 end
 local function ctxp()
@@ -576,20 +627,18 @@ probe.run({
         -- LEGAIA_WATCH_W="addr,addr": who stores these bytes (breakpoint core).
         local watch_w = probe.getenv("LEGAIA_WATCH_W", "")
         if watch_w ~= "" then
-            local watch_csv = probe.csv_open(probe.out_path("watch.csv"), "vsync,st7,addr,pc,ra,v0,v1,a1")
+            probe.watch_csv = probe.csv_open(probe.out_path("watch.csv"), "vsync,st7,addr,pc,ra,v0,v1,a1")
+            probe.watch_pending = {}
             for word in string.gmatch(watch_w, "[^,]+") do
-                local addr = tonumber(word)
-                probe.arm_breakpoint(addr, "Write", 1, "watch", function()
-                    local R = PCSX.getRegisters()
-                    local n = R.GPR.n
-                    local function w(v)
-                        v = tonumber(v) or 0
-                        return v < 0 and v + 0x100000000 or v
-                    end
-                    local c = u32(CTX_PTR)
-                    watch_csv:row("%d,%d,0x%08X,0x%08X,0x%08X,0x%08X,0x%08X,0x%08X", probe.cast_elapsed or 0,
-                        c >= 0x80000000 and u8(c + 7) or -1, addr, w(R.pc), w(n.ra), w(n.v0), w(n.v1), w(n.a1))
-                end)
+                -- `sN+0xOFF`: pool slot N's actor (`0x801C9370[N]`) plus OFF,
+                -- armed on the first frame the slot holds an actor (a seat's
+                -- +0x34 live x, say); a plain address arms now.
+                local seat, off = string.match(word, "^s(%d)%+(0x%x+)$")
+                if seat ~= nil then
+                    probe.watch_pending[#probe.watch_pending + 1] = { tonumber(seat), tonumber(off) }
+                else
+                    probe.arm_watch(tonumber(word))
+                end
             end
         end
         if probe.getenv_num("LEGAIA_CALC_CLOCK", 0) ~= 0 then
@@ -1171,6 +1220,7 @@ probe.run({
             probe.frame_cost_newest(), u8(cx + 0x26D))
         if cast_seen then probe.cast_seats:row(elapsed, actor) end
         probe.cast_parts_row(cast_seen, elapsed, st7, cx)
+        probe.arm_pending_watches()
         probe.gpu_cost_row(elapsed, st7, cx)
         -- creature.csv: pool slot 7's clip, staged byte, cursor and stand, the
         -- engine recorder's file of the same name.

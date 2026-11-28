@@ -1815,6 +1815,19 @@ prices a voiced field frame at `work * 263 / 96 + 263` (`FIELD_XA_CD_HBLANKS_PER
 | `garmel` `P2[12]`, Zeto's appearance | 90, mean `6.16` vsyncs | 90, `6.16` |
 | record 14, Zeto's defeat | 65, mean `5.82` | 66, `5.85` |
 
+The frame that starts the line is a loaded frame too. The one-shot `FUN_8003D53C` runs from
+the record's op `0x36` inside the frame and issues its seek and read commands there, and the
+clip's polls take the rest of it: the Zeto's-defeat trace reads the one-shot at vsync `166`, that
+frame's CPU time `1109` hblanks against `347..361` for the frames before it and `1122..1167`
+for the frames after, and the frame runs `5` vsyncs at step `2`. The pacer stores that time in
+its ring, so the next frame already runs at step `4`. The engine prices a field frame as it
+opens, before its scripts, so a line the frame's own scripts start stretches the frame after
+the fact and replaces its ring sample (`World::stretch_frame_for_xa_start`,
+`FrameStepTelemetry::revise_last`). Priced unloaded, that frame stayed two vsyncs long and the
+step stayed `2`, and every loaded frame of the line ran on another grid than retail's: filmed
+camera rows off retail fall from `531` to `204` over Zeto's defeat (`700` vsyncs), `281` to `38`
+over the shorter defeat film and `112` to `48` over the approach.
+
 The appearance's shortfall is the actor draw pass. A per-routine profile of the same line
 ([`autorun_field_frame_profile.lua`](../../scripts/pcsx-redux/autorun_field_frame_profile.lua),
 Cross every 20 vsyncs as the trace ran) reads `FUN_8001D140`, called once a frame for each

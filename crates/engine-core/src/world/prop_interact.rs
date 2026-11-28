@@ -575,7 +575,9 @@ impl World {
                 } else {
                     // Still typing or scrolling: the pager's skip latch
                     // completes the page (`legaia_engine_dialog::dialog_window`).
-                    panel.confirm_while_typing();
+                    if !panel.opening_call_now() {
+                        panel.confirm_while_typing();
+                    }
                 }
             }
             if id.done && id.player_glide.is_none() {
@@ -662,6 +664,7 @@ impl World {
                             HeldBox::next_line_panel(id.held_box.take(), &id.bytecode, id.pc);
                         panel.substitutions = host.world.dialog_substitutions(&id.bytecode);
                         host.world.apply_dialog_window_format(&mut panel);
+                        host.world.seat_opening_pager_call(&mut panel);
                         id.panel = Some(panel);
                         break;
                     }
@@ -1744,6 +1747,34 @@ impl World {
             usize::from(rows)
         };
         panel.set_window_format(rows, instant);
+    }
+
+    /// Seat a box the dialog SM opened on this tick so its opening pager call
+    /// lands on the next game frame. The pager `FUN_801D84D0` is a list-0
+    /// actor, ticked ahead of the talker's actor tick that runs the SM
+    /// `FUN_80039B7C`, so the frame whose SM reaches a `0x1F` line leaves the
+    /// pager in state `2` (no box drawn) and the next frame's call opens the
+    /// box. A per-vsync capture of `chapter2_garmel_pre_zeto` reads state `2`
+    /// on the frame the record reaches its line and the first typing count
+    /// one frame later, at every box. Opened on the next vsync instead, the
+    /// box's first typing call fell inside the frame retail spends on state
+    /// `2`, which reads no press: a press on that frame completed the page
+    /// where retail's types it.
+    ///
+    /// REF: FUN_801D84D0, FUN_80039B7C
+    pub(crate) fn seat_opening_pager_call(
+        &self,
+        panel: &mut legaia_engine_dialog::dialog::OwnedDialogPanel,
+    ) {
+        let c = &self.clock;
+        let phase = if c.game_tick_live {
+            let step = c.frame_step.max(1);
+            let k = if c.game_tick_fired { 0 } else { c.frame_vsync };
+            (k.saturating_add(1)) % step
+        } else {
+            0
+        };
+        panel.seat_pager_phase(phase);
     }
 
     pub fn dialog_substitutions(

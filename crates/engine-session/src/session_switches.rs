@@ -57,6 +57,11 @@ pub struct GameplayTweaks {
     /// back at full size, where retail leaves it shrunken. A fix of a retail
     /// oversight. On by default.
     pub stone_scale_fix: bool,
+    /// Bio Castle approach (`--no-bio-castle-approach` disables,
+    /// `WorldToggles::bio_castle_approach`): pressing into the fused castle on
+    /// `map01` from any side crosses its door, where retail opens it from the
+    /// west only. An enhancement. On by default.
+    pub bio_castle_approach: bool,
     /// Spirit AP (`--spirit-ap`, `WorldToggles::spirit_ap`): the AP a Spirit
     /// turn charges; retail `32`, negative drains.
     pub spirit_ap: i16,
@@ -110,6 +115,7 @@ impl GameplayTweaks {
             hp_readout_guard: t.hp_readout_guard,
             heal_numerals: t.heal_numerals,
             stone_scale_fix: t.stone_scale_fix,
+            bio_castle_approach: t.bio_castle_approach,
             spirit_ap: t.spirit_ap,
             damage_ap: t.damage_ap,
             seru_catch_pct: t.seru_catch_pct,
@@ -142,6 +148,7 @@ impl GameplayTweaks {
         toggles.hp_readout_guard = self.hp_readout_guard;
         toggles.heal_numerals = self.heal_numerals;
         toggles.stone_scale_fix = self.stone_scale_fix;
+        toggles.bio_castle_approach = self.bio_castle_approach;
         use legaia_engine_core::world::{DAMAGE_AP_RANGE, SCALE_RANGE, SPIRIT_AP_RANGE};
         let clamp_i = |v: i16, r: std::ops::RangeInclusive<i16>| v.clamp(*r.start(), *r.end());
         let clamp_u = |v: u16| v.clamp(*SCALE_RANGE.start(), *SCALE_RANGE.end());
@@ -341,6 +348,9 @@ pub struct PersistedSwitches {
     /// Without the Stoned-seat rescale (`--no-stone-scale-fix`).
     #[serde(default, skip_serializing_if = "is_false")]
     pub no_stone_scale_fix: bool,
+    /// Without the Bio Castle approach cue (`--no-bio-castle-approach`).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub no_bio_castle_approach: bool,
     /// Spirit AP (`--spirit-ap`); `None` is retail's 32.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spirit_ap: Option<i16>,
@@ -398,6 +408,7 @@ impl PersistedSwitches {
             hp_readout_guard: !self.no_hp_readout_guard,
             heal_numerals: self.heal_numerals,
             stone_scale_fix: !self.no_stone_scale_fix,
+            bio_castle_approach: !self.no_bio_castle_approach,
             spirit_ap: self.spirit_ap.unwrap_or(SPIRIT_AP_RETAIL),
             damage_ap: self.damage_ap.unwrap_or(DAMAGE_AP_RETAIL),
             seru_catch_pct: self.seru_catch_pct,
@@ -424,6 +435,7 @@ impl PersistedSwitches {
         self.no_hp_readout_guard = !t.hp_readout_guard;
         self.heal_numerals = t.heal_numerals;
         self.no_stone_scale_fix = !t.stone_scale_fix;
+        self.no_bio_castle_approach = !t.bio_castle_approach;
         self.spirit_ap = (t.spirit_ap != SPIRIT_AP_RETAIL).then_some(t.spirit_ap);
         self.damage_ap = (t.damage_ap != DAMAGE_AP_RETAIL).then_some(t.damage_ap);
         self.seru_catch_pct = t.seru_catch_pct;
@@ -517,6 +529,7 @@ mod tests {
                 hp_readout_guard: true,
                 heal_numerals: true,
                 stone_scale_fix: true,
+                bio_castle_approach: true,
                 spirit_ap: -16,
                 damage_ap: 200,
                 seru_catch_pct: Some(100),

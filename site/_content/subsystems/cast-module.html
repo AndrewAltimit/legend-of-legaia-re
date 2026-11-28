@@ -278,6 +278,33 @@
   <h3 id="waits">Clocks the band waits on</h3>
   <p>Two pieces of retail timing and colour sit outside the tick bodies. A summon's opening arms can wait on the <strong>side-band token</strong>, the applier stage <code>ctx[+0x276]</code> that stays up while the cast's slots of <code>summon.dat</code> stream off the disc, about 30 vsyncs a slot. The port's side-band is already in memory, so it keeps the token up for that CD time alone, and a director holds on the module's poll arm while it is up, so the opening waits last as long as retail's. The poll holds the arm's way out and not what runs ahead of it: Barra's arm 1 finishes its rise first. And a part can recolour VRAM: Mule's underwater backdrop cycles its colours because one of its parts is a CLUT-cell cycler that captures the backdrop's palette row and swings its hue every frame. Battle parts run that recolour the way field ambient parts do. A module also keeps the handles of the parts and fades it spawns in arrays of its own and later kills them, sometimes a whole array in one loop; the port follows those kills, which is what clears Gilium&rsquo;s screen after its white-out.</p>
   <p>Cort's Mystic Shield is the one module effect retail keeps alive across actions: two records out of the game executable itself, a camera-facing textured sphere and the scroller that animates its texture, seated on Cort by the shield's arm 4 and posed every frame by the actor pass until he is worn to half HP, when a burst replaces it. The port seats, poses and breaks it the same way, in a scene of its own that outlives the cast. The sphere and its scroller are list nodes of the battle pass, so they tick once a battle frame for as many vsyncs as the frame spans; ticked once a vsync, the scroller rolled the sphere&rsquo;s colour bands a third as fast and the sphere stood blue where retail&rsquo;s is purple. The pose also copies Cort's own render scale onto the sphere each frame, so when Evil Seru Magic shrinks him to half size for its closing arms the shield shrinks with him; drawn at full size, it filled the screen and the arm 22 camera dolly passed through it some forty ticks early.</p>
+  <h3 id="once-a-pass">Once a pass, not once a vsync</h3>
+  <p>A module arm runs once a battle pass, and a pass spans its frame step in vsyncs: what an arm moves, it moves by its rate times the step, in one go. The port ticks the band once a vsync, so an arm that applies a rate has to apply it on the pass&rsquo;s opening tick and hold through the others; split across the ticks, a truncated share or a compounding term leaves the arm somewhere retail&rsquo;s is not.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 196" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A pass of step 4. Retail applies the arm's rate times four once, on the pass's opening tick, and holds. Ticked per vsync, the rate times one runs four times; each share is truncated, so a shove moves about half as far, and a term that grows with what came before compounds four times.">
+      <text class="dg-label dg-start" x="16" y="58">retail</text>
+      <rect class="dg-node-accent" x="150" y="36" width="170" height="40" rx="4"/><text class="dg-sub" x="235" y="60">rate &times; 4, once</text>
+      <rect class="dg-node" x="320" y="36" width="170" height="40" rx="4"/><text class="dg-sub" x="405" y="60">holds</text>
+      <rect class="dg-node" x="490" y="36" width="170" height="40" rx="4"/><text class="dg-sub" x="575" y="60">holds</text>
+      <rect class="dg-node" x="660" y="36" width="170" height="40" rx="4"/><text class="dg-sub" x="745" y="60">holds</text>
+      <text class="dg-label dg-start" x="16" y="124">per vsync</text>
+      <rect class="dg-node-warn" x="150" y="102" width="170" height="40" rx="4"/><text class="dg-sub" x="235" y="126">rate &times; 1</text>
+      <rect class="dg-node-warn" x="320" y="102" width="170" height="40" rx="4"/><text class="dg-sub" x="405" y="126">rate &times; 1</text>
+      <rect class="dg-node-warn" x="490" y="102" width="170" height="40" rx="4"/><text class="dg-sub" x="575" y="126">rate &times; 1</text>
+      <rect class="dg-node-warn" x="660" y="102" width="170" height="40" rx="4"/><text class="dg-sub" x="745" y="126">rate &times; 1</text>
+      <text class="dg-edge-label" x="490" y="22" text-anchor="middle">one pass at step 4: four vsyncs</text>
+      <text class="dg-edge-label" x="490" y="168" text-anchor="middle">a shift truncates each share: Chaos Breath&rsquo;s shove went about half as far</text>
+      <text class="dg-edge-label" x="490" y="184" text-anchor="middle">a term grown on each tick compounds: Dark Typhoon&rsquo;s spin took its pull four times</text>
+    </svg>
+    <figcaption>The port runs the arm&rsquo;s rate on the tick that opens a pass, at the pass&rsquo;s step; the kernel differential and the capture-camera differential compare the result at every step.</figcaption>
+  </figure>
+  <ul class="bullets">
+    <li><strong>Dark Typhoon</strong> grows its party swirl&rsquo;s pull once a pass by twice the step and turns the spin by the grown pull once; grown on each vsync, the party swung past retail&rsquo;s bearings and the struck members fell elsewhere.</li>
+    <li><strong>Chaos Breath</strong> shoves each party seat along its bearing from the caster by <code>(table &times; 2 &times; step) &gt;&gt; 12</code> once a pass. Its arm 3 timer stops on zero: a pass with less than its step left spends the rest and stores <code>0</code>.</li>
+    <li><strong>Paralyzing Wave</strong>&rsquo;s arm 3 drains its countdown on the pass that leaves it too, so that pass spends its whole step there.</li>
+    <li><strong>Hyper Crush</strong>&rsquo;s arm 4 drains its module word on every pass, its last included, and that pass hands over on its opening tick, so the port drains the pass&rsquo;s rest there; held a pass longer, every ribbon ring of arms 5 and 6 stood a pass behind.</li>
+    <li><strong>Evil Seru Magic</strong>&rsquo;s salmon fades spawn inside the part walk, after the pass has ticked its fade actors, so each first steps and draws on the next pass, the frame after the HP falls; joined at once, the flash came up a pass early.</li>
+  </ul>
   <p><strong>Smaller per-module facts the films pinned.</strong></p>
   <ul class="bullets">
     <li><strong>Zenoir</strong> names the victim its arm 0 latched into a module word, not the caster&rsquo;s live target byte, which a later arm turns into the enemy-row code; read live, the splash struck a monster out of reach.</li>

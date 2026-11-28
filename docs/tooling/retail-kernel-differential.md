@@ -318,8 +318,11 @@ An unchecked direction falls in one of these, read from the disassembly:
   resolver answers with the running context, so an arm that skips the
   resolve when the header names the running context, or that parks the
   caller as well when the target is the player, writes one context either
-  way. Telling them apart takes a host with a second context, the World's
-  own field host, as `a_tile_warp_lands_on_the_context_it_names` runs it.
+  way. Telling them apart takes a second context and an actor table behind
+  the resolver, with the calls the arm reaches recorded with their
+  arguments (`field_calls`): the port's side is then `step_with_caller` on
+  two contexts, or the World's own field host with the same actors seated,
+  and what the World did is held against the calls retail made.
 - **Comparison gap.** The arm writes something the test does not compare: a
   global the field VM writes beside the context the test holds, a mode word a
   battle exit sets beside the seats it checks. This is what the measurement is
@@ -345,13 +348,14 @@ An unchecked direction falls in one of these, read from the disassembly:
 **The compiler's divide guards.** Every `div` / `divu` the compiler emits
 carries two guards: `bnez divisor` over `break 7`, and `bne divisor,-1`
 then `bne dividend,0x80000000` over `break 6`. They are real conditional
-branches, so both populations count them, but no shipped game state takes the trap
-side of the first and only a divisor of `-1` tells the second's two
-directions apart: in branch coverage they sit at "one way" for ever, and
-here their taken side is an equivalent mutant. They should leave both
-populations together, recognised by the walk from the `break 6` / `break 7`
-they guard, rather than by scope rows one routine at a time. Until then a
-routine with many divides reads lower on both figures than its arms are.
+branches, but no shipped game state takes the trap side of the first and
+only a divisor of `-1` tells the second's two directions apart: in branch
+coverage they would sit at "one way" for ever, and here their taken side
+is an equivalent mutant. The walk recognises them from the `break 6` /
+`break 7` they guard and writes a `G` line for each, and
+`branch-coverage.py` takes them out of the ported arms the way a scope row
+would, so they leave both populations together (`--keep-divide-guards`
+counts them again). They stay in the all-branches figure.
 
 Like branch coverage, it is a measurement, not a gate.
 
@@ -2285,6 +2289,38 @@ The pager `FUN_801D84D0` zeroes the pad word while the automatic press counts, c
 `A1 <id>`, whose masked byte reads `0x21`. The part tick `FUN_80021DF4` leaves straight from the sound emitter's arm
 on the tick it takes its stop request, with no move-VM run and no clamps. The BGM poller's stage walk `FUN_800243F0`,
 run call by call against `BgmSwapPoller` at one call a game frame, matches.
+
+A mutation sample of the checked arms found arms no test compared, and two of
+them disagreed once a test did. The field VM's op `35 .. .. 07`
+stores the battle sound set `_DAT_8007B880` as `-1` when the operand's high
+byte is `0xFF` (`lbu v1,0x1(s6)` over the little-endian halfword) and as the
+signed halfword otherwise; the port tested the low byte and stored it
+unsigned, which no shipped operand (`0..=8`, `0xFFFF`) tells apart but a
+script's `0x00FF` or `0x80xx` does. Op `43`'s arc jump hands `FUN_801D25EC`
+the landing, apex and frames `ScriptArcRequest::landing` builds. The list-order
+page in `FUN_801DA2A0` tests its page keys Right then Left, so a frame with
+both pages forward and back; the port took Right alone. The save-panel slide
+`FUN_801E1C1C` draws the browsing pill row at the grey `min(0x801EF120 >> 5,
+0x80)` and its hand only at a pre-roll of `0x1000`, so on the title's
+Continue screen the pills rise out of black; the port drew them full with the
+hand up at once. The fishing driver's tail clears the hook banner's timer on
+every frame the reel-in timer runs, where the port cleared it once at the
+landing.
+
+The field VM's arms that branch on an actor lookup, on a player target or
+on a flag that only gates a call into the executable read the same to every
+one-context test, and a second context with a seeded actor table tells them
+apart (`field_calls`). Every acquiring arm parks the caller as well when its
+target is the player, the `4C` acquires (`4C 61`, `4C 80`, `4C 85`, `4C 8E`,
+`4C 8F`) as much as the yielding ones; `step_with_caller` parked the caller
+only on a yield. Op `43 02` skips the three-actor talk when any of its three
+talkers is missing, where the World staged it anyway: the party collapse, the
+talk flags and the lock. The seat `4C 51` re-floors under the scene's
+overworld byte `_DAT_8007B6A8` as op `23` does, and only under a `0x20200`
+class bit otherwise; the World dropped a placement's held height whatever its
+class word, and never read the byte. The clone `4C 14`, the reflection
+`4C 86`, the re-seat `4C D2`, the morph lanes `4B`, the rumble words `4C 46` /
+`4C 47` and op `36`'s cue push, delay, release and XA start agree.
 
 The list kernel `FUN_80032A44`'s header and page triangles, run on random node rects, showed the battle item
 and magic lists drawing both one pixel low and the next-page triangle one pixel left: their seats were read off a

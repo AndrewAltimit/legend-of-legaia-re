@@ -13,7 +13,9 @@
 --     --scenario son_field_door_hop --frames 60 --out-dir <dir>
 --
 -- Env: LEGAIA_SSTATE, LEGAIA_FRAMES, LEGAIA_OUT_DIR,
---      LEGAIA_PROFILE_FUNCS  comma-separated hex entries (default below).
+--      LEGAIA_PROFILE_FUNCS  comma-separated hex entries (default below),
+--      LEGAIA_PRESS_AT  comma-separated vsyncs Cross goes down on, held 4
+--                       (a walk film's `--pad N-N+4:CROSS` presses).
 -- Output: frame_profile.csv (`vsync,frame_cost,step,func,calls,cycles,irq_cycles`,
 -- one row per routine per vsync it ran in). `irq_cycles` is the part of
 -- `cycles` spent in the exception handler on an interrupt that landed inside
@@ -48,6 +50,10 @@ local DEFAULT = table.concat({
 }, ",")
 local LIST = probe.getenv("LEGAIA_PROFILE_FUNCS", DEFAULT)
 local RING, RING_CURSOR = 0x80084098, 0x8007B758
+local PRESS = {}
+for h in string.gmatch(probe.getenv("LEGAIA_PRESS_AT", ""), "[^,]+") do
+    PRESS[tonumber(h)] = true
+end
 
 local fh = assert(io.open(probe.out_path("frame_profile.csv"), "w"))
 fh:write("vsync,frame_cost,step,func,calls,cycles,irq_cycles\n")
@@ -120,6 +126,11 @@ probe.run({
         return {}
     end,
     on_capture = function(_, el)
+        if PRESS[el] then
+            probe.pad_force(probe.BTN.CROSS)
+        elseif PRESS[el - 4] then
+            probe.pad_release(probe.BTN.CROSS)
+        end
         local cur = probe.read_u32(RING_CURSOR) or 1
         local cost = probe.read_u16(RING + ((cur - 1) % 16) * 2) or 0
         local step = probe.read_scratch_u8(0x1F800393) or 0

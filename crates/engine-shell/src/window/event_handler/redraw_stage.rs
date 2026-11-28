@@ -38,6 +38,9 @@ pub(super) struct BattleGhostUpload {
 pub(super) struct PosedFrame {
     pub posed_overrides: Vec<Option<UploadedVramMesh>>,
     pub player_color_posed: Option<UploadedColorMesh>,
+    /// Each battle body's untextured half this frame, by actor slot
+    /// (`build_battle_body_color_meshes`).
+    pub battle_color_posed: Vec<Option<UploadedColorMesh>>,
     pub battle_ghost_uploads: Vec<BattleGhostUpload>,
     pub posed_prop_baked_v: Vec<(usize, Mat4, Option<usize>)>,
     pub posed_prop_baked_c: Vec<(usize, Mat4, Option<usize>)>,
@@ -357,6 +360,7 @@ impl PlayWindowApp {
         // pose_frame, regenerate and re-upload the posed mesh.
         // posed_overrides[slot] replaces the slot's meshes[tmd_binding] when present.
         let (posed_overrides, player_color_posed) = self.build_posed_actor_overrides(r);
+        let battle_color_posed = self.build_battle_body_color_meshes(r);
         // Arts after-image ghosts: the actor's mesh at rate-scheduled
         // historical poses, flat-coloured additive (retail FUN_80049348;
         // kernel `engine-battle::battle_afterimage`). Empty outside a
@@ -434,6 +438,7 @@ impl PlayWindowApp {
         PosedFrame {
             posed_overrides,
             player_color_posed,
+            battle_color_posed,
             battle_ghost_uploads,
             posed_prop_baked_v,
             posed_prop_baked_c,

@@ -187,6 +187,13 @@ pub fn hyper_crush_camera(
             });
             arm.hold = n != ARM4_PASSES;
             if !arm.hold {
+                // The sixth pass drains its whole `scalar * step` too (the
+                // `subu` at `0x801F7260` runs ahead of the pass test at
+                // `0x801F72D4`), and arm 5's countdown runs on from that
+                // word: the pass hands over on its opening tick, so the rest
+                // of its drain lands here. Without it arm 5 held a pass
+                // longer than retail's.
+                st.countdown.drain_rest(super::MODULE_DRAIN_PER_TICK);
                 st.module_words[1] = 0;
             }
         }
@@ -256,6 +263,22 @@ mod tests {
             }
         }
         assert_eq!(passes, 6);
+    }
+
+    #[test]
+    fn arm_four_drains_its_whole_last_pass() {
+        // A step-4 pass hands over on its opening tick with three ticks of
+        // the pass still owed: the word arm 5 counts on from is the pass's
+        // whole `scalar * 4` lower, as retail's one `subu` leaves it.
+        let mut st = ModuleCamState {
+            opens_pass: true,
+            ..Default::default()
+        };
+        st.module_words[0] = ARM4_PASSES - 1;
+        st.countdown = super::super::ModuleCountdown(0x140, 3);
+        let a = hyper_crush_camera(&mut st, 4, ModuleCamSeats::default());
+        assert!(!a.hold);
+        assert_eq!(st.countdown.0, 0x140 - 4 * SPEED_SCALAR);
     }
 
     #[test]

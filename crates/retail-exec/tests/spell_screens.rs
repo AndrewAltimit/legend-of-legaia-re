@@ -77,6 +77,9 @@ struct Rig {
     log: Rc<RefCell<Log>>,
     /// What `FUN_8003053C` answers, per spell id.
     affects: Rc<RefCell<[bool; 256]>>,
+    /// Whether the applier posts a notice (the magic level-up's mailbox
+    /// `0x8007BB70`, which the cast screens seed `0xFF`).
+    notice: Rc<std::cell::Cell<bool>>,
     catalog: SpellCatalog,
 }
 
@@ -95,10 +98,15 @@ fn rig() -> Option<Rig> {
     cpu.hook(NAV_CUE, move |r, _| l.borrow_mut().nav_cues.push(r.r[A0]));
     cpu.stub(WINDOW_TICK, 0);
     let l = log.clone();
-    cpu.hook(APPLIER, move |r, _| {
+    let notice = Rc::new(std::cell::Cell::new(false));
+    let n = notice.clone();
+    cpu.hook(APPLIER, move |r, m| {
         l.borrow_mut()
             .applied
-            .push((r.r[A0], r.r[A0 + 1], r.r[A0 + 2], r.r[A0 + 3]))
+            .push((r.r[A0], r.r[A0 + 1], r.r[A0 + 2], r.r[A0 + 3]));
+        if n.get() {
+            m.wr16(MAILBOX, 0);
+        }
     });
     cpu.stub(AGGREGATOR, 0);
     let affects = Rc::new(RefCell::new([true; 256]));
@@ -111,6 +119,7 @@ fn rig() -> Option<Rig> {
         cpu,
         log,
         affects,
+        notice,
         catalog,
     })
 }
@@ -470,6 +479,8 @@ fn the_group_and_target_flows_commit_and_come_back_as_retail_does() {
     };
     let mut rng = Rng(0x4752_4F55);
     let (mut commits, mut stays, mut leaves, mut cancels, mut refusals) = (0, 0, 0, 0, 0);
+    let mut cured_leaves = 0;
+    let mut noticed_casts = 0;
     for episode in 0..6000 {
         let mut verdicts = [true; 256];
         for s in SPELL_POOL {
@@ -534,10 +545,28 @@ fn the_group_and_target_flows_commit_and_come_back_as_retail_does() {
                     // Committed: retail's next frame applies and debits.
                     assert_eq!((now, rig.rd(STEP)), (screen, 2), "{what}");
                     let target_row = rig.rd(TARGET_CURSOR) & 0xFFF;
+                    // A quarter of the casts level the spell up: the applier
+                    // posts the notice, and the screen parks on its message
+                    // step (`0x801D97C4` / `0x801D9458`) until a press.
+                    let noticed = rng.below(4) == 0;
+                    rig.notice.set(noticed);
                     rig.frame(entry, 0, 0);
+                    rig.notice.set(false);
                     assert_eq!(rig.log.borrow().applied.len(), 1, "{what}");
-                    assert_eq!(rig.cpu.mem.rd16(MAILBOX), 0xFF, "{what}");
-                    assert_eq!(rig.rd(STEP), 4, "{what}");
+                    if noticed {
+                        assert_ne!(rig.cpu.mem.rd16(MAILBOX), 0xFF, "{what}");
+                        assert_eq!((rig.rd(SCREEN), rig.rd(STEP)), (screen, 3), "{what}");
+                    } else {
+                        assert_eq!(rig.cpu.mem.rd16(MAILBOX), 0xFF, "{what}");
+                        assert_eq!(rig.rd(STEP), 4, "{what}");
+                    }
+                    // The cast may leave nobody it still affects (a cure that
+                    // cured): the re-cast check then backs out to the list
+                    // (`jal 0x8003053C` at `0x801D98B4` / its group twin).
+                    let cured = rng.below(3) == 0;
+                    if cured {
+                        rig.affects.borrow_mut()[usize::from(spell)] = false;
+                    }
                     // The host rebuilds the session off the debited records.
                     let mut casters = p.casters.clone();
                     casters[at].mp = rig.cpu.mem.rd16(caster_rec + 0x10A);
@@ -549,8 +578,31 @@ fn the_group_and_target_flows_commit_and_come_back_as_retail_does() {
                             targets: p.targets.clone(),
                         },
                     );
-                    next.resume_cast(at as u8, spell, target_row as u8);
-                    rig.frame(entry, 0, 0);
+                    if noticed {
+                        next.hold_cast_for_notice(at as u8, spell, target_row as u8);
+                        // Under the notice: the cast screen on the same spell.
+                        let held = match next.phase() {
+                            SpellMenuPhase::GroupConfirm { spell_id, .. } => (0x10, *spell_id),
+                            SpellMenuPhase::TargetSelect {
+                                spell_id, cursor, ..
+                            } => {
+                                assert_eq!(u32::from(*cursor), target_row, "{what}: held cursor");
+                                (0x11, *spell_id)
+                            }
+                            other => panic!("{what}: held on {other:?}"),
+                        };
+                        assert_eq!(held, (screen, spell), "{what}: held screen");
+                        rig.frame(entry, 0, 0);
+                        assert_eq!((rig.rd(SCREEN), rig.rd(STEP)), (screen, 3), "{what}: waits");
+                        // The confirm or cancel that closes it runs the check.
+                        let press = [0x40, 0x20][rng.below(2) as usize];
+                        rig.frame(entry, press, 0);
+                        assert!(next.resume_held_cast(), "{what}");
+                        noticed_casts += 1;
+                    } else {
+                        next.resume_cast(at as u8, spell, target_row as u8);
+                        rig.frame(entry, 0, 0);
+                    }
                     let back = rig.rd(SCREEN);
                     commits += 1;
                     match next.phase() {
@@ -569,6 +621,7 @@ fn the_group_and_target_flows_commit_and_come_back_as_retail_does() {
                             rig.frame(SPELL_LIST, 0, 0);
                             assert_eq!(rig.rd(LIST_ROW), u32::from(*cursor), "{what}: list row");
                             leaves += 1;
+                            cured_leaves += u32::from(cured);
                         }
                         other => panic!("{what}: {other:?}"),
                     }
@@ -579,7 +632,13 @@ fn the_group_and_target_flows_commit_and_come_back_as_retail_does() {
         }
     }
     assert!(
-        commits > 500 && stays > 300 && leaves > 30 && cancels > 500 && refusals > 100,
-        "{commits} {stays} {leaves} {cancels} {refusals}"
+        commits > 500
+            && stays > 300
+            && leaves > 30
+            && cured_leaves > 30
+            && noticed_casts > 100
+            && cancels > 500
+            && refusals > 100,
+        "{commits} {stays} {leaves} {cured_leaves} {noticed_casts} {cancels} {refusals}"
     );
 }

@@ -545,6 +545,8 @@ pub(super) fn pad_walk(
     let mut best = dist(here(session));
     let mut visited: HashSet<Cell> = HashSet::new();
     let mut since = 0u32;
+    // A fight's intro held the player since the walk last made progress.
+    let mut fight_in_stall = false;
     let mut planned_from = None;
     // Wedge exits this walk has headed for ([`unwedge`]).
     let mut unwedged = 0usize;
@@ -683,6 +685,7 @@ pub(super) fn pad_walk(
             planned_from = None;
             path.clear();
             since = 0;
+            fight_in_stall = false;
             // The walk after a fight is judged afresh. The stall test counts
             // a frame as progress only on a new cell or a nearer one, and a
             // route re-planned from where the fight left the walker can
@@ -1350,13 +1353,22 @@ pub(super) fn pad_walk(
         if d < best || visited.insert(cell_of(px, pz)) {
             best = best.min(d);
             since = 0;
+            fight_in_stall = false;
         } else {
             since += 1;
+            fight_in_stall |= session.host.world.battle_intro_owns_frame();
             if since >= PAD_STALL_FRAMES {
                 session.host_pad(0);
                 // The stall was a press for a ride that never came: that
-                // contact is no route for the walks after this one.
-                if let Some(w) = path.windows(2).take(3).find(|w| !adjacent(w[0], w[1])) {
+                // contact is no route for the walks after this one. Not
+                // when a fight's intro held the player inside the stall:
+                // the press was cut off, not refused. `tower`'s lift at
+                // (32, 41) (seed 13) was written off on a stall the intro's
+                // frames tipped over, and the planner then had no way off
+                // the floor.
+                if !fight_in_stall
+                    && let Some(w) = path.windows(2).take(3).find(|w| !adjacent(w[0], w[1]))
+                {
                     note_dead_contact(session, w[1]);
                 }
                 let (px, pz) = player_xz(session);

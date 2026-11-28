@@ -280,6 +280,7 @@ where it was; `Delete` on the row puts all of them back on *Enhanced*.
 | Gameplay tweaks | Boss casts respect jewels (`--jewel-fix`) | `launcher.toml` | - | off |
 | Gameplay tweaks | Battle freeze guard (off = `--no-hp-readout-guard`) | `launcher.toml` | - | on |
 | Gameplay tweaks | Stoned foes keep their size (off = `--no-stone-scale-fix`) | `launcher.toml` | - | on |
+| Gameplay tweaks | Bio Castle from any side (off = `--no-bio-castle-approach`) | `launcher.toml` | - | on |
 | Gameplay tweaks | Bonus equipment drops (`--equipment-drops`) | `launcher.toml` | - | off |
 | Gameplay tweaks | Save anywhere (`--save-anywhere`) | `launcher.toml` | - | off |
 | Battle tuning | EXP rate (`--exp-rate`: 1x, 1.5x, 2x, 3x, 5x, 0.5x) | `launcher.toml` | - | 1x |
@@ -476,7 +477,9 @@ Keyboard defaults are arrows = D-pad, then:
 | `RShift` | Select |
 
 Start opens the pause menu, and so does Triangle, the original game's menu
-button.
+button. Holding Select skips the New Game opening, as on the PlayStation (a
+press of Cross or Start does not); while it would work, the window names the
+key at its bottom left and the play page's status line does the same.
 
 `Esc` twice quits: the first press only shows *Press Esc again to quit* at
 the bottom left of the window, and a second press within three seconds closes it,

@@ -254,6 +254,76 @@ pub fn dim_posed_battle_mesh(
     true
 }
 
+/// A battle body's **untextured half** at rest: its `F*` / `G*` prims as a
+/// colour mesh in TMD-local space with each vertex's object id, every blend
+/// word carrying the ABR the body's textured packets leave in the GPU's
+/// texpage register ([`legaia_tmd::mesh::textured_abr`]), or `None` for a
+/// body with no untextured prim. Retail's body draw `FUN_80048A08` hands
+/// every group to the prim dispatcher `FUN_80043390`, the untextured ones to
+/// its `F*` / `G*` leaves; the textured builders skip them, so a host draws
+/// this half beside the textured mesh. The browser page poses it with the
+/// body's own bones; the native window builds the posed twin per frame
+/// ([`battle_body_color_mesh_posed`]).
+pub fn battle_body_color_mesh(
+    tmd: &legaia_tmd::Tmd,
+    raw: &[u8],
+) -> Option<(legaia_tmd::mesh::ColorMesh, Vec<u32>)> {
+    if !legaia_tmd::mesh::has_untextured_prims(tmd, raw) {
+        return None;
+    }
+    let (mut mesh, ids) = legaia_tmd::mesh::tmd_to_color_mesh_with_object_ids(tmd, raw);
+    if mesh.is_empty() {
+        return None;
+    }
+    legaia_tmd::mesh::carry_untextured_abr(
+        &mut mesh.blend,
+        legaia_tmd::mesh::textured_abr(tmd, raw),
+    );
+    Some((mesh, ids))
+}
+
+/// [`battle_body_color_mesh`] posed with `bones` as the textured body is:
+/// the full `R·v + T` composition when `rotate`, translation only
+/// otherwise (`legaia_tmd::mesh::tmd_to_vram_mesh_posed`'s rule), with the
+/// Rot limb dimming ([`dim_posed_battle_mesh`]) on its colours.
+pub fn battle_body_color_mesh_posed(
+    world: &World,
+    actor_idx: usize,
+    tmd: &legaia_tmd::Tmd,
+    raw: &[u8],
+    bones: &[([i16; 3], [i16; 3])],
+    rotate: bool,
+) -> Option<legaia_tmd::mesh::ColorMesh> {
+    if !legaia_tmd::mesh::has_untextured_prims(tmd, raw) {
+        return None;
+    }
+    let mut mesh = if rotate {
+        legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(tmd, raw, bones)
+    } else {
+        let moved: Vec<_> = bones.iter().map(|(t, _)| (*t, [0i16; 3])).collect();
+        legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(tmd, raw, &moved)
+    };
+    if mesh.is_empty() {
+        return None;
+    }
+    legaia_tmd::mesh::carry_untextured_abr(
+        &mut mesh.blend,
+        legaia_tmd::mesh::textured_abr(tmd, raw),
+    );
+    if let Some(plan) = world.battle_limb_dim_plan(actor_idx, tmd.objects.len()) {
+        let mut ids = legaia_tmd::mesh::tmd_to_color_mesh_with_object_ids(tmd, raw).1;
+        if ids.len() == mesh.colors.len() {
+            if let Some(ch) = battle_live_object_channels(world, actor_idx) {
+                for id in &mut ids {
+                    *id = ch.get(*id as usize).copied().unwrap_or(*id);
+                }
+            }
+            plan.apply_rgb(&mut mesh.colors, &ids);
+        }
+    }
+    Some(mesh)
+}
+
 /// Plan this frame's arts after-image ghosts - the engine seat of the
 /// retail per-actor walk `FUN_80049348` (see
 /// [`legaia_engine_battle::battle_afterimage`]). For every battle actor with a pose

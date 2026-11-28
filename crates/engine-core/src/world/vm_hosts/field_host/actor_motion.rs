@@ -557,7 +557,7 @@ impl FieldHostImpl<'_> {
             ctx.world_x = world_x;
             ctx.world_z = world_z;
             self.face_compass(ctx, depth_byte & 0xF, false);
-            if ctx.flags & 0x2000_0000 == 0 && ctx.flags & 0x0002_0200 != 0 {
+            if self.world.seat_refloors(ctx.flags) {
                 ctx.world_y = self
                     .world
                     .sample_field_floor_height(i32::from(world_x as i16), i32::from(world_z as i16))
@@ -804,6 +804,18 @@ impl FieldHostImpl<'_> {
     }
 }
 
+#[cfg(feature = "test-drivers")]
+impl World {
+    /// Placement `slot`'s held glide height, after seating `set` when given:
+    /// what the seat's floor re-sample drops.
+    pub fn drive_glide_y(&mut self, slot: u8, set: Option<i16>) -> Option<i16> {
+        if let Some(y) = set {
+            self.npcs.glide_y.insert(slot, y);
+        }
+        self.npcs.glide_y.get(&slot).copied()
+    }
+}
+
 impl World {
     /// The seat's floor re-sample on a placement NPC (op `4C 51`, the
     /// case-5 sub-1 body at `0x801E1904..0x801E1940`): `+0x16` takes the
@@ -821,17 +833,29 @@ impl World {
     ///
     /// REF: FUN_801DE840 (0x801E1904..0x801E1940), FUN_80019278, FUN_8003BC08
     pub(crate) fn seat_npc_floor_resample(&mut self, slot: u8, ctx_flags: u32) {
-        if ctx_flags & 0x2000_0000 == 0 {
+        if self.seat_refloors(ctx_flags) {
             self.npcs.glide_y.remove(&slot);
         }
     }
+
+    /// The seat's floor gate (`0x801E1904..0x801E1934`), op `0x23`'s shape:
+    /// never under the script-held height `0x20000000`, else under a class
+    /// bit of `0x20200` or the scene's overworld byte `_DAT_8007B6A8`
+    /// (`lbu v0,-0x4958(v0)` / `beq v0,zero` at `0x801E1928..0x801E1930`,
+    /// `PartyState::scene_save_allowed`, raised on the kingdom world maps).
+    ///
+    /// REF: FUN_801DE840 (0x801E1904..0x801E1934)
+    pub(crate) fn seat_refloors(&self, ctx_flags: u32) -> bool {
+        legaia_engine_vm::field::dispatch_leaves::op23_refloors(
+            ctx_flags,
+            self.party.scene_save_allowed,
+        )
+    }
     /// The draw-order half of the seat's floor re-sample. The seat calls the
     /// floor sampler `FUN_80019278` on the actor (`jal` at `0x801E1938`) on
-    /// the same gate as the height write - `+0x10` carrying a `0x20200` bit
-    /// and not `0x20000000` (`0x801E1904..0x801E1934`; the scene's
-    /// overworld byte `_DAT_8007B6A8` opens it too, and no field scene sets
-    /// it) - and the sampler rewrites the actor's near-bucket bit `0x800000`
-    /// before it reads any height (`0x800192F8..0x80019350`). The actor
+    /// the same gate as the height write ([`World::seat_refloors`]) - and
+    /// the sampler rewrites the actor's near-bucket bit `0x800000` before it
+    /// reads any height (`0x800192F8..0x80019350`). The actor
     /// draw links an actor carrying the bit ten ordering-table buckets
     /// nearer ([`World::near_bucket_npcs`]).
     ///
@@ -848,7 +872,7 @@ impl World {
         world_x: u16,
         world_z: u16,
     ) {
-        if ctx.flags & 0x2000_0000 != 0 || ctx.flags & 0x0002_0200 == 0 {
+        if !self.seat_refloors(ctx.flags) {
             return;
         }
         ctx.flags = self.floor_sampler_sort_flags(
@@ -915,7 +939,9 @@ mod seat_and_cursor_tests {
 
     /// A cutscene's `4C 51` seat re-samples the placement's floor: a held
     /// glide height does not follow it to the new tile, unless the script
-    /// holds the height itself (`0x20000000`).
+    /// holds the height itself (`0x20000000`). The gate is op `0x23`'s: a
+    /// class bit of `0x20200` (the seater's `0x20000` on every placement) or
+    /// the scene's overworld byte opens it.
     #[test]
     fn a_seat_drops_the_held_height() {
         let mut w = World::new();
@@ -923,7 +949,10 @@ mod seat_and_cursor_tests {
         w.npcs.glide_y.insert(34, -96);
         w.field_vm.in_spawned_record_slice = true;
         w.field_vm.executing_channel = Some(34);
-        let mut ctx = FieldCtx::default();
+        let mut ctx = FieldCtx {
+            flags: legaia_engine_field::field_channels::PLACEMENT_CLASS_BIT,
+            ..FieldCtx::default()
+        };
         let op = [0x4C, 0x51, 0x62, 0x8E, 0x01, 0x3E];
         let r = field_step_routed(&mut FieldHostImpl { world: &mut w }, &mut ctx, &op, 0);
         assert!(matches!(r, StepResult::Advance { .. }));
@@ -932,11 +961,20 @@ mod seat_and_cursor_tests {
 
         w.npcs.glide_y.insert(34, -480);
         let mut held = FieldCtx {
-            flags: 0x2000_0000,
+            flags: 0x2000_0000 | legaia_engine_field::field_channels::PLACEMENT_CLASS_BIT,
             ..FieldCtx::default()
         };
         field_step_routed(&mut FieldHostImpl { world: &mut w }, &mut held, &op, 0);
         assert_eq!(w.npcs.glide_y.get(&34), Some(&-480));
+
+        // No class bit: only the overworld byte re-floors.
+        let mut bare = FieldCtx::default();
+        field_step_routed(&mut FieldHostImpl { world: &mut w }, &mut bare, &op, 0);
+        assert_eq!(w.npcs.glide_y.get(&34), Some(&-480));
+        w.party.scene_save_allowed = true;
+        let mut bare = FieldCtx::default();
+        field_step_routed(&mut FieldHostImpl { world: &mut w }, &mut bare, &op, 0);
+        assert!(!w.npcs.glide_y.contains_key(&34));
     }
 
     /// The seat's floor sampler (`jal 0x80019278` at `0x801E1938`) rewrites

@@ -63,6 +63,37 @@ impl<S: AudioSink> AudioDirector<S> {
         duck::step_duck(&mut self.duck_level, self.duck_target);
     }
 
+    /// One front-end frame of the audio level: apply the level the frame
+    /// begins with ([`Self::tick_duck`], the frame driver's compare at the
+    /// top of the frame), then take `store` as the cell's new value when the
+    /// screen writes one - the title's `LaunchFade` stores the level outright
+    /// rather than ramping it. The level holds there until
+    /// [`Self::rest_audio_level`].
+    pub fn front_end_level_frame(&mut self, store: Option<u8>) {
+        self.tick_duck();
+        if let Some(level) = store {
+            self.store_audio_level(level);
+        }
+    }
+
+    /// Store `level` in the live cell outright (no ramp pulls it back): the
+    /// next [`Self::tick_duck`] applies it.
+    pub fn store_audio_level(&mut self, level: u8) {
+        self.duck_level = level;
+        self.duck_target = level;
+    }
+
+    /// Rest the live level on the configured one, as the MAN loader does on
+    /// every scene load (`_DAT_8007B910 = _DAT_8008457C` in `FUN_8003AEB0`,
+    /// `0x8003B6B4`): a level the front end stored (the Load's fade to
+    /// silence) does not outlive the field's entry. The next
+    /// [`Self::tick_duck`] applies it.
+    pub fn rest_audio_level(&mut self) {
+        self.duck_target =
+            legaia_engine_audio::duck::duck_target_for_pct_of(self.duck_ref, self.duck_pct);
+        self.duck_level = self.duck_target;
+    }
+
     /// The level last applied to the BGM (`DAT_8007B6EC`), one frame behind
     /// [`Self::duck_level`] while the duck ramps.
     pub fn duck_applied(&self) -> u8 {
@@ -355,6 +386,13 @@ impl<S: AudioSink> BgmDirector for AudioDirector<S> {
             i32::from(self.duck_level),
             deadline,
         );
+        self.audio.sequencer_decrescendo(amount, ticks);
+    }
+
+    fn decrescendo(&mut self, amount: i16, ticks: i32) {
+        if self.hold_for_switch(|| super::scene_switch::HeldCommand::Decrescendo(amount, ticks)) {
+            return;
+        }
         self.audio.sequencer_decrescendo(amount, ticks);
     }
 

@@ -1295,6 +1295,13 @@ pub(crate) enum Cmd {
         /// holds it off.
         #[arg(long, default_value_t = false)]
         no_stone_scale_fix: bool,
+        /// No Bio Castle approach cue: on `map01` after Rim Elm fuses into
+        /// the castle, only the door tile on its north-west corner enters,
+        /// as in retail. The cue (pressing into the castle from any side
+        /// crosses the door) is an enhancement, on by default; `--retail`
+        /// holds it off.
+        #[arg(long, default_value_t = false)]
+        no_bio_castle_approach: bool,
         /// Spirit AP: how much AP the Spirit command charges (retail 32;
         /// `0` = defence only, `100` = one press fills the gauge, negative =
         /// Spirit drains it) - the engine twin of the patcher's `--spirit-ap`.
@@ -1563,7 +1570,7 @@ pub(crate) enum Cmd {
                 "no_entry_pulse", "no_occlusion_fade", "no_volumetric_fog", "no_ssao", "smart_monsters",
                 "arts_saved_list", "no_smooth_motion", "load_pauses", "no_instant_controls",
                 "no_shiny_seru", "flee_exp", "exp_rate", "no_fortress_encounter_fix", "no_tetsu_spar_fix", "jewel_fix",
-                "no_hp_readout_guard", "heal_numerals", "no_stone_scale_fix", "spirit_ap", "damage_ap", "seru_catch_rate",
+                "no_hp_readout_guard", "heal_numerals", "no_stone_scale_fix", "no_bio_castle_approach", "spirit_ap", "damage_ap", "seru_catch_rate",
                 "enemy_attack_count", "enemy_stat_scale", "equipment_drops", "save_anywhere",
                 "action_movement"]
         )]

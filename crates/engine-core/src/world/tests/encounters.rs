@@ -598,10 +598,13 @@ fn the_intro_skip_fades_to_black_before_it_hands_off() {
     let mut world = World::new();
     world.set_active_scene_label(legaia_game_tables::new_game::OPENING_CUTSCENE_SCENE);
     world.cutscene.opening_chain_active = true;
+    assert!(!world.prologue_skip_ready(), "not before the bit is up");
     world.arm_prologue_handoff();
+    assert!(world.prologue_skip_ready());
     assert_eq!(world.step_prologue_skip(false), None);
     assert!(world.presentation.fade.is_none());
     assert_eq!(world.step_prologue_skip(true), None, "the press only fades");
+    assert!(!world.prologue_skip_ready(), "not while the skip fade runs");
     assert_eq!(world.flags.story_flags & PROLOGUE_HANDOFF_FLAG, 0);
     let fade = world.presentation.fade.as_ref().expect("the fade is up");
     assert_eq!(fade.kind, 2);

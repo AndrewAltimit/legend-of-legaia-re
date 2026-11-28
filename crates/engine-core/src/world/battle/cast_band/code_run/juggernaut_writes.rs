@@ -545,6 +545,13 @@ impl World {
         arm: u8,
     ) -> Vec<legaia_engine_cast::cast_module_ticks::AoeHit> {
         use legaia_engine_cast::cast_module_ticks as ticks;
+        // The call comes from inside the part walk, which retail runs after
+        // the pass has ticked its fade actors (`FUN_80024E80` puts the new
+        // actor on the list `0x801C9070` walked ahead of it): the salmon
+        // fade first steps and first draws on the next pass, as the other
+        // stager fades do (`ScreenFxState::module_fades_next_pass`). Joined
+        // at once, the flash came up on the frame the HP fell, a pass ahead
+        // of retail's every time.
         if let Some(t) = ticks::juggernaut_stager_fade(arm) {
             let mut fade = None;
             legaia_engine_system::fade::spawn_fade(
@@ -552,7 +559,7 @@ impl World {
                 &legaia_engine_battle_vm::battle_action::summon_fade_template(&t),
                 1,
             );
-            self.presentation.module_fades.extend(fade);
+            self.presentation.module_fades_next_pass.extend(fade);
         }
         self.casting.module_shake += ticks::juggernaut_stager_shake(arm);
         if arm != super::super::AOE_STAGER_WORKING_ARM && arm != 3 {

@@ -125,8 +125,9 @@ pub fn rename_retail_character(sc_block: &mut [u8], from: &str, to: &str) -> Res
 /// The four-slot record array is immediately followed by the global game
 /// data, so slot 3 (Terra)'s `0x414`-byte footprint runs from `game+0x1004`
 /// to `game+0x1418` and its **tail** (from internal offset `+0x2BC`,
-/// i.e. `game+0x12C0`) overlaps the story-flag window at
-/// [`RETAIL_STORY_FLAGS_OFFSET`] and the inventory at
+/// i.e. `game+0x12C0`) is the story-flag window's first `0x158` bytes at
+/// [`RETAIL_STORY_FLAGS_OFFSET`], ending exactly where the system-flag bank
+/// begins (`0x80085758`); it does not reach the inventory at
 /// [`RETAIL_INVENTORY_OFFSET`]. Terra's meaningful fields all sit *before*
 /// that boundary - her name (`+0x2A7`), live HP/MP (`+0x104`) and
 /// RecordStats (`+0x11C`) are in exclusive space - and she is the New Game

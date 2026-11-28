@@ -454,18 +454,29 @@ impl World {
     /// Open the window a clip just started loads the frame for
     /// ([`crate::world::AudioState::battle_xa_load_frames`]): its span, plus
     /// PCSX-Redux's read tail.
-    pub(in crate::world) fn arm_battle_xa_load_window(&mut self) {
-        use legaia_engine_battle_loop::frame_clock::{CdTiming, XA_READ_TAIL_VSYNCS};
+    ///
+    /// A module's own line (`module_line`) starts its read on the cue's frame
+    /// (`CdlReadS` beside the dispatch on every `--cd-trace` recording), so its
+    /// tail is the span's own
+    /// ([`xa_read_tail_vsyncs`](legaia_engine_battle_loop::frame_clock::xa_read_tail_vsyncs));
+    /// a funnel clip's keeps the constant, which counts its seek too.
+    pub(in crate::world) fn arm_battle_xa_load_window(&mut self, module_line: bool) {
+        use legaia_engine_battle_loop::frame_clock::{
+            CdTiming, XA_READ_TAIL_VSYNCS, xa_read_tail_vsyncs,
+        };
+        let read_tail = if module_line {
+            xa_read_tail_vsyncs(self.audio.battle_xa_busy_frames)
+        } else {
+            XA_READ_TAIL_VSYNCS
+        };
         let tail = match self.toggles.battle_cd_timing {
-            CdTiming::PcsxRedux if self.toggles.battle_frame_span_law => XA_READ_TAIL_VSYNCS,
+            CdTiming::PcsxRedux if self.toggles.battle_frame_span_law => read_tail,
             _ => 0,
         };
         self.audio.battle_xa_load_frames = self.audio.battle_xa_busy_frames.saturating_add(tail);
         // Retail's polls run the read tail past the span whatever the law.
-        self.audio.battle_xa_retail_left = self
-            .audio
-            .battle_xa_busy_frames
-            .saturating_add(XA_READ_TAIL_VSYNCS);
+        self.audio.battle_xa_retail_left =
+            self.audio.battle_xa_busy_frames.saturating_add(read_tail);
         // The drive word `0x8007BC20` holds `2` from the start (`0x8003D65C`)
         // until the stop `FUN_8003EE00` clears it once the read is done
         // (`0x8003EE2C`), not for the span alone: a `--watch` recording of
@@ -498,6 +509,17 @@ impl World {
         // Two passes back: the cue's pass and the one after it are behind
         // the state (`xa_stream_pass_cost`).
         self.audio.battle_xa_cue_frame = Some(self.battle_frame_id().saturating_sub(2));
+    }
+
+    /// Whether a capture-band module's own CD-XA line loads the frame now:
+    /// a clip the module started with no seek arm
+    /// ([`crate::world::AudioState::battle_xa_frame_load`] without
+    /// [`crate::world::AudioState::battle_xa_poll_load`]), inside its read
+    /// window.
+    fn module_line_loading(&self) -> bool {
+        self.audio.battle_xa_load_frames > 0
+            && self.audio.battle_xa_frame_load
+            && !self.audio.battle_xa_poll_load
     }
 
     /// The passes since a loading battle CD-XA clip's cue, `None` while none
@@ -885,6 +907,10 @@ impl World {
             _ => 0,
         };
         self.battle.cast_arm_pass = Some((pass_state, phase, arm_pass));
+        // A capture-band module's own line loading this pass: its polls run
+        // from the `CdlReadS` to the `Pause` past the clip's end sector
+        // (`FUN_8003D764`, `slt` at `0x8003D9E0`, the `Pause` at `0x8003DA6C`).
+        let line_now = self.module_line_loading();
         let measured = self
             .casting
             .summon_stager
@@ -906,12 +932,22 @@ impl World {
                 .filter(|_| state == S::MagicCapturePhase2.as_byte())?;
             // A capture arm whose own line stops loading the frame partway
             // runs its own cost from there (Kiss of Death's arm 4).
-            legaia_engine_cast::cast_module_frame_step::capture_arm_frame_step_on_pass(
+            use legaia_engine_cast::cast_module_frame_step as cmfs;
+            let step = cmfs::capture_arm_frame_step_on_pass(
                 spell,
                 phase,
                 arm_pass,
                 self.toggles.battle_cd_timing,
-            )
+            )?;
+            // An arm whose table `4` is the module's own line
+            // (`CAPTURE_ARM_LINE_CLAMPS`) costs its own work once the line's
+            // `Pause` stops the polls: the ring prices it, `3` behind the
+            // clamped entries, then the work's own step. Held at its table
+            // step, Call Wave's arm 2 ran `4` some forty vsyncs past retail's
+            // drop at the clip's end.
+            let unloaded = !line_now
+                && cmfs::capture_arm_line_clamped(spell, phase, self.toggles.battle_cd_timing);
+            (!unloaded).then_some(step)
         });
         self.battle.pass_frame_cost_due = Some(measured);
     }

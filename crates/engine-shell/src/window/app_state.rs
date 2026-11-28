@@ -250,6 +250,20 @@ pub(in crate::window) fn startup_hint_line(cross: &str, circle: &str) -> String 
 /// [`startup_hint_line`] while a controller was pressed last: its own
 /// buttons, and the settings chord (`settings_panel::settings_chord`) in
 /// place of `F12`.
+/// The opening's skip hint ([`legaia_engine_core::world::World::prologue_skip_ready`]):
+/// the key or button bound to Select, held, as on the PlayStation. The
+/// browser play page's status line says the same.
+pub(in crate::window) fn opening_skip_hint_line(select: &str) -> String {
+    // The bindings' own key name, spelled out as the launcher's Controls
+    // page spells it.
+    let select = if select == "RShift" {
+        "Right Shift"
+    } else {
+        select
+    };
+    format!("Hold {select} to skip the opening")
+}
+
 pub(in crate::window) fn startup_hint_line_pad(
     cross: &str,
     circle: &str,

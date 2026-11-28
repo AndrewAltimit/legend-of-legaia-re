@@ -36,7 +36,7 @@
     },
     "retail": {
      "gl_draws_per_frame": 44.29,
-     "wasm_bytes_per_frame": 48879
+     "wasm_bytes_per_frame": 48880
     }
    },
    "world_map": {
@@ -46,60 +46,60 @@
     },
     "retail": {
      "gl_draws_per_frame": 317.93,
-     "wasm_bytes_per_frame": 290891
+     "wasm_bytes_per_frame": 290899
     }
    }
   },
   "bundle": {
-   "gzip_bytes": 7426399,
-   "play_gzip_bytes": 5293993
+   "gzip_bytes": 7452338,
+   "play_gzip_bytes": 5301538
   },
   "native": {
    "battle": {
     "enhanced": {
-     "alloc_kb_per_frame": 4485.7,
-     "allocs_per_frame": 1337.8,
+     "alloc_kb_per_frame": 4467.7,
+     "allocs_per_frame": 1400.5,
      "draws_per_frame": 342
     },
     "retail": {
-     "alloc_kb_per_frame": 4485.6,
-     "allocs_per_frame": 1312.6,
+     "alloc_kb_per_frame": 4463.3,
+     "allocs_per_frame": 1375.2,
      "draws_per_frame": 342
     }
    },
    "summon_cast": {
     "enhanced": {
-     "alloc_kb_per_frame": 4607.8,
-     "allocs_per_frame": 1354.1,
+     "alloc_kb_per_frame": 4571.9,
+     "allocs_per_frame": 1417.2,
      "draws_per_frame": 342
     },
     "retail": {
-     "alloc_kb_per_frame": 4608.2,
-     "allocs_per_frame": 1333.6,
+     "alloc_kb_per_frame": 4584.7,
+     "allocs_per_frame": 1396.3,
      "draws_per_frame": 342
     }
    },
    "town01": {
     "enhanced": {
-     "alloc_kb_per_frame": 1714.4,
-     "allocs_per_frame": 1226.2,
+     "alloc_kb_per_frame": 1727.4,
+     "allocs_per_frame": 1134.7,
      "draws_per_frame": 68
     },
     "retail": {
-     "alloc_kb_per_frame": 1190.4,
-     "allocs_per_frame": 920.0,
+     "alloc_kb_per_frame": 1203.3,
+     "allocs_per_frame": 838.3,
      "draws_per_frame": 46
     }
    },
    "world_map": {
     "enhanced": {
-     "alloc_kb_per_frame": 1491.4,
-     "allocs_per_frame": 1904.9,
+     "alloc_kb_per_frame": 1505.3,
+     "allocs_per_frame": 1901.3,
      "draws_per_frame": 374
     },
     "retail": {
-     "alloc_kb_per_frame": 1229.4,
-     "allocs_per_frame": 1764.0,
+     "alloc_kb_per_frame": 1243.3,
+     "allocs_per_frame": 1760.2,
      "draws_per_frame": 374
     }
    }

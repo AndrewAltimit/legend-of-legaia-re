@@ -2016,6 +2016,14 @@ fn the_list_kernel_header_and_page_triangles_draw_where_the_port_draws_them() {
         i.borrow_mut()
             .push((r.r[A0] as i32, r.r[A1] as i32, r.r[A2] as u16));
     });
+    // The list's hand, `FUN_8002B994(0, mode, X - 6, rowY)` (`0x80032F84..
+    // 0x80032FB4`), on the cursor row's pen line.
+    let hands: Calls<(i32, i32)> = Rc::default();
+    let hh = hands.clone();
+    cpu.hook(0x8002_B994, move |r, _| {
+        hh.borrow_mut()
+            .push((r.r[A0 + 2] as i32, r.r[A0 + 3] as i32))
+    });
     // Retail ICO id <-> the port's sprite cell id.
     let pairs: Vec<(u16, u16)> = [
         (0x76, ids::PAGE_TAG),
@@ -2050,6 +2058,7 @@ fn the_list_kernel_header_and_page_triangles_draw_where_the_port_draws_them() {
     let content = cpu.mem.rd8(NAV_IDS);
     let mut rng = Rng(0x5041_4745);
     let mut seen = [0usize; 3];
+    let mut hand_held = 0;
     for case in 0..4000 {
         let (wx, wy) = (20 + rng.below(80) as i32, 20 + rng.below(40) as i32);
         let w = 0x60 + rng.below(0x60) as i32;
@@ -2059,7 +2068,9 @@ fn the_list_kernel_header_and_page_triangles_draw_where_the_port_draws_them() {
         let pages = (count + visible - 1) / visible;
         let page = 1 + rng.below(pages as u32) as i32;
         let top = (page - 1) * visible;
-        let mode = [1u32, 1, 1, 0, 2][rng.below(5) as usize];
+        // Mode 4 is the list held with no hand (`beq a0,4` at `0x80032F64`).
+        let mode = [1u32, 1, 1, 0, 2, 4][rng.below(6) as usize];
+        let cursor = top + rng.below((count - top).min(visible) as u32) as i32;
         let blink = [0u32, 0x08, 0x10, 0x18, 0x3A_8105, 0x3A_8125][rng.below(6) as usize];
         cpu.mem.wr32(GP + 0x87C, mode);
         cpu.mem.wr32(GP + 0x86C, 0);
@@ -2073,12 +2084,13 @@ fn the_list_kernel_header_and_page_triangles_draw_where_the_port_draws_them() {
         cpu.mem.wr16(LIST, top as u16);
         cpu.mem.wr16(LIST + 2, visible as u16);
         cpu.mem.wr16(LIST + 4, count as u16);
-        cpu.mem.wr16(LIST + 6, top as u16);
+        cpu.mem.wr16(LIST + 6, cursor as u16);
         // Class-0 rows draw nothing, so every pictogram is the header's.
         for k in 0..count as u32 {
             cpu.mem.wr16(LIST + 0x28 + 2 * k, 0);
         }
         icons.borrow_mut().clear();
+        hands.borrow_mut().clear();
         assert_eq!(cpu.call(LIST_DRAW, &[NODE]), Stop::Returned, "case {case}");
         let gate = mode == 1 && blink & 0x18 != 0;
         let mut want: Vec<(i32, i32, u16)> =
@@ -2099,11 +2111,32 @@ fn the_list_kernel_header_and_page_triangles_draw_where_the_port_draws_them() {
             "case {case}: node ({wx}, {wy}, {w}, {h}) visible {visible} count {count} page {page}/{pages} mode {mode} blink {blink:#x}"
         );
         assert_eq!(got, want, "{ctx}");
+        // The hand: every mode but 4 (and content 0xB's mode 0) draws it.
+        let held = mode == 4 || (content == 0xB && mode == 0);
+        let want_hand: Vec<(i32, i32)> = (!held)
+            .then(|| {
+                (
+                    wx - 6,
+                    legaia_engine_ui::shop_screen::list_row0_y(wy, h)
+                        + (cursor - top) * legaia_engine_ui::shop_screen::SHOP_LIST_PITCH,
+                )
+            })
+            .into_iter()
+            .collect();
+        assert_eq!(
+            *hands.borrow(),
+            want_hand,
+            "{ctx} cursor {cursor}: the hand"
+        );
+        hand_held += usize::from(held);
         seen[0] += usize::from(gate && page > 1);
         seen[1] += usize::from(gate && page < pages);
         seen[2] += usize::from(!gate && pages > 1);
     }
-    assert!(seen.iter().all(|&n| n > 300), "{seen:?}");
+    assert!(
+        seen.iter().all(|&n| n > 300) && hand_held > 300,
+        "{seen:?} {hand_held}"
+    );
 }
 
 /// A Ra-Seru bearer with **no** learned spell opens the battle Magic

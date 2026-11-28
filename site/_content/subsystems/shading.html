@@ -68,6 +68,7 @@
     <li><b>Colour word</b><span>One per primitive (flat) or per corner (gouraud), baked by the artists.</span></li>
     <li><b>Depth cue</b><span><code>c + (far &minus; c) &times; IR0 / 4096</code>; unfogged field scenes use <code>IR0 = 0</code>.</span></li>
     <li><b>Blend</b><span>STP texels mix with the screen: <code>B/2+F/2</code>, <code>B+F</code>, <code>B&minus;F</code> or <code>B+F/4</code>, on 5-bit channels and truncated - the console averages <code>(B+F)&gt;&gt;1</code>; PCSX-Redux does too on textured polygons but halves each side first on sprites and untextured flats. PSX mode blends the same way on both hosts.</span></li>
+    <li><b>Mode</b><span>A textured primitive names its blend in its page word. An untextured one has no page: it blends in the mode the GPU's draw-mode register holds when it is reached, which the last <code>E1</code> packet or the last textured polygon in the ordering table set. A census of every drawn table in the retail save-state library finds that carried mode is <code>B/2+F/2</code> everywhere but inside a battle body under a translucent colour word, where its untextured prims take the body's own texture mode (<code>B+F</code> or <code>B+F/4</code>); the port draws those prims as a second mesh of the body, in that mode.</span></li>
     <li><b>Dither</b><span>4&times;4 ordered offset, then each channel cut to 5 bits.</span></li>
   </ol>
 </section>

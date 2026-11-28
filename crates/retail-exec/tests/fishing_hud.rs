@@ -184,7 +184,14 @@ fn the_emitter_writes_the_quad_the_port_builds() {
         let anchor = [0u32, 1, rng.next()][rng.below(3) as usize];
         let x = rng.below(0x200) as i32 - 0x80;
         let y = rng.below(0x200) as i32 - 0x80;
-        let brightness = [0xFF, 0x80, rng.below(0x200) as i32][rng.below(3) as usize];
+        // A negative brightness takes the colour channels' round-toward-zero
+        // fix-ups (`bgez` over `addiu 0xFF`, `0x801D6454..0x801D65E0`).
+        let brightness = [
+            0xFF,
+            0x80,
+            rng.below(0x200) as i32,
+            -(rng.below(0x200) as i32),
+        ][rng.below(4) as usize];
         let sx = [
             0x1000,
             rng.below(0xC000) as i32,

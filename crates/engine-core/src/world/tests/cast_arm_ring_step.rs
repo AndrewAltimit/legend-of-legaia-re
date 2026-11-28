@@ -72,3 +72,31 @@ fn a_seed_for_another_state_leaves_the_arm_tables_their_step() {
     let head = passes(&mut w, 4, 6);
     assert!(head[1..].iter().all(|&s| s == 4), "{head:?}");
 }
+
+/// An arm whose table `4` is the capture module's own line
+/// (`CAPTURE_ARM_LINE_CLAMPS`) holds it while the line's polls load the frame
+/// and prices its own work once they stop: Call Wave's arm 2 on
+/// `garmel_zeto_pre_call_wave`'s recording reads the clamp to vsync `530`,
+/// three after the line's `Pause`, and runs `3` behind the clamped entries
+/// from there. An arm whose `4` is its work keeps the table past the line.
+#[test]
+fn a_line_clamped_arm_prices_its_work_once_the_line_stops_loading() {
+    let mut w = kiss_of_death_band();
+    w.casting.capture_spell = Some(0x55);
+    w.audio.battle_xa_load_frames = 400;
+    w.audio.battle_xa_frame_load = true;
+    w.audio.battle_xa_poll_load = false;
+    let under = passes(&mut w, 2, 12);
+    assert!(under[1..].iter().all(|&s| s == 4), "{under:?}");
+    w.audio.battle_xa_load_frames = 0;
+    let past = passes(&mut w, 2, 12);
+    // The first pass past the line still runs the step the last loaded one left.
+    assert_eq!(past[0], 4);
+    assert!(past[1..].iter().all(|&s| s == 3), "{past:?}");
+
+    // Thunder Storm's arm 6 runs `4` on its work past its line.
+    let mut w = kiss_of_death_band();
+    w.casting.capture_spell = Some(0x77);
+    let held = passes(&mut w, 6, 12);
+    assert!(held[1..].iter().all(|&s| s == 4), "{held:?}");
+}

@@ -507,6 +507,17 @@ pub struct WorldToggles {
     /// stays drawn at a sliver of its size. Off (and under
     /// [`Self::pin_retail`]) the seat keeps retail's scale.
     pub stone_scale_fix: bool,
+    /// Bio Castle approach (an enhancement, **on** by default): on `map01`
+    /// after Rim Elm fuses into the castle (flag `0x3BA`), pressing into the
+    /// castle's painted body from any side crosses its door, as walking onto
+    /// the door tile `(95, 23)` does. Retail opens that door from the west
+    /// only - the tile is the castle's north-west corner - so a party arriving
+    /// from the south or the east stands against a wall with no way in. The
+    /// cue engages the same `P2[37]` portal, so the arrival, flags and Door
+    /// of Wind seat are retail's; the collision grid is untouched, so the
+    /// castle stays solid. Off (and under [`Self::pin_retail`]) only the door
+    /// tile enters. See `World::bio_castle_approach_cue`.
+    pub bio_castle_approach: bool,
     /// Spirit AP (the engine twin of the patcher's `--spirit-ap`): the AP a
     /// Spirit turn charges into the gauge, retail [`SPIRIT_AP_RETAIL`]
     /// (`actor[+0x224] = 0x20` at `0x801E5D84`). Negative drains the gauge,
@@ -787,6 +798,7 @@ impl WorldToggles {
             hp_readout_guard: true,
             heal_numerals: false,
             stone_scale_fix: true,
+            bio_castle_approach: true,
             spirit_ap: SPIRIT_AP_RETAIL,
             damage_ap: DAMAGE_AP_RETAIL,
             seru_catch_pct: None,
@@ -843,6 +855,7 @@ impl WorldToggles {
         self.hp_readout_guard = false;
         self.heal_numerals = false;
         self.stone_scale_fix = false;
+        self.bio_castle_approach = false;
         self.spirit_ap = SPIRIT_AP_RETAIL;
         self.damage_ap = DAMAGE_AP_RETAIL;
         self.seru_catch_pct = None;
@@ -933,6 +946,9 @@ impl WorldToggles {
         if self.stone_scale_fix {
             out.push("stone_scale_fix");
         }
+        if self.bio_castle_approach {
+            out.push("bio_castle_approach");
+        }
         if self.spirit_ap != SPIRIT_AP_RETAIL {
             out.push("spirit_ap");
         }
@@ -1020,6 +1036,7 @@ mod fidelity_tests {
                 "tetsu_spar_fix",
                 "hp_readout_guard",
                 "stone_scale_fix",
+                "bio_castle_approach",
                 "battle_entry_off_axis"
             ]
         );
@@ -1049,7 +1066,7 @@ mod fidelity_tests {
         t.bonus_drop = true;
         t.save_anywhere = true;
         t.action_movement = true;
-        assert_eq!(t.retail_deviations().len(), 34);
+        assert_eq!(t.retail_deviations().len(), 35);
         t.pin_retail();
         assert!(t.retail_deviations().is_empty());
     }

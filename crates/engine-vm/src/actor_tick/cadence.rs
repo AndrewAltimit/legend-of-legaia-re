@@ -299,6 +299,19 @@ impl FrameStepTelemetry {
         cadence
     }
 
+    /// [`Self::resolve`] again for the frame it last stored, with
+    /// `elapsed_hblanks` in place of the sample it stored: a frame that ran
+    /// longer than first priced (a CD-XA one-shot its own scripts started).
+    pub fn revise_last(
+        &mut self,
+        elapsed_hblanks: i32,
+        frameskip_enabled: bool,
+        mode_floor: u8,
+    ) -> FrameCadence {
+        self.cursor = (self.cursor + Self::HISTORY - 1) % Self::HISTORY;
+        self.resolve(elapsed_hblanks, frameskip_enabled, mode_floor)
+    }
+
     /// The forced-cadence arm that precedes the adaptive block
     /// (`0x80017050..0x80017090`). When the word `gp+0x5D8` is non-zero,
     /// retail stores its **low byte** straight into `DAT_1F800393`, calls
@@ -440,6 +453,21 @@ mod cadence_tests {
         // The spike is in the history now, but clamped to 700 - which is
         // below the `> 0x2D0` rung.
         assert_eq!(t.resolve(0x10, true, 1).vsyncs_per_tick(), 3);
+    }
+
+    /// A revised sample replaces the frame's own slot: the cadence is the
+    /// revised frame's, and the ring holds the revision, not both.
+    #[test]
+    fn a_revised_frame_replaces_its_own_sample() {
+        let mut t = FrameStepTelemetry::new();
+        assert_eq!(t.resolve(0x100, true, 2).vsyncs_per_tick(), 2);
+        assert_eq!(t.revise_last(0x460, true, 2).vsyncs_per_tick(), 4);
+        // Clamped to 700 in the ring: the next frame sits on rung 3.
+        assert_eq!(t.resolve(0x10, true, 2).vsyncs_per_tick(), 3);
+        let mut u = FrameStepTelemetry::new();
+        u.resolve(0x460, true, 2);
+        u.resolve(0x10, true, 2);
+        assert_eq!(t, u, "the first sample is gone");
     }
 
     /// The history is a running maximum, so one slow frame keeps the cadence

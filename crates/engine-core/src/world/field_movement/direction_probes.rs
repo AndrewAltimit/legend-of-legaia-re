@@ -460,6 +460,13 @@ impl World {
     /// read yet (the retail differential `interact_probe` pins the last-hit
     /// rule itself).
     pub fn field_interact_probe_slot(&self) -> Option<u8> {
+        self.field_interact_probe_hit().map(|(slot, _)| slot)
+    }
+
+    /// [`Self::field_interact_probe_slot`] with the position of the actor
+    /// the probe point landed in: the touch post's `+0x98` partner, which
+    /// for a talk proxy is the proxy itself, not the speaker its talk runs.
+    pub fn field_interact_probe_hit(&self) -> Option<(u8, (i16, i16))> {
         let slot = self.player_actor_slot? as usize;
         if slot >= self.actors.len() || !self.actors[slot].active {
             return None;
@@ -470,13 +477,13 @@ impl World {
         let (dx, dz) = FIELD_FACING_PROBES[sector];
         let px = x.saturating_add(dx) as i32;
         let pz = z.saturating_sub(dz) as i32;
-        let mut best: Option<(i32, u8)> = None;
-        let consider = |slot: u8, ax: i16, az: i16, best: &mut Option<(i32, u8)>| {
+        let mut best: Option<(i32, u8, (i16, i16))> = None;
+        let consider = |slot: u8, ax: i16, az: i16, best: &mut Option<(i32, u8, (i16, i16))>| {
             let (ex, ez) = ((px - ax as i32).abs(), (pz - az as i32).abs());
             if ex < FIELD_INTERACT_BOX_HALF && ez < FIELD_INTERACT_BOX_HALF {
                 let d = ex * ex + ez * ez;
-                if best.is_none_or(|(bd, bs)| d < bd || (d == bd && slot < bs)) {
-                    *best = Some((d, slot));
+                if best.is_none_or(|(bd, bs, _)| d < bd || (d == bd && slot < bs)) {
+                    *best = Some((d, slot, (ax, az)));
                 }
             }
         };
@@ -512,7 +519,7 @@ impl World {
                 consider(target, ax, az, &mut best);
             }
         }
-        best.map(|(_, s)| s)
+        best.map(|(_, s, at)| (s, at))
     }
 }
 

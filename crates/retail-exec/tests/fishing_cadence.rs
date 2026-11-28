@@ -1232,3 +1232,80 @@ fn the_session_drives_the_motors_off_the_surge() {
     }
     assert!(copied > 500 && held > 500);
 }
+
+/// The session driver's banner-timer tail (`0x801D01A4..0x801D0270`), run
+/// with the driver parked on the line-break screen (state `0x28`, which
+/// touches none of the three) and the three animators live: the hook timer
+/// `DAT_801D9160` (`FUN_801D78EC`), the reel-in `DAT_801D915C`
+/// (`FUN_801D75DC`), which zeroes the hook timer on every frame it runs, and
+/// the strike splash `DAT_801D90F0` (`FUN_801D71D4`). Each timer gains the
+/// frame step while its animator still draws and drops to zero the frame it
+/// stops. Against `FishingBanners::service_frame` on the same timers.
+#[test]
+fn the_banner_timers_run_out_as_retail_runs_them() {
+    differential!(prot(972, SESSION));
+    use legaia_engine_ui::{BannerTimer, FishingBanners};
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let overlay = d
+        .read_entry(fs::FISHING_OVERLAY_PROT_INDEX)
+        .expect("PROT 0972");
+    const HOOK: u32 = 0x801D_9160;
+    const REEL_IN: u32 = 0x801D_915C;
+    const SPLASH: u32 = 0x801D_90F0;
+    const CONVERGE: u32 = 0x801D_9164;
+    const ANIMATORS: [u32; 3] = [0x801D_78EC, 0x801D_75DC, 0x801D_71D4];
+    let mut targets: Vec<u32> = overlay
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|w| u32::from_le_bytes(*w))
+        .filter(|w| w >> 26 == 3)
+        .map(|w| ((w & 0x03FF_FFFF) << 2) | 0x8000_0000)
+        .filter(|&t| !(SESSION..SESSION_END).contains(&t) && !ANIMATORS.contains(&t))
+        .collect();
+    targets.sort_unstable();
+    targets.dedup();
+    for t in targets {
+        cpu.stub(t, 0);
+    }
+    let mut rng = Rng(0x4241_4E52);
+    let timer = |rng: &mut Rng| match rng.below(4) {
+        0 => 0,
+        1 => 1 + rng.below(8) as i32,
+        2 => 0xC8 - 4 + rng.below(8) as i32,
+        _ => rng.below(0x200) as i32,
+    };
+    let (mut both, mut expired) = (0u32, 0u32);
+    for case in 0..20_000u32 {
+        cpu.mem.load(fs::FISHING_OVERLAY_BASE_VA, &overlay);
+        let (hook, reel, splash) = (timer(&mut rng), timer(&mut rng), timer(&mut rng));
+        let step = 1 + rng.below(3) as i32;
+        cpu.mem.wr32(SESSION_STATE, 0x28);
+        cpu.mem.wr32(CONVERGE, 0x10);
+        cpu.mem.wr32(HOOK, hook as u32);
+        cpu.mem.wr32(REEL_IN, reel as u32);
+        cpu.mem.wr32(SPLASH, splash as u32);
+        cpu.mem.wr8(FRAME_STEP, step as u8);
+        cpu.mem.wr32(PRESSED, 0);
+        assert_eq!(cpu.call(SESSION, &[]), Stop::Returned, "case {case}");
+        let retail = [HOOK, REEL_IN, SPLASH].map(|a| cpu.mem.rd32(a) as i32);
+        let mut port = FishingBanners {
+            hook: BannerTimer(hook),
+            reel_in: BannerTimer(reel),
+            splash: BannerTimer(splash),
+            ..FishingBanners::default()
+        };
+        port.service_frame(step);
+        let port = [port.hook.0, port.reel_in.0, port.splash.0];
+        assert_eq!(
+            retail, port,
+            "case {case}: hook {hook} reel-in {reel} splash {splash} step {step}"
+        );
+        both += u32::from(hook != 0 && reel != 0);
+        expired += u32::from((hook != 0 && retail[0] == 0) || (splash != 0 && retail[2] == 0));
+    }
+    assert!(both > 2000 && expired > 2000, "{both} {expired}");
+}

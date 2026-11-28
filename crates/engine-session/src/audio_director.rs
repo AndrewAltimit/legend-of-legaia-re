@@ -467,6 +467,33 @@ mod tests {
         assert_eq!(d.duck_applied(), d.duck_target(), "settled one frame later");
     }
 
+    /// The Continue Load's level stores, as the retail write watch reads them
+    /// from the Continue grid: the store at `0x801DFA58` lands `254` on the
+    /// first `LaunchFade` frame and the frame driver applies it on the next,
+    /// the level holds wherever the screen leaves it, and the scene load rests
+    /// it on the configured level.
+    #[test]
+    fn a_front_end_store_applies_a_frame_later_and_the_scene_load_rests_it() {
+        use legaia_engine_audio::duck::DUCK_LEVEL_REF;
+        let mut d = headless();
+        d.front_end_level_frame(None);
+        assert_eq!(d.duck_level(), DUCK_LEVEL_REF);
+        d.front_end_level_frame(Some(254));
+        assert_eq!(d.duck_level(), 254);
+        assert_eq!(d.duck_applied(), DUCK_LEVEL_REF, "stored, not yet applied");
+        d.front_end_level_frame(Some(254));
+        assert_eq!(d.duck_applied(), 254);
+        d.front_end_level_frame(Some(0));
+        d.front_end_level_frame(None);
+        assert_eq!(d.duck_applied(), 0);
+        d.front_end_level_frame(None);
+        assert_eq!(d.duck_level(), 0, "no ramp pulls a stored level back");
+        d.rest_audio_level();
+        d.tick_duck();
+        assert_eq!(d.duck_applied(), DUCK_LEVEL_REF);
+        assert_eq!(d.duck_target(), DUCK_LEVEL_REF);
+    }
+
     /// A scene change empties the cue queue but keeps the reward bank: it
     /// lives in the BGM region's tail until a track overruns it or the field
     /// init closes it (the shared `BgmTail` rule).

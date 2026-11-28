@@ -584,7 +584,10 @@ impl PlayWindowApp {
     /// recording stops that many ticks past the action SM's Done band
     /// (`0x50` / `0x51` / `0x5A` / `0x65`), where a cast's own sound ends and the
     /// fight's next turn begins; a recording that opens inside that band stops
-    /// that far past its exit. The child must not take its frame on the gate
+    /// that far past its exit.
+    /// `LEGAIA_DIAG_AUDIO_WAV_FRESH=1` leaves out the cue voices already
+    /// sounding at the gate, for the `cast_core` channel. The child must not
+    /// take its frame on the gate
     /// (`LEGAIA_DIAG_CAPTURE_TICK` past the window).
     #[cfg(feature = "oracles")]
     fn record_audio_wav(&self) {
@@ -660,9 +663,30 @@ impl PlayWindowApp {
                         && (p > phase || (p == phase && w.battle_ctx.frame_timer <= word)))
             });
         if rec.start.is_none() && at_arm && self.capture_gate_met() {
+            use legaia_engine_audio::spu::VoiceBus;
+            // The cue voices sounding at the gate. With
+            // `LEGAIA_DIAG_AUDIO_WAV_FRESH=1` they leave the recording: they are
+            // the engine's own copies of the state's held cues, which the
+            // `cast_core` channel renders off the retail state's resumed SPU;
+            // kept, the two sound twice. Moved to the silent music bus, they
+            // still hold their voices until a key-on takes one, which puts it
+            // back on the cue bus.
+            let fresh = std::env::var("LEGAIA_DIAG_AUDIO_WAV_FRESH").as_deref() == Ok("1");
+            let held = director.audio().with_spu(|spu| {
+                let mut held = 0;
+                for v in spu.voices.iter_mut() {
+                    if v.bus == VoiceBus::Sfx && !v.is_off() {
+                        held += 1;
+                        if fresh {
+                            v.bus = VoiceBus::Bgm;
+                        }
+                    }
+                }
+                held
+            });
             let w = &self.session.host.world;
             eprintln!(
-                "audio wav: the capture's gate at tick {tick} (action {:#04x}, side-band stage {}, read left {:?}, drive waiting {})",
+                "audio wav: the capture's gate at tick {tick} (action {:#04x}, side-band stage {}, read left {:?}, drive waiting {}, held cue voices {held})",
                 w.battle_ctx.action_state,
                 w.battle_ctx.menu_open,
                 w.casting.sideband_read_left,
@@ -1332,7 +1356,8 @@ impl PlayWindowApp {
         }
         // `fxparts.csv` beside it (no header): every live part of the
         // battle's other scene graphs - `tick,scene,index,finished,flags,
-        // u0 (+0xA8),x,y,z` with scene `m` (move FX), `a<n>` (effect-script
+        // u0 (+0xA8),x,y,z,tag,colour (+0x74),level (+0x78),kind (+0x56),
+        // +0xA0,+0xA4` with scene `m` (move FX), `a<n>` (effect-script
         // action FX) or `s` (stage) - so a melee burst's lifetime reads
         // part by part against the probe's `parts.csv`.
         if std::env::var_os("LEGAIA_DIAG_CAST_PARTS").is_some()
@@ -1359,7 +1384,7 @@ impl PlayWindowApp {
                     let st = &part.state;
                     let _ = writeln!(
                         f,
-                        "{tick},{name},{i},{},{:#06x},{:#06x},{},{},{},{:#010x}",
+                        "{tick},{name},{i},{},{:#06x},{:#06x},{},{},{},{:#010x},{:#010x},{},{},{:#010x},{:#010x}",
                         u8::from(part.finished),
                         st.flags,
                         st.actor_u16(0xA8),
@@ -1367,6 +1392,11 @@ impl PlayWindowApp {
                         st.world_y,
                         st.world_z,
                         part.tag.unwrap_or(0),
+                        st.field_74,
+                        st.field_78,
+                        st.actor_u16(0x56),
+                        u32::from(st.actor_u16(0xA0)) | u32::from(st.actor_u16(0xA2)) << 16,
+                        u32::from(st.actor_u16(0xA4)) | u32::from(st.actor_u16(0xA6)) << 16,
                     );
                 }
             }
@@ -1485,6 +1515,48 @@ impl PlayWindowApp {
                 );
             }
             let _ = writeln!(f, "{tick},{}", cols.join(","));
+        }
+        // `LEGAIA_DIAG_CAST_PARTS=1`: `tint.csv` (no header), per tick and
+        // per retail seat 0..7 the tint state machine's words - colour
+        // `+0x04`, blend `+0x0C`, state `+0x21C`, impact selector `+0x21F` -
+        // then the Arts banner's stage and level (`ctx[+0x28B]` / `+0x28C`):
+        // the engine half of the probe's `tint.csv` (`--retail-parts`).
+        if std::env::var_os("LEGAIA_DIAG_CAST_PARTS").is_some()
+            && let Ok(f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(rec.dir.join("tint.csv"))
+        {
+            let mut f = std::io::BufWriter::new(f);
+            let tint = |a: &legaia_engine_core::world::Actor| {
+                format!(
+                    "{:#010x},{:#06x},{},{}",
+                    a.battle.render_color,
+                    a.battle.render_blend,
+                    a.battle.render_flag,
+                    a.battle.impact_state
+                )
+            };
+            let mut cols = vec!["-1,-1,-1,-1".to_string(); 8];
+            for (i, a) in w.actors.iter().enumerate().take(pc + 5) {
+                if let Some(c) = cols.get_mut(seat_of(i)) {
+                    *c = tint(a);
+                }
+            }
+            if let Some(a) = w
+                .casting
+                .summon_actor_slot
+                .and_then(|c| w.actors.get(usize::from(c)))
+            {
+                cols[7] = tint(a);
+            }
+            let _ = writeln!(
+                f,
+                "{tick},{},{},{}",
+                cols.join(","),
+                w.battle_ctx.arts_banner_stage,
+                w.battle_ctx.arts_banner_level
+            );
         }
         // `rates.csv` (no header): per tick, then per retail seat 0..7 the
         // animation rate `+0x21D` and the node cursor `+0x68` (`-1` with no

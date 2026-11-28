@@ -1771,7 +1771,8 @@ def main() -> int:
                     help="sound channel: ticks a cue still matches at (default 6)")
     ap.add_argument("--watch", default="",
                     help="retail: log each store into these byte addresses (comma list) with its pc and "
-                         "ra (retail/watch.csv; breakpoint core)")
+                         "ra (retail/watch.csv; breakpoint core); `sN+0xOFF` names pool slot N's actor "
+                         "plus OFF, armed once the slot holds one")
     ap.add_argument("--calc-clock", action="store_true",
                     help="retail: each libsnd calc FUN_80062F98 and KON write with its CPU cycle "
                          "(retail/calc.csv; breakpoint core)")

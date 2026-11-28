@@ -32,7 +32,14 @@ impl World {
     pub(crate) fn glide_armed_after_walk(&self) -> bool {
         // A placement's or object's record runs on list `2`, walked after
         // the whole of list `0`, so its mover never steps on the arming frame.
-        if self.dialog.inline.is_some() && !self.field_vm.in_spawned_record_slice {
+        // The runner holds the talk's context out of `dialog.inline` while
+        // it steps it (`dialog.stepping_inline`): the Baka Fighter seat
+        // (`koin1`, `baka_fighter_entry_pretransition`) arms its `45 C0 3C`
+        // glide from the talk and retail's focus first moves a game frame
+        // after the op.
+        if (self.dialog.inline.is_some() || self.dialog.stepping_inline)
+            && !self.field_vm.in_spawned_record_slice
+        {
             return true;
         }
         if !self.field_vm.in_spawned_record_slice {

@@ -19,7 +19,7 @@ impl World {
     ///   `0x801F88C4` (`0x801F708C..0x801F70F8`);
     /// - arm 3's pass clears both swirl words (`0x801F725C..0x801F726C`);
     /// - arm 4, every pass: the pull grows by `2 * step` and the spin by the
-    ///   pull (`0x801F744C..0x801F7474`). Each party seat with HP takes the
+    ///   pull (`0x801F744C..0x801F7474`), once, on the pass's opening tick. Each party seat with HP takes the
     ///   bearing and the sin / cos weighted reach from its mark to the
     ///   caster (`FUN_80019B28`, the SCUS tables `0x8007B81C` / `0x8007B7F8`),
     ///   draws the reach in by half the pull down to `0x200` (a reach already
@@ -53,11 +53,29 @@ impl World {
                     return;
                 };
                 let (cx, cz) = (c.move_state.world_x, c.move_state.world_z);
+                // Retail enters the module once a pass and grows the pull by
+                // the pass's whole `2 * step` in one store (`lbu 0x7f` of the
+                // scratchpad block `0x1F800314`, the frame step `0x1F800393`,
+                // `sll 1` at `0x801F7458`), then the spin by the grown pull
+                // once. A pass here is `step` one-vsync ticks
+                // (`World::module_pass`): the pull loop runs on the tick that
+                // opens it, at the pass's step, and the ticks after it hold
+                // the pose; run on each tick, the spin took the pull `step`
+                // times over and the swirl ran well ahead of retail's on
+                // every heavy pass.
+                let pass_step = if self.toggles.battle_sm_frame_cadence {
+                    i32::from(self.module_frame_step())
+                } else {
+                    1
+                };
+                let opens = !self.casting.module_pass_repeat;
                 let (pull, spin) = &mut self.casting.dark_typhoon_swirl;
-                *pull += 2;
-                *spin += *pull;
+                if opens {
+                    *pull += 2 * pass_step;
+                    *spin += *pull;
+                }
                 let (pull, spin) = (*pull, *spin);
-                for i in 0..party {
+                for i in (0..party).filter(|_| opens) {
                     if self.actors[i].battle.hp == 0 {
                         continue;
                     }

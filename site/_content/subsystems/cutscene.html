@@ -244,6 +244,68 @@ legaia-engine play-str MOV/MV1.STR --disc "Legend of Legaia (USA).bin"</code></p
     <li><strong>The pop.</strong> The port drew the pose from the bound cursor before it consumed the restart, so for one vsync the body showed record 45&rsquo;s frame 0, hand at his side and head up. It was in the live pose, in the default mode and under <code>--retail</code> alike. The port now seats the restart before the pose is drawn (<code>FieldClipPlayer::tick_with</code>), and a disc-gated test walks the opening from New Game to the name entry in both modes and fails on any one-vsync pose pop.</li>
     <li><strong>The player steps on the game-frame grid.</strong> Retail runs that tick once a game frame with its step multiplied by the frame step, as it does for every villager. The port stepped the player half a step every vsync and drew before the step, so every pose of Vahn&rsquo;s was a vsync behind retail&rsquo;s and a one-shot clip&rsquo;s end landed a vsync late. The player&rsquo;s clip now steps once a game frame and draws after the step; the opening&rsquo;s cursor matches the retail film on every vsync, and a walk film of the player in Koru agrees with retail&rsquo;s cursor on about half its rows, up from a sixth.</li>
   </ul>
+  <h3 id="frame-order">Who moves first: the actor-list walk</h3>
+  <p>Retail ticks a field frame by walking its actor lists in order (<code>FUN_80016444</code> into <code>FUN_8002519C</code>): list 0, then the ambient parts on list 1, then the placements on list 2. The player is list 0&rsquo;s first live node, so Vahn&rsquo;s pad step, settle, clip tick and camera update all run before any script of the frame, and a record reads the player as this frame left him. The walk also reads each node&rsquo;s <em>next</em> pointer before it calls that node&rsquo;s tick, and that one detail decides when a camera glide starts.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Three actor lists walked top to bottom. List 0: the player first, then the dialogue pager, the system channel and the scene's record contexts. A camera glide armed by the last record context links a new mover node at the tail of list 0, behind the node the walk is ticking; the walk already read that node's next pointer, which was empty, so the mover's first step is on the next frame. List 1 holds the ambient parts and list 2 the placements.">
+      <defs><marker id="cs-fo-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text class="dg-label dg-start" x="16" y="52">list 0</text>
+      <rect class="dg-node-accent" x="80" y="26" width="150" height="44" rx="5"/>
+      <text class="dg-label" x="155" y="46">player</text><text class="dg-sub" x="155" y="62">FUN_801D1344</text>
+      <rect class="dg-node" x="250" y="26" width="130" height="44" rx="5"/>
+      <text class="dg-label" x="315" y="46">dialogue pager</text>
+      <rect class="dg-node" x="400" y="26" width="150" height="44" rx="5"/>
+      <text class="dg-label" x="475" y="46">system channel</text><text class="dg-sub" x="475" y="62">FUN_801DA51C</text>
+      <rect class="dg-node" x="570" y="26" width="130" height="44" rx="5"/>
+      <text class="dg-label" x="635" y="46">record contexts</text><text class="dg-sub" x="635" y="62">arms a glide</text>
+      <rect class="dg-group" x="720" y="26" width="124" height="44" rx="5"/>
+      <text class="dg-label" x="782" y="46">camera mover</text><text class="dg-sub" x="782" y="62">linked at the tail</text>
+      <path class="dg-edge" d="M230 48 L248 48" marker-end="url(#cs-fo-arrow)"/>
+      <path class="dg-edge" d="M380 48 L398 48" marker-end="url(#cs-fo-arrow)"/>
+      <path class="dg-edge" d="M550 48 L568 48" marker-end="url(#cs-fo-arrow)"/>
+      <path class="dg-edge-dim" d="M700 48 L718 48" marker-end="url(#cs-fo-arrow)"/>
+      <text class="dg-edge-label" x="440" y="96">next read before the tick: empty, so the walk ends here</text>
+      <text class="dg-edge-label" x="440" y="112">the new mover first steps on the next frame</text>
+      <text class="dg-label dg-start" x="16" y="168">list 1</text>
+      <rect class="dg-node" x="80" y="142" width="300" height="44" rx="5"/>
+      <text class="dg-label" x="230" y="162">ambient parts</text><text class="dg-sub" x="230" y="178">the scene's ambient effect parts</text>
+      <text class="dg-label dg-start" x="16" y="240">list 2</text>
+      <rect class="dg-node" x="80" y="214" width="300" height="44" rx="5"/>
+      <text class="dg-label" x="230" y="234">placements</text><text class="dg-sub" x="230" y="250">NPCs, props, doors and their records</text>
+      <path class="dg-edge-dim" d="M155 72 L155 140" marker-end="url(#cs-fo-arrow)"/>
+      <path class="dg-edge-dim" d="M155 188 L155 212" marker-end="url(#cs-fo-arrow)"/>
+      <text class="dg-edge-label" x="420" y="240">a glide a placement's record arms is on a list the walk</text>
+      <text class="dg-edge-label" x="420" y="256">has left behind: it waits a frame too</text>
+      <text class="dg-edge-label" x="16" y="290">order read off a RAM walk of town01's opening; the next-pointer read is at 0x800251D8</text>
+    </svg>
+    <figcaption>One field frame, top to bottom. The player leads; a mover linked behind the node the walk is ticking is not reached until the next frame.</figcaption>
+  </figure>
+  <ul class="bullets">
+    <li><strong>The player ticks before the scripts.</strong> The port ran the field scripts first and the player after them, so a record that waits for Vahn&rsquo;s clip to land saw it a frame late. It now runs the player&rsquo;s step, settle, motion test and clip tick ahead of the record contexts, as retail&rsquo;s list does, and the opening&rsquo;s three beats around the hand-raise hold <code>38</code>, <code>34</code> and <code>36</code> vsyncs, retail&rsquo;s counts (they held <code>40</code>, <code>34</code> and <code>40</code>).</li>
+    <li><strong>A fresh glide waits a frame when nothing follows its arm.</strong> Camera Configure&rsquo;s mover links at the tail of list 0. Armed by the system script, it lands ahead of the node being ticked and steps that frame; armed by the last record context, or by a placement&rsquo;s record on list 2, it lands behind the walk and first steps on the next. A re-arm of a mover that is already live steps at once, and so does one armed while a pool actor the record spawned still sits behind it. The port stepped every fresh glide on its arming frame; with the rule, the camera rows that disagree with retail&rsquo;s film fall from <code>360</code> to none in the Biron Monastery mist cutscene, and from <code>455</code> to <code>189</code> on the approach to Zeto in his dungeon.</li>
+    <li><strong>A box opens on the frame after its line.</strong> The dialogue pager sits on list 0 ahead of the record contexts, so the frame a record reaches a line leaves the pager waiting, and the box&rsquo;s first call (one character, no press read) is the next frame&rsquo;s. A Cross on that frame is spent; the page types on. The port opened the box a vsync early and took that press as a skip: on the approach to Zeto the Meta box closed a press early and the scene ran twenty vsyncs ahead, camera rows off retail <code>276</code> to <code>112</code>.</li>
+    <li><strong>A cutscene&rsquo;s last shot stands.</strong> When a timeline ends with no hand-back op, the follow camera keeps the shot until Vahn moves, then eases from it. The port snapped to the zone pose and the focus clamp; at the Genesis Tree in East Voz Forest the focus jumped about 700 units for the rest of the scene. Camera rows off retail <code>364</code> to <code>16</code>.</li>
+    <li><strong>A voice line slows the frame that starts it.</strong> The clip&rsquo;s start issues its CD commands mid-frame and its polls load the rest, so in retail that frame already runs five vsyncs and the pacer steps up from the next. The port priced the frame before its scripts ran and fell two vsyncs off retail&rsquo;s grid for the whole line; over Zeto&rsquo;s defeat the camera rows off retail fall from <code>531</code> to <code>204</code>.</li>
+    <li><strong>Neither is a timing knob.</strong> Both are the order retail&rsquo;s own loop runs in, read from the disassembly and confirmed on PCSX-Redux films; the port has no setting for them, in the default mode or under <code>--retail</code>.</li>
+  </ul>
+  <h3 id="intro-skip">The intro skip: a held Select, then black</h3>
+  <p>The opening skips on Select <em>held</em>, not on a press of Cross or Start: the field controller <code>FUN_801D1344</code> tests the held pad word against Select once <code>opdeene</code>&rsquo;s timeline has raised story flag 26. On that frame it clears the flag, locks the player and asks for a <code>0x3C</code>-frame subtractive fade to black, held there; the scene packet for <code>town01</code> goes out the same frame, and the disc load behind it keeps the screen black for a long while before Rim Elm fades in.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 170" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Two timelines from the Select press. Retail: the fade reaches black about 50 vsyncs after the press, then the disc load holds black for about 380 vsyncs before town01 fades in. Port: the same 60-frame fade to black, then town01 is entered when the fade lands; the load hold is not modelled.">
+      <text class="dg-label dg-start" x="16" y="50">retail</text>
+      <rect class="dg-node-accent" x="100" y="30" width="120" height="32" rx="4"/><text class="dg-sub" x="160" y="50">Select held</text>
+      <rect class="dg-node" x="220" y="30" width="150" height="32" rx="4"/><text class="dg-sub" x="295" y="50">fade to black, 0x3C</text>
+      <rect class="dg-node" x="370" y="30" width="360" height="32" rx="4"/><text class="dg-sub" x="550" y="50">black while the disc loads (about 380 vsyncs)</text>
+      <rect class="dg-node-ok" x="730" y="30" width="114" height="32" rx="4"/><text class="dg-sub" x="787" y="50">town01</text>
+      <text class="dg-label dg-start" x="16" y="110">port</text>
+      <rect class="dg-node-accent" x="100" y="90" width="120" height="32" rx="4"/><text class="dg-sub" x="160" y="110">Select held</text>
+      <rect class="dg-node" x="220" y="90" width="150" height="32" rx="4"/><text class="dg-sub" x="295" y="110">fade to black, 0x3C</text>
+      <rect class="dg-node-ok" x="370" y="90" width="114" height="32" rx="4"/><text class="dg-sub" x="427" y="110">town01</text>
+      <text class="dg-edge-label" x="16" y="154">press frame: flag 26 cleared, player locked (+0x10 |= 0x80000), FUN_801D58F0(2, 0, 0xFFFFFF, 0, 0x3C, -1)</text>
+    </svg>
+    <figcaption>The skip as retail runs it and as the port runs it. A PCSX-Redux film of a New Game state with Select held reads black about 50 vsyncs after the press.</figcaption>
+  </figure>
+  <p>The port runs the same fade and lock (<code>World::step_prologue_skip</code>) and enters <code>town01</code> when the fade lands; its loads take no time, so the long black hold has nothing to stand for. Retail says nothing about the skip on screen, so both hosts name it while it would work (<code>World::prologue_skip_ready</code>): the native window at its bottom left, the play page on its status line, each with the key or button bound to Select.</p>
   <h3 id="color-fade">Fades and the gold grade</h3>
   <ul class="bullets">
     <li><strong>Screen fade</strong> (op <code>0x4C 0x12</code>): a global multiply tint, optionally ramped over N frames. Every scene's entry script arms an instant black then a 68-frame ramp to neutral - the fade-in that opens the prologue. It darkens the 3D scene only; the crawl stays white. Engine <code>fade::SceneTintRamp</code>.</li>

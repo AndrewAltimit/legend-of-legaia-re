@@ -527,3 +527,25 @@ fn the_seed_tokenizes_what_the_assembler_built() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
     assert!(arts > 200, "{arts}");
 }
+
+/// The insertion tail draws its art record as `rand() % 5 + 0xB` (plus 2 for
+/// Noa's `0xD` / `0xE`) and leaves when that index is not below the bank's
+/// record count, the first byte of record 0's `+0x58` table
+/// (`0x801F0BC8..0x801F0BD4`); the queue builder skips its walk on the same
+/// count `<= 0xB` (`0x801EF2FC`). Every party bank on the disc holds more
+/// records than either index reaches, so neither exit is taken.
+#[test]
+fn every_party_bank_holds_the_records_the_fills_draw() {
+    not_a_differential!("reads the three party art banks' record counts; runs no routine");
+    let Some(disc) = disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    for c in 0..3 {
+        let rec0 =
+            decode_record0(&disc.read_entry(863 + c).expect("player file")).expect("record0");
+        let off = u32::from_le_bytes(rec0[0x58..0x5C].try_into().unwrap()) as usize;
+        let count = rec0[off];
+        assert!(count > 0x11, "bank {c}: {count} records");
+    }
+}

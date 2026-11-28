@@ -48,6 +48,17 @@ pub const BGM_SUB_OP_ENGINE_FADE: u8 = 0xFC;
 /// op-`0x35` word.
 pub const BGM_SUB_OP_ENGINE_RESTART: u8 = 0xFB;
 
+/// The `FieldEvent::Bgm` sub-op the **engine** raises for a decrescendo a
+/// minigame overlay hands straight to `FUN_80062004` on the sounding track:
+/// `text_id` is the ramp's length in vsyncs, the amount the whole sequence
+/// volume ([`BGM_DECRESCENDO_AMOUNT`], which the shim clamps to the level).
+/// The fishing lift's (`FUN_801D4948`, `0x801D4B04..0x801D4B18`) is the one
+/// producer. Not a retail op-`0x35` word.
+pub const BGM_SUB_OP_ENGINE_DECRESCENDO: u8 = 0xFA;
+
+/// The amount the overlay decrescendos pass (`li a1,0xff`).
+pub const BGM_DECRESCENDO_AMOUNT: i16 = 0xFF;
+
 /// Audio-side state: BGM selection and resume, the SFX cue / delay slots, sound-bank handshakes and the battle SFX / XA / shout cue queues.
 #[derive(Debug)]
 pub struct AudioState {
@@ -214,7 +225,8 @@ pub struct AudioState {
     pub(crate) battle_bgm: Option<u16>,
     /// `_DAT_8007B880` - the **battle sound set** the field script selects
     /// for the next fight: op-`0x35` sub-op `7` stores its operand, or `-1`
-    /// for an operand byte of `0xFF` (`0x801E01DC..0x801E0208`); the scene
+    /// for an operand whose high byte is `0xFF` (`0x801E01DC..0x801E0208`;
+    /// any other operand lands as its signed halfword); the scene
     /// map-init `FUN_8003AEB0` zeroes it on every scene entry
     /// (`0x8003B4F8`). The battle intro reads it: `-1` loads no battle
     /// track and the field score plays through the fight (a scripted boss
@@ -248,12 +260,6 @@ pub struct AudioState {
     /// machine, fishing - both inherit the host scene's BGM) does not
     /// re-emit the field track on exit.
     pub(crate) minigame_bgm_active: bool,
-    /// The track the last fight's battle bundle carried
-    /// ([`crate::world::World::swap_to_battle_bgm`]). Retail streams that
-    /// bundle into the staging buffer at `_DAT_8007B85C + 0x32000`, where it
-    /// stays after the fight; the fishing hook replays it from there
-    /// (`FUN_801D26CC`, `0x801D3614..0x801D3664`).
-    pub(crate) last_battle_track: Option<u16>,
     /// Retail's timed sound-source auto-release (`gp+0x808`/`0x814`/`0x81C`),
     /// serviced by the frame-begin driver once a game frame by that frame's
     /// step, so its count is vsyncs. Advanced by [`crate::world::World::tick`]
@@ -474,7 +480,6 @@ impl AudioState {
             battle_bgm_active: false,
             minigame_bgm_resume: None,
             minigame_bgm_active: false,
-            last_battle_track: None,
             sound_release: legaia_engine_system::sound_state::SoundReleaseTimer::default(),
             pending_sound_release: false,
             start_pending_commit: false,
@@ -714,6 +719,9 @@ impl World {
             }
             (SceneMode::Dance, _) if !self.minigames.dance_sfx_bundle.is_empty() => {
                 &self.minigames.dance_sfx_bundle
+            }
+            (SceneMode::Fishing, _) if !self.minigames.fishing_sfx_bundle.is_empty() => {
+                &self.minigames.fishing_sfx_bundle
             }
             _ => &self.props.stager_bytes,
         }

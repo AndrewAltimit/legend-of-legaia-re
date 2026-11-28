@@ -947,6 +947,9 @@ pub fn play_args_with(info: &DiscInfo, settings: &LauncherSettings) -> Vec<std::
     if settings.switches.no_stone_scale_fix {
         args.push("--no-stone-scale-fix".into());
     }
+    if settings.switches.no_bio_castle_approach {
+        args.push("--no-bio-castle-approach".into());
+    }
     if settings.switches.heal_numerals {
         args.push("--heal-numerals".into());
     }
@@ -1456,6 +1459,7 @@ pub enum OptionRow {
     JewelFix,
     HpReadoutGuard,
     StoneScaleFix,
+    BioCastleApproach,
     HealNumerals,
     BonusDrop,
     SaveAnywhere,
@@ -1471,7 +1475,7 @@ pub enum OptionRow {
 
 /// The option rows in screen order, with the heading each group starts
 /// under (`Some` on a group's first row).
-pub const OPTION_ROWS: [(Option<&str>, OptionRow); 47] = [
+pub const OPTION_ROWS: [(Option<&str>, OptionRow); 48] = [
     (Some("Start here"), OptionRow::Preset),
     (Some("Display"), OptionRow::Fullscreen),
     (None, OptionRow::WindowSize),
@@ -1506,6 +1510,7 @@ pub const OPTION_ROWS: [(Option<&str>, OptionRow); 47] = [
     (None, OptionRow::JewelFix),
     (None, OptionRow::HpReadoutGuard),
     (None, OptionRow::StoneScaleFix),
+    (None, OptionRow::BioCastleApproach),
     (Some("Battle tuning"), OptionRow::ExpRate),
     (None, OptionRow::EnemyStats),
     (None, OptionRow::EnemyAttacks),
@@ -1544,6 +1549,7 @@ fn original_state() -> (legaia_engine_menus::options::OptionsState, LauncherSett
     w.jewel_fix = false;
     w.no_hp_readout_guard = true;
     w.no_stone_scale_fix = true;
+    w.no_bio_castle_approach = true;
     w.heal_numerals = false;
     w.spirit_ap = None;
     w.damage_ap = None;
@@ -1640,6 +1646,7 @@ impl OptionRow {
             Self::JewelFix => "Boss casts respect jewels",
             Self::HpReadoutGuard => "Battle freeze guard",
             Self::StoneScaleFix => "Stoned foes keep their size",
+            Self::BioCastleApproach => "Bio Castle from any side",
             Self::HealNumerals => "Heal numbers",
             Self::BonusDrop => "Bonus equipment drops",
             Self::SaveAnywhere => "Save anywhere",
@@ -1806,6 +1813,10 @@ impl OptionRow {
                 "After Iota's attack, a monster turned to stone stands back at full size. \
                  The original leaves it shrunk to a sliver."
             }
+            Self::BioCastleApproach => {
+                "Walking into the Bio Castle from any side takes you in. The \
+                 original opens its door from the west only."
+            }
             Self::HpReadoutGuard => {
                 "Stops a rare original bug where a battle freezes with the camera \
                  circling forever after a party member's HP gauge stops counting."
@@ -1848,6 +1859,7 @@ impl OptionRow {
                 | Self::JewelFix
                 | Self::HpReadoutGuard
                 | Self::StoneScaleFix
+                | Self::BioCastleApproach
                 | Self::HealNumerals
                 | Self::BonusDrop
                 | Self::SaveAnywhere
@@ -1928,6 +1940,7 @@ impl OptionRow {
             Self::JewelFix => on_off(s.switches.jewel_fix),
             Self::HpReadoutGuard => on_off(!s.switches.no_hp_readout_guard),
             Self::StoneScaleFix => on_off(!s.switches.no_stone_scale_fix),
+            Self::BioCastleApproach => on_off(!s.switches.no_bio_castle_approach),
             Self::HealNumerals => on_off(s.switches.heal_numerals),
             Self::BonusDrop => on_off(s.switches.equipment_drops),
             Self::SaveAnywhere => on_off(s.switches.save_anywhere),
@@ -2093,6 +2106,7 @@ impl OptionRow {
             Self::JewelFix => w.jewel_fix = d.jewel_fix,
             Self::HpReadoutGuard => w.no_hp_readout_guard = d.no_hp_readout_guard,
             Self::StoneScaleFix => w.no_stone_scale_fix = d.no_stone_scale_fix,
+            Self::BioCastleApproach => w.no_bio_castle_approach = d.no_bio_castle_approach,
             Self::HealNumerals => w.heal_numerals = d.heal_numerals,
             Self::BonusDrop => w.equipment_drops = d.equipment_drops,
             Self::SaveAnywhere => w.save_anywhere = d.save_anywhere,
@@ -2205,6 +2219,7 @@ impl OptionRow {
             Self::JewelFix => s.switches.jewel_fix ^= true,
             Self::HpReadoutGuard => s.switches.no_hp_readout_guard ^= true,
             Self::StoneScaleFix => s.switches.no_stone_scale_fix ^= true,
+            Self::BioCastleApproach => s.switches.no_bio_castle_approach ^= true,
             Self::HealNumerals => s.switches.heal_numerals ^= true,
             Self::BonusDrop => s.switches.equipment_drops ^= true,
             Self::SaveAnywhere => s.switches.save_anywhere ^= true,
@@ -2572,6 +2587,10 @@ mod tests {
         assert_eq!(shown(OptionRow::JewelFix), on_off(t.jewel_fix));
         assert_eq!(shown(OptionRow::HpReadoutGuard), on_off(t.hp_readout_guard));
         assert_eq!(shown(OptionRow::StoneScaleFix), on_off(t.stone_scale_fix));
+        assert_eq!(
+            shown(OptionRow::BioCastleApproach),
+            on_off(t.bio_castle_approach)
+        );
         assert_eq!(shown(OptionRow::HealNumerals), on_off(t.heal_numerals));
         assert_eq!(shown(OptionRow::BonusDrop), on_off(t.bonus_drop));
         assert_eq!(shown(OptionRow::SaveAnywhere), on_off(t.save_anywhere));
@@ -3283,6 +3302,7 @@ mod tests {
             JewelFix => "play-jewel-fix",
             HpReadoutGuard => "play-hp-readout-guard",
             StoneScaleFix => "play-stone-scale-fix",
+            BioCastleApproach => "play-bio-castle-approach",
             HealNumerals => "play-heal-numerals",
             BonusDrop => "play-bonus-drop",
             SaveAnywhere => "play-save-anywhere",

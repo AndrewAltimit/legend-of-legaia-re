@@ -69,6 +69,29 @@ fn boot_ui_logos_title_new_game_enters_the_opening() {
     // seats the Vahn / Noa / Gala composition; the New Game drops it. A
     // stale composition is what wrote a Vahn-alone save as a three-member
     // party (card count 3, members 0 1 2) that reloaded with Noa and Gala.
+    // The launch's black: the title theme plays on under it, swelling to
+    // `254` and fading to `0`, and the launch frame ends the hold.
+    let mut applied = Vec::new();
+    for _ in 0..400 {
+        if w.session().host.world.launch_fade.is_none() {
+            break;
+        }
+        w.display_frame(0, 1);
+        if let Some(d) = w.session().bgm.as_ref() {
+            applied.push(d.duck_applied());
+        }
+    }
+    eprintln!(
+        "[native-front-end] the New Game black applied 254 on {} frames",
+        applied.iter().filter(|&&l| l == 254).count()
+    );
+    if let Some(d) = w.session().bgm.as_ref() {
+        assert!(
+            applied.contains(&254) && applied.contains(&0),
+            "the black swells the title theme and fades it out"
+        );
+        assert!(!d.launch_holding(), "the launch frame ends the hold");
+    }
     let party = &w.session().host.world.party;
     assert_eq!(party.party_count, 1, "a New Game party is Vahn alone");
     assert!(
@@ -127,9 +150,15 @@ fn boot_ui_continue_loads_the_port_two_card() {
         PadButton::Down.mask(),
     );
     let mut saw_continue = false;
+    // The live audio level the Load's `LaunchFade` applies (`254` through
+    // its hold, `0` at the end of its ramp).
+    let mut applied_levels: Vec<u8> = Vec::new();
     let mut frames = 0u32;
     while w.boot_ui_active() && frames < 6000 {
         let tap = frames % 8 < 2;
+        if let Some(d) = w.session().bgm.as_ref() {
+            applied_levels.push(d.duck_applied());
+        }
         let pad = if let Some(c) = w.continue_screen() {
             saw_continue = true;
             match c.session().phase() {
@@ -173,6 +202,20 @@ fn boot_ui_continue_loads_the_port_two_card() {
     );
     assert!(saw_continue, "the title's Continue opened the save-select");
     assert!(!w.boot_ui_active(), "the Load clears the boot UI");
+    eprintln!(
+        "[native-front-end] the Load applied 254 on {} frames",
+        applied_levels.iter().filter(|&&l| l == 254).count()
+    );
+    if let Some(d) = w.session().bgm.as_ref() {
+        assert!(
+            applied_levels.contains(&254) && applied_levels.contains(&0),
+            "the Load swells the title theme and fades it out"
+        );
+        assert!(
+            d.duck_target() > 0 && d.duck_level() == d.duck_target(),
+            "the landing rests the level on the configured one, not on the fade's 0"
+        );
+    }
     if !want_resume.scene.is_empty() {
         assert_eq!(
             scene, want_resume.scene,

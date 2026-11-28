@@ -190,6 +190,11 @@ impl OwnedDialogPanel {
         let dt = self.frame_step.max(1);
         let run = self.vsync_phase == 0;
         self.vsync_phase = (self.vsync_phase + 1) % dt;
+        self.opening_call_now = run
+            && self
+                .window
+                .as_ref()
+                .is_some_and(|w| w.typing_row().is_some() && w.pacer.setup);
         if self.done {
             self.state = PanelState::Done;
             return self.state;
@@ -265,6 +270,16 @@ impl OwnedDialogPanel {
     /// scroll (see [`crate::dialog_window`]). Returns `false` (and does
     /// nothing) when the page already waits, a menu is up, the panel is done,
     /// or this is a plain-MES panel.
+    /// Whether this vsync's pager call was a box's opening call (state `2`),
+    /// which reads no press. A host that routes the vsync's confirm after
+    /// the call spends that confirm here instead of
+    /// [`Self::confirm_while_typing`]: the next call sees no fresh edge
+    /// (`0x801D84D0` reads the frame's newly pressed bits), so retail types
+    /// the page on.
+    pub fn opening_call_now(&self) -> bool {
+        self.opening_call_now
+    }
+
     pub fn confirm_while_typing(&mut self) -> bool {
         if self.done || self.waiting_for_input || self.menu_active {
             return false;

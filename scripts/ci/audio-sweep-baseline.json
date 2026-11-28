@@ -1160,6 +1160,12 @@
       "tempo": 1.0,
       "track": 1.0
     },
+    "casino_prize_counter_retail": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
     "cave01_attached_light": {
       "playing": 1.0,
       "seq_vol": 1.0,
@@ -1289,6 +1295,12 @@
       "track": 1.0
     },
     "conc_field_card_boot": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "conc_pre_entry_card_boot": {
       "playing": 1.0,
       "seq_vol": 1.0,
       "tempo": 1.0,
@@ -1556,6 +1568,18 @@
       "track": 1.0
     },
     "ending_vignette_rimelm_walkaway": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "equip_ui_vahn_astral": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "equip_ui_vahn_raseru_blade": {
       "playing": 1.0,
       "seq_vol": 1.0,
       "tempo": 1.0,
@@ -1927,6 +1951,30 @@
     "koru_thunder_needle_mid_cast": {
       "battle_track": 1.0
     },
+    "load_grid_endgame_card": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "load_grid_pause_conc_retail": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "load_slot2_grid": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "load_slot2_now_checking": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
     "map01_field_door_hop": {
       "playing": 1.0,
       "seq_vol": 1.0,
@@ -1970,17 +2018,329 @@
       "tempo": 1.0,
       "track": 1.0
     },
+    "menu_door_light_kor_retail": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "menu_door_wind_map03_retail": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "menu_equip_candidates_conc_retail": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "menu_equipment_field": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "menu_equipment_town": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "menu_incense_kor_retail": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "menu_items_all_apply_kor_retail": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "menu_items_conc_retail": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "menu_items_target_kor_retail": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "menu_magic_conc_retail": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "menu_magic_group_kor_retail": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "menu_magic_target_kor_retail": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "menu_options_field": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "menu_options_town": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "menu_root_conc_retail": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "menu_spell_list_conc_retail": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "menu_status_field": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "menu_status_magic_conc_retail": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "menu_status_magic_list_conc_retail": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "menu_status_moves_conc_retail": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "menu_status_moves_list_conc_retail": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "menu_status_skills_conc_retail": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "menu_status_town": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "menu_throw_list_conc_retail": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "menu_use_list_conc_retail": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
     "meta_summon_mid_cast": {
       "battle_track": 1.0
+    },
+    "minigame_baka_fighter": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "minigame_baka_fighter_retail_attract": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "minigame_baka_fighter_retail_select": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "minigame_baka_fighter_retail_select_right": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "minigame_dance_retail_dancing": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "minigame_dance_retail_go_in": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "track": 0.0
+    },
+    "minigame_dance_retail_go_out": {
+      "ambient": 0.0,
+      "playing": 1.0,
+      "track": 0.0
+    },
+    "minigame_dance_retail_judged": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "minigame_dance_retail_ready": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "track": 0.0
+    },
+    "minigame_fishing": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "minigame_fishing_retail_exchange_confirm": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "minigame_fishing_retail_exchange_list": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "minigame_fishing_retail_exchange_list_row4": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "minigame_fishing_retail_exchange_quantity": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "minigame_fishing_retail_help_page0": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "minigame_fishing_retail_help_page1": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "minigame_fishing_retail_shore": {
+      "ambient": 0.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "minigame_fishing_retail_tackle": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "minigame_fishing_retail_tackle_row2": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "minigame_muscle_dome": {
+      "playing": 1.0,
+      "track": 1.0
+    },
+    "minigame_muscle_dome_retail_course_card": {
+      "playing": 1.0,
+      "track": 1.0
     },
     "minigame_muscle_dome_retail_red_piura_vahn_strike": {
       "battle_track": 1.0
     },
+    "minigame_muscle_dome_retail_round_card": {
+      "playing": 1.0,
+      "track": 1.0
+    },
     "minigame_muscle_dome_retail_skeleton_hyper_arts": {
       "battle_track": 1.0
     },
+    "minigame_muscle_dome_retail_title": {
+      "playing": 1.0,
+      "track": 1.0
+    },
     "minigame_muscle_dome_retail_tornado_flame": {
       "battle_track": 1.0
+    },
+    "minigame_muscle_dome_retail_welcome": {
+      "playing": 1.0,
+      "track": 1.0
+    },
+    "minigame_slot_machine_retail_payout_chart": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "minigame_slot_machine_retail_picker": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "minigame_slot_machine_retail_picker_rules_row": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "minigame_slot_machine_retail_reels": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "minigame_slot_machine_retail_rules_page": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
     },
     "mule_summon_mid_cast": {
       "battle_track": 1.0
@@ -2344,7 +2704,67 @@
     "s5_tetsu_battle": {
       "battle_track": 1.0
     },
+    "save_grid_endgame_card_conc": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "save_select_idle": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
     "sebucus_overworld_resident": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "shop_arms_buy_retock_retail": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "shop_arms_recipient_retock_retail": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "shop_arms_root_retock_retail": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "shop_buy_quantity_retock_retail": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "shop_items_buy_retock_retail": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "shop_items_root_retock_retail": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "shop_sell_list_retock_retail": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "shop_sell_quantity_retock_retail": {
       "playing": 1.0,
       "seq_vol": 1.0,
       "tempo": 1.0,
@@ -2462,6 +2882,24 @@
     "theeder_summon_value_rows_rising": {
       "battle_track": 1.0
     },
+    "title_attract": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "title_menu_idle": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "title_screen_new_game": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
     "tower_field_walk": {
       "ambient": 1.0,
       "playing": 1.0,
@@ -2498,8 +2936,9 @@
     "town0d_arrival_narration": {
       "ambient": 1.0,
       "playing": 1.0,
+      "seq_vol": 1.0,
       "tempo": 1.0,
-      "track": 0.0
+      "track": 1.0
     },
     "town0d_house_free": {
       "ambient": 1.0,
@@ -2807,6 +3246,12 @@
     },
     "vozz_tree_vahn_touch_box": {
       "ambient": 1.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "world_map_display_map01_retail": {
       "playing": 1.0,
       "seq_vol": 1.0,
       "tempo": 1.0,

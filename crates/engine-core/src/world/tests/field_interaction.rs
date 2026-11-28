@@ -170,6 +170,48 @@ fn interaction_probe_talks_to_adjacent_npc_only() {
     );
 }
 
+/// The pad hold a script release leaves (`_DAT_8007B6B4`, `0x10` frames)
+/// keeps the talk probe off with the rest of the pad controller
+/// (`FUN_801D1344` `0x801D16C8..0x801D16E4`): a press while it drains talks
+/// to no one, and one after it talks.
+#[test]
+fn interaction_probe_waits_out_the_release_pad_hold() {
+    use legaia_engine_field::field_warp_tile::SCRIPT_RELEASE_HOLD_FRAMES;
+    use legaia_engine_system::input::PadButton;
+
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.player_actor_slot = Some(0);
+    world.actors[0].active = true;
+    world.actors[0].move_state.world_x = 2624;
+    world.actors[0].move_state.world_z = 2624;
+    world.actors[0].move_state.render_26 = 0x400;
+    world.npcs.dialog.insert(5, vec![0x1F, b'h', b'i', 0x00]);
+    world.npcs.positions.insert(5, (2752, 2624));
+    world.locomotion.warp.hold = SCRIPT_RELEASE_HOLD_FRAMES;
+
+    world.input.set_pad(PadButton::Cross.mask());
+    let _ = world.tick();
+    assert!(world.dialog.current.is_none(), "the hold refuses the talk");
+    world.input.set_pad(0);
+    for _ in 0..64 {
+        if world.locomotion.warp.hold == 0 {
+            break;
+        }
+        let _ = world.tick();
+    }
+    assert_eq!(
+        world.locomotion.warp.hold, 0,
+        "the player tick drains the hold"
+    );
+    world.input.set_pad(PadButton::Cross.mask());
+    let _ = world.tick();
+    assert!(
+        world.dialog.current.is_some(),
+        "a press past the hold talks"
+    );
+}
+
 /// A script context that engages the player refuses the talk: the field tick
 /// skips the whole pad controller - the interact probe inside it included -
 /// while the player's `+0x10 & 0x80000` is up (`FUN_801D1344`
@@ -1420,8 +1462,9 @@ fn player_cannot_walk_while_the_inline_runner_owns_the_frame() {
     );
 }
 
-/// Talking to an NPC turns it to face the player, instantly, and gives its
-/// authored heading back when the conversation ends.
+/// Talking to an NPC turns it to face the player, instantly, on the frame
+/// its record reaches its line, and gives its authored heading back when the
+/// conversation ends.
 ///
 /// Retail does both in the dialog SM: the touch post saves `+0x26` into
 /// `+0x5A` (`FUN_801D5B5C`), the SM writes the player bearing into `+0x26`
@@ -1439,12 +1482,28 @@ fn talking_turns_the_npc_to_the_player_and_restores_its_facing() {
     );
 
     hold(&mut world, PadButton::Cross.mask(), 1);
+    // The touch saves the heading; the snap waits for the record to land on
+    // its line (`FUN_80039B7C`, `0x80039F38`).
+    assert_eq!(world.npcs.facing_save, Some((3, 0x400)));
+    while !world
+        .dialog
+        .inline
+        .as_ref()
+        .is_some_and(|i| i.panel.is_some())
+    {
+        assert_eq!(
+            world.npcs.headings.get(&3),
+            Some(&0x400),
+            "no snap before the line"
+        );
+        hold(&mut world, 0, 1);
+    }
     // Player at (0, 0), NPC at (0, 64): the bearing NPC -> player is -Z, which
     // is 0x800 in the engine's heading space (0 = +Z). One frame, not a ramp.
     assert_eq!(
         world.npcs.headings.get(&3),
         Some(&0x800),
-        "the addressed NPC faces the player on the frame the talk starts"
+        "the addressed NPC faces the player on the frame its line opens"
     );
     assert_eq!(world.npcs.facing_save, Some((3, 0x400)));
 

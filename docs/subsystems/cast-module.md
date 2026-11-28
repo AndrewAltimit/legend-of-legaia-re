@@ -1001,7 +1001,7 @@ fire comes off Gala's body on the anim tick's accumulator.
 | 0923 Gilium | 20, pass (`0x801F8A24`) | live row | `0x3FF00000` | `1` |
 | 0932 Meta | 18, pass (`0x801F7C78`) | live row | `0x3FF` | `1` |
 | 0934 Ozma | 17, 18, every pass (`0x801F7F38`, `0x801F7F58`) | creature | - | `2` |
-| 0934 Ozma | 21..=23, pass (`0x801F85D4`, `0x801F86CC`, `0x801F8948`); 24, every pass, ahead of its countdown (`0x801F8D4C`) | live row | `0x3FF003FF` | `2` |
+| 0934 Ozma | 21, pass (`0x801F85D4`); 22 and 23, every pass, at the arm's head (`0x801F86CC`, `0x801F8948`); 24, every pass, ahead of its countdown (`0x801F8D4C`) | live row | `0x3FF003FF` | `2` |
 | 0937 Hyper Lightning | 7, every pass (`0x801F7580`) | victim | - | `2` |
 | 0948 Cross Beam | 3, pass (`0x801F7044`) | victim | `0x3FF` | `1` |
 | 0950 Rolling Flare | 3, countdown at most `0x40` scalars (`0x801F7F44`, `0x801F7F48`) | both seats | - | `1` |
@@ -1691,7 +1691,16 @@ the gate: every seat the sweep hits re-arms the module timer `0x801F8040` to
 `0x32` (`0x801F7880`), and arm 3 spends that timer out of the caster's
 `+0x170` a frame step at a time (`0x801F793C..0x801F7978`). A cast leaves the
 gauge at zero, and the breath returns only after the monster takes fresh
-damage. The port folds the whole drain at the sweep.
+damage. The port folds the whole drain at the sweep. The timer stops on zero:
+a pass with less than its step left spends the rest and stores `0`
+(`0x801F7930..0x801F7944`), so the word the walk below tests never goes negative.
+
+**Chaos Breath's shove is once a pass.** Arm 1 pushes each party seat along its
+bearing from the caster by `(table * 2 * step) >> 12` on each plane lane, once a
+pass (`0x801F74E8..0x801F7554`). Pushed by `2` on each one-vsync tick of a pass,
+the shift truncated every tick's share, and a step-4 pass moved a seat about half
+of retail's distance; the capture-camera differential compares the pair at every
+step.
 
 **Chaos Breath waits for the party to get up.** Once arm 3's timer reads `0`,
 the body walks every `ctx[+0]` party seat before it stores `0xFF`
@@ -5206,7 +5215,13 @@ close to a minute. It is ported whole.
   `0x801FA2D0` seats for as long as it lives), arm 5 is the long salmon flash,
   and arm 7 jitters its caller's `+0x84` / `+0x28` off three `rand()`s, the six
   rays of arm 23. The seats land on the caller's frame, as
-  [Gilium's and Juggernaut's](#summon-creature-directors) do. Grade
+  [Gilium's and Juggernaut's](#summon-creature-directors) do. The salmon
+  fades of arms 3..5 spawn inside the part walk, which runs after the pass has
+  ticked its fade actors, so each first steps and first draws on the next
+  pass, the frame after the HP falls; joined at once, the flash came up a pass
+  ahead of retail's on all three sweeps (`ScreenFxState::module_fades_next_pass`;
+  the film's arms 11, 14 and 18 read `.961` / `.955` / `.947` against `.992` /
+  `.983` / `.992` with it). Grade
   `disassembly`, each arm held to the module image by the
   [differential](../tooling/retail-kernel-differential.md); the cast's
   [film](../tooling/cast-sequence-oracle.md#evil-seru-magic) reads `.672` to
@@ -5622,7 +5637,7 @@ three units). The bodies without that store keep the half turn
 | 0942 `0xAA` Dark Typhoon, `0x801F69F4` | arm 0's `0xC`-frame shot on the caster (TR `(0, 0x500, 0x600)`), arm 1's cut (pitch `0x40`, yaw `0x900 - facing`, TR `(-0xC0, 0x900, 0x200)`), arm 2's cut (pitch `0xC0`, TR `(0, 0x600, 0x400)`); drifts on every arm past 0 and the vortex records ([below](#prot-0942-dark-typhoon)) | `0x801F88B4`, seeded `scalar * 0x180`; the chain is ported (`POWER_UP_AA_CHAIN`), so the director carries the countdown. Without the director the cast's camera stood still and its parts were the whole-set placement, all run out before arm 1 |
 | 0936 `0x4B` Hyper Crush, `0x801F69D8` (`SINGLE_BODY`) | arm 0's `0x40`-frame shot (pitch `-0x40`, TR `(-0x100, 0x500, 0x400)`); arm 1 re-issues a `0x40`-frame shot every pass off the module word; arm 2's cut (pitch `0xC0`, yaw `0xF00 - facing`, TR `(0x800, 0x500, 0x800)`); arm 4's TR y shake (`0x580` odd passes, `0x500` even); arm 5's cut on the point ahead of the caster; TR z drifts `4s` / `2s` / `s` on arms 6..8; arms 5 and 6 draw sixteen streak ribbons (trail `4`) round the arm-3 point off the ring word `0x801F8178` | `0x801F8174`; the chain carries the phase. Arm 4 leaves on its sixth pass (`0x801F817C`), which the director holds; arms 1 and 3 seat three and eight records on points `(104, 88)` and `(449, 134)` off the caster's facing |
 | 0937 `0x4C` Hyper Lightning, `0x801F69D8` (`SINGLE_BODY`) | arms 0 and 1 are Hyper Crush's on their own three records; arm 2's cut (pitch `-0x20`, yaw `0x900 - facing`, TR `(0x1C0, 0x480, 0x800)`, `0x20` frames) with the party hidden and six records `600` ahead of the caster at height `-0x166`; arm 4's five more; arm 5 turns the victim to the caster and cuts on it (yaw `0xA80 - facing`, TR `(0, 0x480, 0x500)`), shows it, hides the caster and seats two records on it; TR z `+4s` on arms 4 / 5, `+s` on arm 6; arm 7 pushes TR z `+s` until its first hit, then re-cuts every pass to the victim (TR `(0, 0x480, 0x800)`), each hit flashing it; `0xFF` shows the caster again | `0x801F8090`; the chain (`HYPER_LIGHTNING_CHAIN`) carries the phase |
-| 0956 `0x75` Paralyzing Wave, `0x801F69D8` | arm 0's cut on the caster's display pair (TR `(0, 0x280, ctx[+0x6D0] / 2)`), every seat hidden but the caster, four records on the shot; arm 1's cut on the victim (TR `(0, 0x380, 0x600)`), the victim shown and the caster hidden, three records after the pool flush; TR z `+s / 2` on arms 1..3; arm 3 raises the pooled parts' level to `0x1000`, which ends the cast | `0x801F86A0`, seeded `scalar << 8`; the chain (`WATER_HAZARD_75_CHAIN`) carries the phase |
+| 0956 `0x75` Paralyzing Wave, `0x801F69D8` | arm 0's cut on the caster's display pair (TR `(0, 0x280, ctx[+0x6D0] / 2)`), every seat hidden but the caster, four records on the shot; arm 1's cut on the victim (TR `(0, 0x380, 0x600)`), the victim shown and the caster hidden, three records after the pool flush; TR z `+s / 2` on arms 1..3; arm 3 raises the pooled parts' level to `0x1000`, which ends the cast, and its leaving pass still drains the countdown by its whole step (`0x801F7148..0x801F71B0`) | `0x801F86A0`, seeded `scalar << 8`; the chain (`WATER_HAZARD_75_CHAIN`) carries the phase |
 | 0955 `0x60` White Shield, `0x801F8F0C` | three shots behind the caster on its live pair, TR y `0x400`: arm 0's `0xC`-frame shot (pitch `-0x20`, TR z `ctx[+0x6D0] / 2`), arm 1's `0x100`-frame pull (pitch `0x80`, TR z `ctx[+0x6D0]`), arm 2's `0x40`-frame level-off (pitch `0`); arm 3 is the buff | `0x801F9D28`, seeded `scalar * 12`, re-armed `<< 8` / `* 0x60`; the chain is ported (`white_shield_tick`), so the director carries the countdown and its hold. `battle_bubu2_spoon_white_shield_mid_cast` holds arm 0's table with `96` left |
 | 0945 `0xBA` Jugger Power, `0x801F69F8` | arm 0's cut far down the stage (pitch `0x80`, yaw `-0x80`, TR `(0, 0x1800, 0x4000)`, focus `(0, 0, -0x1D00)`), three records at `(0, 0, 0x1D00)`, every party seat and the caster hidden; yaw `+2` and TR z `+16` a vsync through arm 1, `+8` through arm 2; arm 1's cut on the caster (TR `(0, 0x400, 0x800)`), which it shows with three records and the message bar. [Below](#prot-0945-jugger-power) | `0x801F7E5C` (Water Column's word), stored `scalar << 7`, `<< 7`, `<< 6`, not added |
 
@@ -5665,7 +5680,14 @@ and the whole film `.976`, cues `1.000` (one pass an arm, `.331`). Grade
   Replayed at the band's head, both clips ran out ahead of arm 1 and Songi's wind-up
   was gone from the frame. Hyper Crush's arm-4 counter `0x801F817C` steps once a pass,
   a battle frame (`ModuleCamState::opens_pass`): retail's six passes run about 25 vsyncs
-  of game clock, and counted once a vsync the arm left in 8.
+  of game clock, and counted once a vsync the arm left in 8. The arm drains the module
+  word `0x801F8174` by `scalar * step` on every pass, its sixth included (the `subu` at
+  `0x801F7260` sits ahead of the pass test at `0x801F72D4`), and arm 5's countdown runs
+  on from what it leaves. The sixth pass hands over on its opening tick, so the port
+  drains the pass's rest there (`ModuleCountdown::drain_rest`); without it arm 5 held a
+  pass longer than retail's, every ribbon ring of arms 5 and 6 stood a pass behind, and
+  `battle_retona_songi_hyper_crush_mid_cast` read `.913` (arm 6 `.765`) where it reads
+  `.991` (`.986`).
 - **0942 `0xAA`'s party swirl**
   (`World::dark_typhoon_party_swirl`). Arm 2's pass copies each party seat's plane
   pair into `0x801F88C4 + 8 * seat`. Arm 3's pass clears the pull `0x801F88B8` and
@@ -5681,9 +5703,15 @@ and the whole film `.976`, cues `1.000` (one pass an arm, `.331`). Grade
   where the pull left it (`FUN_80019B28(caster, seat) + 0x800` at `0x801F77D8`).
   Run after the fold, the swirl would leave a downed member one spin step short
   and every struck member on the swirl's heading. Arm 5 lets each seat back
-  down by `scalar * delta` a pass and its pass stands them on the floor. The engine
-  takes one tick as one pass of step 1, so its spin runs ahead of a retail run whose
-  heavy arms sit at step 3 or 4.
+  down by `scalar * delta` a pass and its pass stands them on the floor.
+  The pull grows once a pass by the whole `2 * delta` (the frame step `0x1F800393`,
+  `sll 1` at `0x801F7458`) and the spin by the grown pull once, so the engine runs the
+  pull loop on the tick that opens a pass, at the pass's step, and holds the pose
+  through the pass's other ticks. Grown on each of a pass's one-vsync ticks, the spin
+  took the pull `delta` times over: the kernel differential parted from retail on
+  every pass at step `2` to `4`, and on `battle_taiku_zora_dark_typhoon_mid_cast`
+  the party swung well past retail's bearings, so the struck members fell elsewhere
+  (film `.924` to `.944`, arm 4 `.938` to `.983`, the Done band `.864` to `.974`).
 - **0944** frames on the caster's facing, which the cast begin points at its
   target, so a replay is steered onto the capture's target too
   ([retail-compare](../tooling/retail-compare.md#driving-to-the-phase)).

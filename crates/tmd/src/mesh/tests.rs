@@ -117,6 +117,35 @@ fn color_mesh_from_untextured_prim() {
 }
 
 #[test]
+fn untextured_half_is_found_by_its_headers_and_carries_the_textured_abr() {
+    let g3 = synth_untextured_g3_tmd();
+    let tmd = parse(&g3).unwrap();
+    assert!(has_untextured_prims(&tmd, &g3));
+    // No textured prim: the register keeps the draw environment's mode 0.
+    assert_eq!(textured_abr(&tmd, &g3), 0);
+    let ft3 = synth_pyramid_tmd();
+    let pyramid = parse(&ft3).unwrap();
+    assert!(!has_untextured_prims(&pyramid, &ft3));
+    let first = crate::legaia_prims::iter_groups_lenient(
+        &ft3,
+        pyramid.objects[0].primitives_byte_offset,
+        pyramid.objects[0].primitives_byte_size,
+    )[0]
+    .prims[0]
+        .tsb;
+    assert_eq!(textured_abr(&pyramid, &ft3), ((first >> 5) & 3) as u8);
+    let mut words = vec![0x8000u16, 0x0000];
+    carry_untextured_abr(&mut words, 1);
+    assert_eq!(words, vec![0x8020, 0x0020]);
+    carry_untextured_abr(&mut words, 3);
+    assert_eq!(
+        words,
+        vec![0x8060, 0x0060],
+        "a carry replaces the mode, keeps ABE"
+    );
+}
+
+#[test]
 fn color_mesh_skips_textured_prims() {
     // The FT3 pyramid is all textured -> the colour mesh is empty.
     let buf = synth_pyramid_tmd();

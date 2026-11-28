@@ -1533,7 +1533,11 @@ drops its focus latch (`Camera::release_unheld_shot`) once no glide is in
 flight, no timeline runs and the player is free, without the hand-back snap,
 and drops its mirror of the staged slots there as APPLY does. A latch kept
 past the record freezes the follow camera on the shot for the rest of the
-scene. The census is
+scene. A cutscene timeline's shot hands back the same way: when the timeline
+ends with no glide in flight, the camera keeps the shot and the follow ease
+starts from it on the player's first step. A port-side snap to the zone pose
+on that edge read `vozz`'s Genesis Tree record (a glide, `4C CD`, `21`) about
+700 units off retail's focus for the rest of its film. The census is
 `engine-core/tests/field_camera_shot_census_disc.rs`; the executing checks
 are `engine-session/tests/talk_shot_release_disc.rs` and
 `record_shot_release_disc.rs`.
@@ -3482,7 +3486,11 @@ whose op loop runs at once because `+0x9C` now reads `0`. A chest's item-get cue
 behind its first box therefore keys on the confirm's own frame, the same vsync the close
 byte reads `0x20` (walk film from `chest_open_trace_pcsx`). Both port runners do the same
 (`World::step_prop_interaction`, `World::drive_inline_dialogue`); they had waited a game frame,
-and the cue keyed two vsyncs late.
+and the cue keyed two vsyncs late. A key-on census from the same state
+(`autorun_keyon_census.lua`, Cross every `30` vsyncs) reads the opening press's ring push `0x2D`
+(the lid, op `0x36` at `0x801E0350`) a vsync after the press and its one voice keyed the vsync
+after that, then the confirm's `0x2C` on two voices the same way; the field track plays on at
+`107` and the audio level holds `215` throughout: nothing ducks or pauses the score for a chest.
 
 Two ops are easy to mistake for a dialog opener and are not: `0x3F` is the
 named scene-change, and `4C 53` / `4C 54` (`FUN_801D65D8`) are polls a script

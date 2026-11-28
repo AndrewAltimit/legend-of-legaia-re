@@ -76,6 +76,15 @@ fn pressing_at_the_counter_talks_to_the_keeper() {
             "the counter is in reach"
         );
     }
+    // The talk probe sits behind the player tick's walk gate: stand out the
+    // post-load pad hold `_DAT_8007B6B4` first, as a player waits it out.
+    for _ in 0..0x40 {
+        if s.host.world.field_warp_words().1 == 0 {
+            break;
+        }
+        s.host.world.set_pad(0);
+        s.tick().expect("tick");
+    }
     let mut talked = false;
     for t in 0..30u32 {
         let pad = if t == 2 { PadButton::Cross.mask() } else { 0 };

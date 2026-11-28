@@ -240,7 +240,6 @@ impl World {
         }) else {
             return;
         };
-        self.audio.last_battle_track = Some(battle);
         let keyed_off = std::mem::take(&mut self.audio.bgm_keyed_off_for_intro);
         // The completion arm's attach of the battle source
         // (`FUN_80026478(0x8007056C)`, `0x801CF930`) disarms a timed release

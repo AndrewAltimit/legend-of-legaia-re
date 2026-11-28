@@ -140,6 +140,12 @@ impl ContinueScreen {
             preroll: 0,
             alpha_b: 0,
         }
+        .with_pill_preroll()
+    }
+
+    fn with_pill_preroll(mut self) -> Self {
+        self.flow.set_pill_preroll(self.preroll);
+        self
     }
 
     /// The save-select session (what the screen draws).
@@ -174,9 +180,24 @@ impl ContinueScreen {
         legaia_engine_title::title_overlay::backdrop_shade(1, 16, self.preroll, self.alpha_b)
     }
 
+    /// The live audio level the screen stores this frame, or `None` while it
+    /// leaves the level alone. A successful Load's result line is retail's
+    /// `LaunchFade`, which writes the level each frame under the title's
+    /// entry word: `254` through the hold, then down to `0` over the launch
+    /// ramp ([`legaia_engine_menus::save_select::launch_fade_music_level`]),
+    /// so the title theme swells to sequence volume `127` under "Load
+    /// successful." and fades out before the field loads. The pause menu's
+    /// Load runs the same arm with the word down, and stores nothing.
+    pub fn music_level(&self) -> Option<u8> {
+        self.select
+            .load_launch_ramp()
+            .map(legaia_engine_menus::save_select::launch_fade_music_level)
+    }
+
     /// One frame of the backdrop's two ramps, at a frame step of one.
     fn step_backdrop(&mut self) {
         self.preroll = (self.preroll + 0x80).min(0x1000);
+        self.flow.set_pill_preroll(self.preroll);
         self.alpha_b = if self.select.phase().shows_title_backdrop() {
             (self.alpha_b - 0x100).max(0)
         } else {

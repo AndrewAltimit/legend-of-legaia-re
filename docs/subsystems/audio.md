@@ -959,8 +959,10 @@ configuration.
 #### The battle sound set picks the fight's track
 
 Which track a fight plays is the field script's choice, not the formation's.
-Op `0x35` sub-op `7` stores `_DAT_8007B880` - its operand, or `-1` for an
-operand byte of `0xFF` (`0x801E01DC..0x801E0208`) - and the scene map-init
+Op `0x35` sub-op `7` stores `_DAT_8007B880` - its operand as a signed
+halfword, or `-1` when the operand's high byte is `0xFF` (`lbu v1,0x1(s6)`
+over the little-endian halfword, `0x801E01DC..0x801E0208`; the shipped
+operands are `0..=8` and `0xFFFF`) - and the scene map-init
 `FUN_8003AEB0` zeroes it on every entry (`0x8003B4F8`). The battle intro
 `FUN_801CF5BC` reads it: phase 2 loads battle bundle `0x36F + N` for `N >= 0`
 (`0x370` for `N = 0` when `DAT_8007B64B` is set) and nothing for `-1`, and the
@@ -1057,6 +1059,24 @@ over the field for two seconds and start the field's music that late, or lay the
 scores over each other, which retail never does. The compressed close keeps both
 things the player hears: the battle score ends in a fade, and the field's track is
 at its head when the field appears.
+
+The load's length is the scene's, so the offsets move and the order does not. From
+`rim_elm_gimard_victory` (`town0b`, a scripted fight on the scene-local `1000`), with `E` the
+mode-`2` store: the battle score plays at `107` through the results hold, its ramp starts at
+`E + 151` and reaches `1` at `E + 258`, the poller forces `-100` at `E + 297`, the battle sequence
+closes and the field track plays from its head at `E + 368`, and the first field frame is `E + 424`.
+No cue keys between the results frame and the field.
+
+<a id="the-game-over-keeps-the-battle-score-through-the-load"></a>
+**The game over keeps the battle score through the load.** From
+`battle_jou_party_wipe_results_retail` (`autorun_audio_timeline.lua`, no input), with `E` the
+mode-`2` store: the battle score plays at `107` through the loss's hold and on into the field init,
+whose `0xB4` ramp starts at `E + 167` and steps one unit a vsync; mode `0x16` is stored at `E + 169`,
+the CARD init closes both sources at `E + 244` with the score at `31`, nothing sounds for `128`
+vsyncs, and the title theme starts from its head at mode `0x17`, `E + 373`, at `0` and then `107`.
+The port holds the frozen wipe frame for `TITLE_HANDOFF_FRAMES` and then stops the battle score and
+starts the title theme (`NativeSession::step_party_wipe_hold`): the load it does not spend takes the
+ramp and the silence with it, as on the victory return.
 
 **A fight on the park word ends the music.** The return loads what the track word
 names, and the word `0x1000` names nothing. `retockin`'s word is the park, the door
@@ -3787,6 +3807,84 @@ no battle bundle (the field track plays on under sound set `0`), and four
 inside the Gaza fight, whose intro zeroes the set it read (formation head
 `0xA6`).
 
+<a id="the-sweep-on-menus-and-minigames"></a>
+**Menus, the front end and the minigames.** A menu state is the field seed with its screen driven open
+as the image corpus drives it (`pause_menu_drive`: the pause menu, a shop, the prize counter), and is
+heard on the screen: the field is frozen under it, as retail's mode `0x17` swaps the field overlay out,
+and the audio frame alone runs on. The screen is seated rather than pressed to, so the cue a retail
+press left ringing is history it has none of, and a menu state scores no `ambient`. A state with no track
+word yet stands in the front end (the title, the Continue grid and its card check), which the hosts
+score with the title theme (`BootSession::start_title_bgm`); nothing seeds it as a field. A minigame
+takes the image corpus's own seed (the departure's card load, the door warp, the phase's drive) and is
+heard while the phase holds. A casino seat's latch (`0x4B6..0x4B8`) is its own record's, raised after
+`koin1`'s entry chose the floor's `2018`, and the seed lowers it for that entry: raised, the entry's
+`+0xEF..0x10C` arms park the track.
+
+Scored this way, every pause-menu, shop and prize state plays retail's track. The fishing states found
+the venue's own track ([`minigame-fishing.md`](minigame-fishing.md)): the init stages `2017`, and the
+port played the departure's. The dance's count-in states (`minigame_dance_retail_ready`, `_go_in`,
+`_go_out`) read retail's held, paused `2055` against no track: both are silent. `conc_pre_entry_card_boot`
+holds the title theme at sequence volume `127`, the others at `107`: its live audio level
+`_DAT_8007B910` reads `254` against the reference `_DAT_8008457C`'s `215` (every other front-end state
+holds `215`), and every reader halves the level into the sequence volume. The state stands inside the
+Load's result line, and [the load fades the title theme](#the-load-fades-the-title-theme) names the
+writer. The sweep hears such a state under the port's own Load: `RetailAudio::card_launch` reads the
+arm's hold and ramp words off the state, and the front-end seat drives the save-select session through
+a Load to the same frame of its result line, storing the level that session gives each frame, so the
+row reads `127` on both sides.
+
+<a id="the-load-fades-the-title-theme"></a>
+**The load fades the title theme.** A successful Load's "Load successful." line is the card manager's
+`LaunchFade` arm (sub-mode `0x16` of `FUN_801DD35C`), the arm the New Game's black runs too. While the
+title's entry word `_DAT_8007BB00` is up it stores the live level every frame
+(`0x801DFA00..0x801DFA58`): `(0x1000 - ramp)` clamped to `0..=0xFFF`, times `0xFF` (`sll 8`, `subu`),
+over `0x1000` (`sra 12`), with `ramp` the word `0x801EF154`. The ramp stays `0` through the `0x5A`
+hold and then climbs `0x100` a frame, so the title theme swells from `107` to `127` under the line and
+fades out over sixteen frames before the field loads. A PCSX-Redux write watch from the Continue grid
+([`autorun_continue_level_watch.lua`](../../scripts/pcsx-redux/autorun_continue_level_watch.lua),
+`load_grid_endgame_card`, Cross / Up / Cross) reads that store and no other until the scene's own:
+
+| Vsync | Store | Level | Title sequence volume |
+|---|---|---|---|
+| `327` | sub-mode `0x16` begins | `215` | `107` |
+| `328` | `0x801DFA58` (every frame to `434`) | `254` | `107` |
+| `329..417` | | `254` | `127` |
+| `418..433` | the ramp | `239`, `223` .. `15`, `0` | the level one frame back, halved |
+| `435` | master mode `2` | `0` | `0` |
+| `672` | `0x8003B6B4`, the MAN loader's rest | `215` | the field's track |
+
+A press during the hold adds `0x5A` to it, which starts the ramp on the press's frame: the line always
+runs its eighteen ramp frames. The pause menu's Load runs the same arm with the word down and stores
+nothing. Port: the Continue's result line is the hold and the ramp
+(`save_select::COMMIT_LOAD_RESULT_FRAMES`), `ContinueScreen::music_level` is the store
+(`save_select::launch_fade_music_level`), both hosts hand it to `AudioDirector::front_end_level_frame`,
+which applies it one frame back as the frame driver does, and the landing rests the level
+(`AudioDirector::rest_audio_level`).
+
+The New Game's black is the same arm. The same probe from `title_menu_idle` (Up, Cross) reads the store
+at `0x801DFA58` from the confirm's frame: `254` for `90` frames, the theme at `127`, then the ramp to `0`;
+`LaunchGame` (sub-mode `6`) stops the title's source (`FUN_800266E0(0x8007052C)`, `0x801DFB74`) on the
+launch frame, two vsyncs before master mode `2`, and the level stays `0` until the MAN loader rests it.
+Nothing cuts the theme earlier. The port enters the opening scene ahead of the black, so the director
+holds the opening's BGM commands for it (`AudioDirector::begin_launch_hold`, from
+`BootSession::begin_new_game_launch`): the title theme plays on under `World::launch_fade`, the audio
+frame stores the arm's level over it, and the frame the fade hands over stops the theme, rests the
+level and runs the held commands (`AudioDirector::end_launch_hold`). Pinned by
+`engine-session/tests/new_game_launch_audio_disc.rs`: `90` frames at `254`, then `239` .. `15`, `0`,
+`0`.
+
+The minigame seed also times the cues. With `LEGAIA_SWEEP_LISTEN_TICKS=<n>` it listens `n` ticks past
+the phase whatever the phase does, records each keyed cue on the listener's tick (`cue_ticks` in the
+report), and runs the arms' own audio steps both hosts run each frame (`sound_baka_announcer`,
+`sound_muscle_hub`). Against a retail key-on census from the same state
+(`autorun_keyon_census.lua`, `cuekey` and `xa` rows): the Baka Fighter attract card's announcer line
+(`XA33` channel `15`, `118` sectors) starts `43` ticks past the engine's phase where retail's starts `41`
+vsyncs into the state, and the dance's `GO!` cue `0x201` keys `69` ticks past the phase where retail
+keys it `61` vsyncs in (the ring store `0x801CFBF4` a vsync before). Both phases are matched with a lead
+(the cabinet's intro clock, the READY counter less the display lag), so these name an upper bound, not an
+offset. The slot reels, the Muscle Dome's Welcome card and the fishing shore key nothing on either side
+over `320` vsyncs.
+
 A state reached through a door carries history a card load does not replay:
 the music a sub-op 6 door kept
 ([above](#a-door-keeps-its-music-only-behind-sub-op-6)). A manifest entry
@@ -3821,6 +3919,14 @@ both `credits_edbylon_*_pcsx`). The vignettes after `edbylon` are several parked
 `P2[6]` opens on a line of text at `+0x61`, which the replay pages because
 `World::dialogue_owns_input` counts a modal cutscene record's box as it
 counts the other channels'.
+
+`town0d_arrival_narration` is the same shape on a cutscene. `concend`'s `P2[0]` raises sub-op 6
+(`35 00 00 06`) ahead of its scene change into `town0d`, and the narration there selects `2016`
+with sub-op 9 and holds the commit, so retail still plays `concend`'s `2041` under the word `2016`
+(flags `0x9`: bit 0 pending, bit 3 settled). Seeded through the cutscene
+(`arrival = { from = "concend", door = 0 }`), the engine's own door logic keeps `2041` too; a card
+load into `town0d` starts `2016` at once. The record waits `3293` frames on its own `WaitFrames`
+ops, so the replay's deadline is long enough for it.
 
 A record's side-band request is history of the same kind. `conc3`'s entry
 requests `2116` (`36 01 80 44 08`), the inn's `P2[9]` requests `2070` at `+0xCD`, and the
@@ -3995,6 +4101,26 @@ the probe folds the port's registers to compare. What remains is not a defect:
 - `doman_arrival_from_korb2`, whose runtime bank is still `korb2`'s on the frame the state stands on.
 - The credits vignettes seeded without their chain (`arrival` in the manifest). The slots the
   ending theme overwrote hold stale tone data in retail's RAM.
+
+Menu and minigame states take the sweep's seeds ([above](#the-sweep-on-menus-and-minigames)); the
+front end runs no field and is left out. Two findings:
+
+- **A menu screen keys on the field's two voices.** The drainer's one-shot limit is `1` in game modes
+  `3` and `0x17` (`0x80016B70..0x80016BBC`), and the pause menu runs in `0x17`. The port took the field
+  limit in the field and on the world map only, so under its pause menu (`SceneMode::Menu`) a cue with
+  more voices than two kept all its passes: `0x1F` and `0x4D` keyed a third voice in every pause-menu
+  state. `SceneMode::Menu` is in the field family now, and every pause-menu, card-grid and shop state
+  reads alike.
+- **The fishing venue's runtime bank is its own.** The init's scene loader `FUN_8001F7C0(.., 0x4AB, 0)`
+  (`0x801CF1D4..0x801CF1E0`) reads the `other1` venue's sidecars, so its rows (`0x201` the rod's creak,
+  `0x204` the lure's landing) resolve in `other1`'s event-scripts container. The port resolved them in
+  the departure scene's, and `0x201` keyed three voices where retail keys one
+  (`MinigameState::fishing_sfx_bundle`).
+
+What the minigames leave: every static row on category `6` (and, in the Muscle Dome's hub, category
+`2`) keys on retail and not on the port. In those modes retail's slot `6` is the stale header over the
+minigame's slot-2 samples ([the residency](#retail-capture-of-the-slot-2--slot-6-residency)), and none
+of those cues is one the minigames are known to raise.
 
 `--battle` takes one battle state per formation, with the class-2 bank, the formation's two
 `monster.snd` banks and the state's own `bse.dat` rows, whose `+4` categories retail has already
@@ -4244,7 +4370,7 @@ Three party actions stand beside the casts, so a strike's sound is scored as a c
 
 | State | `cast` corr | Level | Reading |
 |---|---|---|---|
-| `battle_melee_hit_spark` | `0.9993` | `+0.01` dB | a melee impact; `cast_core` `0.81` at `-1.3` dB |
+| `battle_melee_hit_spark` | `0.9993` | `+0.01` dB | a melee impact; `cast_core` `0.984` at `-0.04` dB ([held cues once](#the-held-cues-sound-once)) |
 | `noa_levelup_fight_pre` | `0.9996` | `0.00` dB | Noa's last blow; the engine's recording ends `20` vsyncs past the Done band, before the level-up banner, and the retail cue tail is silent past `0.5` s: no cue sounds for the level-up |
 | `player_steal_skeleton_pre` | `0.71` | `+0.18` dB | Vahn's arts string into the kill and the steal banner, `5.7` s of cues. Quarter-second windows fit `0.65..0.99` at their best lag, and the lag walks from `+1` to `+4` vsyncs (the engine early) over the string: [the frame step](#the-casts-step-is-pcsx-reduxs) on a party strike. The last second, cue `0x0D` decaying, fits `0.99` |
 
@@ -4336,6 +4462,21 @@ left ringing, Theeder's held pad read `4.5` to `5` dB louder in the render than 
 the seconds the cast is quiet. The engine's side is the cast recording the `cast` channel already makes,
 mixed onto the resumed SPU at lag `0` on the same offset fit (`pcm-retail --resume-state <copy>
 --cast-wav`); `cast_core_steps` does the same with the `cast_steps` run. Harness-only.
+
+<a id="the-held-cues-sound-once"></a>
+**The held cues sound once.** The resumed SPU renders the cue voices the state holds, and the engine's
+recording holds its own copies of them: the replay keys the action from its start, so whatever it keyed
+before the gate still sounds when the recording opens, and mixed onto the resumed SPU the held cues
+sound twice. On `battle_melee_hit_spark` cues `0x4C` and `0x2CC`, keyed `12` and `9` ticks before the
+gate, ring through the first second, which reads `3` to `3.5` dB over the recording that way while the
+rest agrees within `0.1` dB. The channel's engine side is therefore a second run of the child with `LEGAIA_DIAG_AUDIO_WAV_FRESH=1`
+(`<label>.fresh.cast.wav`) wherever the first run's gate held a cue voice (its log's `held cue voices`)
+and the plain recording scores under `0.99`, which moves every cue voice sounding at the gate onto the
+silent music bus;
+a key-on that takes one puts it back on the cue bus, so a cue that steals a held voice still cuts its
+tail as it does on retail. Over every cast row the fresh recording moves nothing else by more than
+`0.005`, so a row at or above `0.99` keeps the plain one and its second child is saved. The `cast`
+channel keeps the plain recording, since its score render holds no cue voices of the state's.
 
 | State | `cast` | `cast_core` | `cast_core` p10 |
 |---|---|---|---|

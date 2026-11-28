@@ -252,6 +252,7 @@ impl<'m> DrawCtx<'_, 'm> {
             nclip_marks,
             color_draws,
             color_nclip_marks,
+            color_clip_marks,
             order_marks,
             ..
         } = out;
@@ -588,6 +589,26 @@ impl<'m> DrawCtx<'_, 'm> {
                 // stays both-sided.
                 if let Some(p) = battle_plan {
                     nclip_marks.push((draws.len(), p.nclip_mode()));
+                }
+                // The body's untextured half (`build_battle_body_color_meshes`):
+                // one draw of the same body, under the same word, cue and clip.
+                if let Some(cmesh) = store
+                    .posed
+                    .battle_color_posed
+                    .get(i)
+                    .and_then(|c| c.as_ref())
+                {
+                    if let Some(p) = battle_plan {
+                        color_nclip_marks.push((color_draws.len(), p.nclip_mode()));
+                    }
+                    if let Some(&(_, c)) = clip_marks.last().filter(|(d, _)| *d == draws.len()) {
+                        color_clip_marks.push((color_draws.len(), c));
+                    }
+                    color_draws.push(ColorSceneDraw {
+                        mesh: cmesh,
+                        mvp: actor_cam * model,
+                        cue,
+                    });
                 }
                 draws.push(SceneDraw {
                     mesh,

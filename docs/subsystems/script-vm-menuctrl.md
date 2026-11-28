@@ -51,7 +51,11 @@ Three exits recur on this page:
   predicate (`saved_pc != 0` or the target is the player, and not already
   halted or the scene busy) the arm writes the target's `+0x94` payload
   pointer, clears `wait_accum`, sets the halt bit `0x400`, then advances the
-  caller; on failure it halts the caller at PC (`LAB_801dee50`).
+  caller; on failure it halts the caller at PC (`LAB_801dee50`). When the
+  target is the player `_DAT_8007C364`, the arm parks the caller the same way
+  (`bne s5,v0` at `0x801E1C2C` for `4C 61`, `0x801E1F38` for `4C 80`,
+  `0x801E21B4` for `4C 85` / `8E` / `8F`), so the record waits for the
+  player; port `legaia_engine_vm::field::step_with_caller`.
 
 | Outer nibble | Range | Theme |
 |---|---|---|

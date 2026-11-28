@@ -444,8 +444,35 @@
     <li><strong>Talking is not an opcode.</strong> A talk is this button probe posting an event to the actor it found; the actor's own script takes it from there (<a href="script-vm.html">script VM</a>).</li>
     <li><strong>The event goes to the last actor hit, not the first.</strong> The list walk has no early exit and overwrites the partner pointer on every box hit. Scene init appends story actors before placed props, so a point inside both an NPC's box and a prop's box is delivered to the prop. It is an oversight a port has to keep to match which thing answers.</li>
     <li><strong>A touch runs its first slice in the pass that posted it.</strong> The player ticks ahead of every placed object, so the touched object's record runs later in the same pass, and a record that only pushes back and ends clears the lock before the next step. Sliding along a door the player brushes, such as Rim Elm's at tile <code>(22, 18)</code>, keeps full walking speed.</li>
+    <li><strong>The partner is the stand-in, the speaker turns at the line.</strong> The touch turns Vahn toward the actor the probe landed in, which for a stand-in is the stand-in&rsquo;s own spot. The speaker turns toward Vahn only when its record reaches a line, after any ops it runs first: at the casino ticket counter the clerk beside the speaker turns for 21 vsyncs before the speaker snaps round with the box.</li>
+    <li><strong>Spawn order decides a turn&rsquo;s first frame.</strong> A placement turns itself, in its own tick, and placements tick in spawn order. A talk that turns a placement spawned before the speaker has already passed it this frame, so the turn starts next frame and ends ahead of the speaker&rsquo;s next step.</li>
+    <li><strong>The release hold blocks talking too.</strong> The probe lives in the pad controller, which the hold below switches off: for 16 frames after a record lets Vahn go, a Cross talks to no one.</li>
     <li><strong>All of it is off while the player is engaged</strong> - the same flag that gates movement - or while a dialog owns field control.</li>
   </ul>
+  <h3 id="touch-probe-order">A door is touched from where the sub-step starts</h3>
+  <p>A walking frame moves the player in two-unit sub-steps, and each sub-step runs its probes <em>before</em> it moves, from where it starts. So the frame on which the probe point would first cross into a door&rsquo;s box does not touch the door: its last sub-step probed from outside and then moved in. The next frame&rsquo;s first sub-step probes from inside, posts the touch, and is refused.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 230" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The probe point walking toward a door box in two-unit sub-steps. Frame N: each sub-step probes where it starts; the last one starts one unit outside the box, probes outside, and moves in. Frame N plus one: its first sub-step probes from inside the box, the touch is posted and the move refused. The port used to probe from where the frame's step ended, which is inside the box on frame N, so it touched a frame early.">
+      <defs><marker id="fl-tp-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node-warn" x="600" y="20" width="240" height="170" rx="4"/>
+      <text class="dg-label" x="720" y="42">door's box</text>
+      <path class="dg-edge-dim" d="M600 20 L600 190"/>
+      <text class="dg-label dg-start" x="16" y="78">frame N</text>
+      <circle cx="420" cy="74" r="5" fill="var(--dg-ink-dim)"><title>probe: outside</title></circle>
+      <circle cx="500" cy="74" r="5" fill="var(--dg-ink-dim)"><title>probe: outside</title></circle>
+      <circle cx="580" cy="74" r="6" fill="var(--dg-accent)"><title>last sub-step: probes one unit outside, then moves</title></circle>
+      <path class="dg-edge" d="M424 74 L494 74" marker-end="url(#fl-tp-arrow)"/>
+      <path class="dg-edge" d="M504 74 L574 74" marker-end="url(#fl-tp-arrow)"/>
+      <path class="dg-edge" d="M586 74 L652 74" marker-end="url(#fl-tp-arrow)"/>
+      <text class="dg-edge-label" x="420" y="100">probes ran outside: no touch</text>
+      <text class="dg-label dg-start" x="16" y="148">frame N + 1</text>
+      <circle cx="660" cy="144" r="6" fill="var(--dg-accent)"><title>first sub-step: probes from inside</title></circle>
+      <text class="dg-sub dg-start" x="672" y="148">touch posted, move refused</text>
+      <text class="dg-edge-label" x="16" y="214">the port before: probed from where the whole step ended (inside on frame N), so it touched a frame early</text>
+    </svg>
+    <figcaption>Not to scale: two units a sub-step against a box tens of units wide. The touch test sits at <code>0x801d0800</code>, the post (<code>FUN_801d5b5c</code>) at <code>0x801d0750</code>.</figcaption>
+  </figure>
+  <p>A PCSX-Redux film walking into Mei&rsquo;s house in Rim Elm steps into the doorway on vsync <code>12</code> and the door engages on <code>14</code>. The port probed after the step from where it ended, so whenever the box edge fell on a frame boundary it touched one frame early and left the player a step short of retail&rsquo;s. It now takes its leading points from the step&rsquo;s last probe (<code>FieldLocomotion::walk_probe_from</code>), and, with two seats of the film harness fixed beside it, the walk film of that door agrees with retail&rsquo;s on every row.</p>
 </section>
 
 <section class="doc-section" id="spawn-seat" data-doc="spawn-position-on-scene-entry">

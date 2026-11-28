@@ -715,7 +715,8 @@ impl SaveSelectSession {
                         // line run before the outcome lands.
                         self.phase = SelectPhase::Committing {
                             slot,
-                            frames_remaining: commit_work_frames(self.mode) + COMMIT_RESULT_FRAMES,
+                            frames_remaining: commit_work_frames(self.mode)
+                                + commit_result_frames(self.mode),
                             // A Load's block was read and parsed for the
                             // grid already; only a Save has bytes to move.
                             report: match self.mode {
@@ -754,11 +755,42 @@ impl SaveSelectSession {
         events: &mut Vec<SelectEvent>,
     ) {
         // The write beat's last frame waits for the host's answer.
-        if report == CommitReport::Pending && frames_remaining <= COMMIT_RESULT_FRAMES + 1 {
+        let result_frames = commit_result_frames(self.mode);
+        if report == CommitReport::Pending && frames_remaining <= result_frames + 1 {
             return;
         }
-        let in_result = frames_remaining <= COMMIT_RESULT_FRAMES;
-        let skip = in_result && (input.cross || input.circle || input.triangle);
+        let in_result = frames_remaining <= result_frames;
+        let press = input.cross || input.circle || input.triangle;
+        let skip = in_result && press;
+        // A successful card op's press ends the hold, not the line: retail's
+        // `LaunchFade` (sub-mode `0x16`, which a Save's "Save successful."
+        // runs too: the write arm's tail routes a clean write there) adds
+        // `0x5A` to the hold (`0x801DF8F0..0x801DF910`), so the ramp starts
+        // on the press's frame and runs its whole length.
+        if report == CommitReport::Ok && in_result {
+            let rest = if press && frames_remaining > LOAD_LAUNCH_RAMP_FRAMES {
+                LOAD_LAUNCH_RAMP_FRAMES - 1
+            } else {
+                frames_remaining.saturating_sub(1)
+            };
+            // The ramp's eighteenth frame (`0x1200`) is the landing's.
+            if frames_remaining <= 1 {
+                self.phase = SelectPhase::Done(match self.mode {
+                    SaveSelectMode::Load => {
+                        events.push(SelectEvent::LoadConfirmed { slot });
+                        SelectOutcome::Loaded(slot)
+                    }
+                    SaveSelectMode::Save => SelectOutcome::Saved(slot),
+                });
+            } else {
+                self.phase = SelectPhase::Committing {
+                    slot,
+                    frames_remaining: rest,
+                    report,
+                };
+            }
+            return;
+        }
         // The damaged-data box has no timer: retail's 0x13 arm leaves only on
         // a face button (`0x801DF560..0x801DF570`).
         if report == CommitReport::Damaged && in_result && !skip {
@@ -843,7 +875,7 @@ impl SaveSelectSession {
         match self.phase {
             SelectPhase::Committing {
                 frames_remaining, ..
-            } => (commit_work_frames(self.mode) + COMMIT_RESULT_FRAMES)
+            } => (commit_work_frames(self.mode) + commit_result_frames(self.mode))
                 .saturating_sub(frames_remaining),
             _ => 0,
         }
@@ -855,7 +887,25 @@ impl SaveSelectSession {
         match self.phase {
             SelectPhase::Committing {
                 frames_remaining, ..
-            } => Some(frames_remaining > COMMIT_RESULT_FRAMES),
+            } => Some(frames_remaining > commit_result_frames(self.mode)),
+            _ => None,
+        }
+    }
+
+    /// The launch ramp word of a successful Load's result line
+    /// ([`load_launch_ramp`]); `None` outside it. The title's Continue turns
+    /// it into the live audio level ([`launch_fade_music_level`]).
+    pub fn load_launch_ramp(&self) -> Option<i32> {
+        match self.phase {
+            SelectPhase::Committing {
+                frames_remaining,
+                report: CommitReport::Ok,
+                ..
+            } if self.mode == SaveSelectMode::Load
+                && frames_remaining <= commit_result_frames(self.mode) =>
+            {
+                Some(load_launch_ramp(frames_remaining))
+            }
             _ => None,
         }
     }

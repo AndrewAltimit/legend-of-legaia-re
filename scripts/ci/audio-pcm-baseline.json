@@ -19,8 +19,8 @@
       "cast_level": -0.1039
     },
     "battle_melee_hit_spark": {
-      "cast_core_corr": 0.8116,
-      "cast_core_level": -1.2958,
+      "cast_core_corr": 0.9841,
+      "cast_core_level": -0.0441,
       "cast_corr": 0.9993,
       "cast_level": 0.0119,
       "xa_corr": 0.999,

@@ -594,6 +594,39 @@ pub fn iter_groups_lenient(buf: &[u8], section_start: usize, section_size: usize
     out
 }
 
+/// The group headers of one primitive section, walked as
+/// [`iter_groups_lenient`] walks them but without decoding a primitive: the
+/// cheap pass a caller runs to ask which group kinds a section holds.
+pub fn group_headers_lenient(
+    buf: &[u8],
+    section_start: usize,
+    section_size: usize,
+) -> Vec<GroupHeader> {
+    let Some(section_end) = section_start.checked_add(section_size) else {
+        return Vec::new();
+    };
+    if section_end > buf.len() {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    let mut pos = section_start;
+    while pos + GROUP_HEADER_SIZE <= section_end {
+        let Ok(header) = GroupHeader::parse(buf, pos) else {
+            break;
+        };
+        if header.is_terminator() || header.ilen == 0 {
+            break;
+        }
+        let total = header.total_bytes();
+        if pos + total > section_end {
+            break;
+        }
+        out.push(header);
+        pos += total;
+    }
+    out
+}
+
 /// Stats summarizing iter_groups output.
 #[derive(Debug, Clone, Serialize)]
 pub struct GroupStats {

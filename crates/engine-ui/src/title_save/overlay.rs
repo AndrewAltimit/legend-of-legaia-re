@@ -53,6 +53,9 @@ pub struct SaveSelectOverlayView<'a> {
     pub pills: &'a [u8],
     /// Draw the pointing hand on the pill row, at this row.
     pub pill_cursor: Option<usize>,
+    /// The pills' grey (`0x80` is full): retail fades them in on the
+    /// title's Continue screen.
+    pub pill_shade: u8,
     /// The session's slide timer (`0..=0x1000`): the pill relocation and the
     /// "Now checking" panel ride it.
     pub slide_t: u16,
@@ -260,6 +263,7 @@ pub fn save_select_overlay_draws(
         } else {
             SAVE_SELECT_SLOT1_POS
         };
+        let start = out.sprites.len();
         out.sprites.extend(save_select_chrome_draws_for(
             rects,
             view.pills,
@@ -267,6 +271,20 @@ pub fn save_select_overlay_draws(
             stage_origin,
             stage_scale,
         ));
+        // The browsing row only: with the slide timer running, mode 2 takes
+        // the committed pill's path at full grey (`0x801E1DD4`).
+        let grey = if view.single_pill {
+            1.0
+        } else {
+            f32::from(view.pill_shade) / 128.0
+        };
+        for s in &mut out.sprites[start..] {
+            if s.src == rects.slot1 || s.src == rects.slot2 {
+                for c in &mut s.color[..3] {
+                    *c *= grey;
+                }
+            }
+        }
         if view.location_tab.is_some() {
             nine_slice_panel_into(
                 &mut out.sprites,
@@ -512,6 +530,7 @@ mod tests {
             single_pill: true,
             pills: &[0],
             pill_cursor: None,
+            pill_shade: 0x80,
             slide_t: 0x1000,
             info_t: 0x1000,
             now_checking: false,
@@ -578,6 +597,7 @@ mod tests {
             single_pill: true,
             pills: &[0],
             pill_cursor: None,
+            pill_shade: 0x80,
             slide_t: 0x1000,
             info_t: 0x1000,
             now_checking: false,
@@ -654,6 +674,7 @@ mod tests {
             single_pill: true,
             pills: &[0],
             pill_cursor: None,
+            pill_shade: 0x80,
             slide_t: 0x1000,
             info_t: 0x1000,
             now_checking: false,
@@ -727,6 +748,7 @@ mod tests {
             single_pill: true,
             pills: &[0],
             pill_cursor: None,
+            pill_shade: 0x80,
             slide_t: 0x1000,
             info_t: 0x1000,
             now_checking: false,
@@ -785,6 +807,7 @@ mod tests {
             single_pill: true,
             pills: &[0],
             pill_cursor: None,
+            pill_shade: 0x80,
             slide_t: 0x1000,
             info_t: 0x1000,
             now_checking: false,

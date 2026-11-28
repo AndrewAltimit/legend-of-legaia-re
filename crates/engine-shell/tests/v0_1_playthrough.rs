@@ -789,6 +789,15 @@ fn v0_1_battle_leg_walk_talk_accept() {
         assert!(reached, "nav reaches waypoint ({wx}, {wz})");
     }
 
+    // The talk probe sits behind the player tick's walk gate: stand out the
+    // post-load pad hold `_DAT_8007B6B4` first.
+    for _ in 0..0x40 {
+        if session.host.world.field_warp_words().1 == 0 {
+            break;
+        }
+        session.host.world.input.set_pad(0);
+        let _ = session.host.world.tick();
+    }
     // Talk: the interaction probe opens the (now adjacent) carrier's dialogue.
     session.host.world.input.set_pad(PadButton::Cross.mask());
     let _ = session.host.world.tick();

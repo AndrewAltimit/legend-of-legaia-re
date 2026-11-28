@@ -6,7 +6,8 @@
 //! word a frame. Each frame compares the Yes / No cursor while the confirm
 //! is open, and the ending: the item take `FUN_80042310(0x8A, 1)` and the
 //! effect applier `FUN_800402F4` on Yes, the return to the Use list (screen
-//! word `6`) on No or cancel.
+//! word `6`) on No or cancel, and on Yes once the busy word the applier's
+//! window holds has cleared.
 
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_menus::pause_screens::{
@@ -97,6 +98,23 @@ fn the_incense_confirm_ends_as_retail_does() {
                     assert_eq!(*taken.borrow(), vec![(0x8A, 1)], "{ctx}: one Incense");
                     assert_eq!(*applied.borrow(), 1, "{ctx}: its effect");
                     assert_eq!(cpu.mem.rd32(STEP), 2, "{ctx}");
+                    // Step 2 holds while the window VM is busy with the
+                    // applier's window, then drops to the Use list, where
+                    // the port's route lands at once (`PauseItemsSession`'s
+                    // `EncounterSuppress` arm: focus back on the list).
+                    cpu.mem.wr32(EDGE, 0);
+                    cpu.mem.wr32(REPEAT, 0);
+                    cpu.mem.wr32(BUSY, 1);
+                    assert_eq!(cpu.call(INCENSE, &[]), Stop::Returned);
+                    assert_eq!(
+                        (cpu.mem.rd32(STEP), cpu.mem.rd32(SCREEN)),
+                        (2, 0xD),
+                        "{ctx}: held on the busy word"
+                    );
+                    cpu.mem.wr32(BUSY, 0);
+                    assert_eq!(cpu.call(INCENSE, &[]), Stop::Returned);
+                    assert_eq!(cpu.mem.rd32(SCREEN), 6, "{ctx}: back to the Use list");
+                    assert_eq!(*taken.borrow(), vec![(0x8A, 1)], "{ctx}: still one Incense");
                     endings[0] += 1;
                     break;
                 }

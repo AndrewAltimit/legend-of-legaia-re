@@ -380,3 +380,96 @@ fn each_party_screen_opens_on_the_shared_cursor_retail_leaves() {
         assert_eq!(cpu.mem.rd32(STEP), 1, "case {case}: {screen:?} step 0 ran");
     }
 }
+
+/// The browse frame's page keys (`0x801DA8AC..0x801DA990`, the picker
+/// answering nothing) against `ListOrderSession::tick`: Right (`0x2000`)
+/// pages forward by seven, by the remainder, or drops the hand on the last
+/// row; Left (`0x8000`) pages back or to the top; both at once run one after
+/// the other. Lists of one to forty rows from the page's first row, the hand
+/// and the window (`0x8007BB98` / `0x8007BB90`) and the move cue compared
+/// after every frame.
+#[test]
+fn the_list_order_pages_as_retail_pages() {
+    differential!(prot(899, SCREEN));
+    use legaia_engine_menus::list_order::{ListOrderEvent, ListOrderRow, ListOrderSession};
+    let Some(mut cpu) = scus_cpu() else {
+        return;
+    };
+    cpu.mem.load(
+        OVERLAY_BASE,
+        &disc().expect("disc").read_entry(899).expect("PROT 0899"),
+    );
+    cpu.stub_outside = Some((SCREEN, SCREEN_END));
+    cpu.stub(PICKER, 0);
+    let cues = Rc::new(RefCell::new(Vec::<u32>::new()));
+    for va in [SFX_A, SFX_B] {
+        let c = cues.clone();
+        cpu.hook(va, move |r, _| c.borrow_mut().push(r.r[A0]));
+    }
+    let raseru: Vec<usize> = (0..4)
+        .map(|c| cpu.mem.rd16(RASERU_SLOTS + 2 * c) as usize)
+        .collect();
+    let mut rng = Rng(0x5041_4745);
+    let (mut forward, mut back, mut both) = (0u32, 0u32, 0u32);
+    for case in 0..3000 {
+        let step = 5 + rng.below(3);
+        let character = rng.below(3) as u8;
+        let mut record: Vec<u8> = (0..STRIDE).map(|_| rng.next() as u8).collect();
+        record[0x13C] = 1 + rng.below(40) as u8;
+        record[0x185] = 1 + rng.below(40) as u8;
+        record[0x196 + raseru[usize::from(character)]] |= 1;
+        let len = sub15_list_len(step as u8, &record, raseru[usize::from(character)]);
+        if len == 0 {
+            continue;
+        }
+        let rows = (0..len)
+            .map(|id| ListOrderRow {
+                id,
+                label: String::new(),
+            })
+            .collect();
+        let mut port = ListOrderSession::open(step as u8, 0, rows).expect("a browse page");
+        cpu.mem
+            .load(RECORDS + STRIDE * u32::from(character), &record);
+        cpu.mem.wr8(PARTY_ORDER, character);
+        cpu.mem.wr32(STEP, step);
+        cpu.mem.wr32(SUB_ROW, 0);
+        cpu.mem.wr32(CHAR_CURSOR, 0);
+        cpu.mem.wr32(ANCHOR, 0x1000);
+        cpu.mem.wr32(ROW_CURSOR, 0);
+        cpu.mem.wr32(SCROLL, 0);
+        for frame in 0..16 {
+            let pad: u32 = [0x2000, 0x2000, 0x8000, 0xA000, 0][rng.below(5) as usize];
+            cpu.mem.wr32(PAD, pad);
+            cues.borrow_mut().clear();
+            assert_eq!(cpu.call(SCREEN, &[]), Stop::Returned, "case {case}");
+            // Retail's menu word carries the d-pad in its high byte; the
+            // port's pad is the controller's own order.
+            let event = port.tick((pad as u16).swap_bytes());
+            let ctx = format!("case {case} frame {frame}: len {len} pad {pad:#x}");
+            assert_eq!(
+                (
+                    cpu.mem.rd32(ROW_CURSOR) as usize,
+                    cpu.mem.rd32(SCROLL) as usize
+                ),
+                (port.cursor(), port.scroll_top()),
+                "{ctx}: hand and window"
+            );
+            let moves = cues.borrow().iter().filter(|&&c| c == 0x21).count();
+            let want = match (pad, event) {
+                (0xA000, _) => 2,
+                (0, _) => 0,
+                (_, ListOrderEvent::Moved) => 1,
+                _ => 0,
+            };
+            assert_eq!(moves, want, "{ctx}: the move cue");
+            forward += u32::from(pad == 0x2000);
+            back += u32::from(pad == 0x8000);
+            both += u32::from(pad == 0xA000);
+        }
+    }
+    assert!(
+        forward > 5000 && back > 5000 && both > 5000,
+        "{forward} {back} {both}"
+    );
+}

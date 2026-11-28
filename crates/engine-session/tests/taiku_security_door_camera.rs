@@ -173,11 +173,15 @@ fn the_security_door_beat_hands_the_camera_back_to_the_party() {
         player_xz(&session),
         "the release glide landed on the player"
     );
-    // The camera follows a walk.
-    for _ in 0..40 {
+    // The camera follows a walk. The shot the release left stands until
+    // the follow step sees the player move (`FUN_801DB510`'s settle test),
+    // so the walk's first vsync may still read it.
+    for i in 0..40 {
         step(&mut session, PadButton::Down.mask());
         assert!(!cutscene_owns_camera(&session.host.world));
-        assert_eq!(focus_xz(&session), player_xz(&session), "follows the walk");
+        if i > 0 {
+            assert_eq!(focus_xz(&session), player_xz(&session), "follows the walk");
+        }
     }
     eprintln!("[ok] taiku P2[4] hands the camera back");
 }

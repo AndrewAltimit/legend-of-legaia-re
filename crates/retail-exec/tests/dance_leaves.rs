@@ -298,10 +298,15 @@ fn a_dance_widget_emits_the_quad_retail_emits() {
             clut: m.rd16(PACKET + 0x0E),
             tpage_attr: m.rd16(PACKET + 0x1A),
         };
+        // The second vertex of each row carries its own colour words
+        // (`+0x10..0x12`, `+0x28..0x2A`), scaled and rounded as the first's
+        // are (`0x801D3038..0x801D30A0`); the port draws a row in one colour.
+        let rgb_right = (rgb(m, 0x10), rgb(m, 0x28));
         let (w, abr) = &widgets[index as usize];
         let port = dance_hud_widget_quad(w, *abr, x, y, id, brightness, size);
         assert_eq!(
-            retail, port,
+            (retail, rgb_right),
+            (port, (port.rgb_top, port.rgb_bottom)),
             "round {round} id {id:#x} {w:?} x {x} y {y} brightness {brightness} size {size:#x}"
         );
         modes[mode as usize] += 1;

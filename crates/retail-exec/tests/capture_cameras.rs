@@ -402,6 +402,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
     let mut status_marks = 0usize;
     let mut shadow_failures: Vec<String> = Vec::new();
     let mut typhoon_poses = 0usize;
+    let mut shove_poses = 0usize;
     let mut venom_marks = 0usize;
     let spawn_log = Rc::new(RefCell::new(Vec::<(u32, [i16; 3], [i16; 3], u16)>::new()));
     let (mut spawns_matched, mut spawn_failures) = (0usize, Vec::<String>::new());
@@ -565,7 +566,8 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 r.r[V0] = u32::from(backstep && (far || polls.get().is_multiple_of(4)));
             });
         }
-        let countdown_va = cam::capture_countdown_va(body.action);
+        let countdown_va =
+            cam::capture_countdown_va(body.action).or_else(|| sweep_countdown_va(body.action));
         let rounds = match body.action {
             // Death Game's heal (`0x801F971C..0x801F9794`) caps each seat's
             // quarter at its missing HP; enough rounds that the picked card
@@ -1528,7 +1530,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 let stage_before = cpu.mem.rd8(ca + 0x1DA);
                 let stream_before = stream.get();
                 let stop = cpu.call(body.va, &[]);
-                let c = format!("{c0} pass {pass} arm {phase}");
+                let c = format!("{c0} pass {pass} arm {phase} step {step}");
                 if stop != Stop::Returned {
                     failures.push(format!("{c}: {stop:?}"));
                     break;
@@ -1724,11 +1726,28 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                     // each party seat's plane pair, height and heading against
                     // retail's arms 2..=5 (the marks `0x801F708C..0x801F70F8`,
                     // the pull `0x801F7488..0x801F76AC`, the let-down
-                    // `0x801F7AA8..0x801F7B94`). The engine ticks a vsync at a
-                    // time, so a pass at step > 1 grows the pull over several
-                    // ticks where retail grows it once: only step-1 passes
-                    // are compared.
-                    if (body.entry, body.va) == (942, DARK_TYPHOON) && step == 1 {
+                    // `0x801F7AA8..0x801F7B94`), at every step: the pull loop
+                    // runs once on the pass's opening tick at the pass's step,
+                    // as retail's one call grows it once by `2 * step`.
+                    // Chaos Breath's arm-1 shove (`0x801F74B4..0x801F7568`):
+                    // each party seat's plane pair, pushed once a pass by
+                    // `(table * 2 * step) >> 12`, at every step.
+                    if (body.entry, body.va) == (938, CHAOS_BREATH) && phase == 1 {
+                        for s in 0..3u32 {
+                            let a = ACTOR + s * STRIDE;
+                            let m = &w.actors[s as usize].move_state;
+                            let got =
+                                [cpu.mem.rd16(a + 0x34) as i16, cpu.mem.rd16(a + 0x38) as i16];
+                            let port = [m.world_x, m.world_z];
+                            if got != port {
+                                shadow_failures.push(format!(
+                                    "{c}: Chaos Breath seat {s} pair retail {got:?} port {port:?}"
+                                ));
+                            }
+                            shove_poses += 1;
+                        }
+                    }
+                    if (body.entry, body.va) == (942, DARK_TYPHOON) {
                         for s in 0..3u32 {
                             let a = ACTOR + s * STRIDE;
                             let m = &w.actors[s as usize];
@@ -2322,6 +2341,11 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
         "band shadow passes {shadow_passes}"
     );
     eprintln!("Dark Typhoon swirl: {typhoon_poses} party seat poses compared");
+    eprintln!("Chaos Breath shove: {shove_poses} party seat pairs compared");
+    assert!(
+        shove_poses >= 100,
+        "Chaos Breath shove pairs compared: {shove_poses}"
+    );
     eprintln!("Water Column: {venom_marks} passes with the victim's Venom bit compared");
     assert!(
         venom_marks > 0,
@@ -2360,6 +2384,27 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
     let n = failures.len();
     failures.truncate(4000);
     assert!(n == 0, "{n} mismatches:\n{}", failures.join("\n"));
+}
+
+/// The countdown words of the directed bodies [`cam::capture_countdown_va`]
+/// leaves out (it names only the words a save state's seed reads), off each
+/// body's director table in `cast-module.md`: compared here at every step,
+/// so a pass that hands over on its opening tick and drops the rest of its
+/// drain shows.
+fn sweep_countdown_va(action: u8) -> Option<u32> {
+    match action {
+        0x4B => Some(0x801F_8174),
+        0x4C => Some(0x801F_8090),
+        0xAA => Some(0x801F_88B4),
+        0x75 => Some(0x801F_86A0),
+        0x51 => Some(0x801F_83EC),
+        0x53 => Some(0x801F_8360),
+        0x7B => Some(0x801F_8E50),
+        0x79 => Some(0x801F_93B8),
+        0x7A => Some(0x801F_9624),
+        0x4E => Some(0x801F_8040),
+        _ => None,
+    }
 }
 
 /// Shots the port is known to frame differently, as `(entry, body, arm,

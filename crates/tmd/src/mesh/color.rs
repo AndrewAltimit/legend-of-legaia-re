@@ -20,9 +20,12 @@ pub struct ColorMesh {
     /// mode byte's ABE bit packed into bit 15 (the same
     /// [`TSB_SEMI_TRANSPARENT_BIT`] convention the textured path rides on
     /// TSB), ABR blend mode in bits 5..=6. Legaia's untextured prims carry
-    /// no texpage/ABR field, so ABR is 0 (B/2+F/2, the PSX draw-env
-    /// default); only the ABE enable varies. All corners of a prim share
-    /// one word.
+    /// no texpage/ABR field: the GPU blends one in the ABR its texpage
+    /// register holds, which the last `E1` or textured polygon set. That is
+    /// mode 0 (B/2+F/2) for every untextured semi prim the hosts draw
+    /// (`docs/subsystems/renderer-port.md`, "The GPU carries its draw
+    /// mode"), so ABR is 0 here; only the ABE enable varies. All corners of
+    /// a prim share one word.
     ///
     /// [`TSB_SEMI_TRANSPARENT_BIT`]: super::TSB_SEMI_TRANSPARENT_BIT
     pub blend: Vec<u16>,
@@ -229,4 +232,50 @@ pub fn tmd_to_color_mesh_posed_rot(
         }
     }
     out
+}
+
+/// Whether any object of `tmd` holds an untextured (`F*` / `G*`) group: the
+/// prims [`tmd_to_color_mesh`] emits. Walks the group headers only, so a
+/// caller can skip the colour build for a mesh with no untextured half.
+pub fn has_untextured_prims(tmd: &Tmd, buf: &[u8]) -> bool {
+    use crate::descriptor::Descriptor;
+    tmd.objects.iter().any(|o| {
+        legaia_prims::group_headers_lenient(buf, o.primitives_byte_offset, o.primitives_byte_size)
+            .iter()
+            .any(|h| Descriptor::for_flags(h.flags).is_some_and(|d| !d.packet_shape.is_textured()))
+    })
+}
+
+/// The ABR the GPU's texpage register holds after `tmd`'s textured prims:
+/// the blend mode an untextured prim drawn among them takes. An untextured
+/// packet has no page of its own, and every textured polygon's page halfword
+/// rewrites the register's ABR (`docs/subsystems/renderer-port.md`, "The GPU
+/// carries its draw mode"). The first textured prim's page names it; every
+/// battle body on the disc carries one ABR across its textured prims. `0`
+/// for a mesh with none.
+pub fn textured_abr(tmd: &Tmd, buf: &[u8]) -> u8 {
+    use crate::descriptor::Descriptor;
+    for o in &tmd.objects {
+        for g in
+            legaia_prims::iter_groups_lenient(buf, o.primitives_byte_offset, o.primitives_byte_size)
+        {
+            let textured =
+                Descriptor::for_flags(g.header.flags).is_some_and(|d| d.packet_shape.is_textured());
+            if let Some(p) = g.prims.first().filter(|_| textured) {
+                return ((p.tsb >> 5) & 3) as u8;
+            }
+        }
+    }
+    0
+}
+
+/// Carry `abr` into every blend word of an untextured colour mesh's prims
+/// (bits 5..=6), the mode the GPU's texpage register hands them
+/// ([`textured_abr`]). Inert while a word's ABE bit is down; a draw whose
+/// colour word raises ABE ORs its own ABR over it, as the prim dispatcher
+/// ORs the word's mode into the textured packets that set the register.
+pub fn carry_untextured_abr(blend: &mut [u16], abr: u8) {
+    for b in blend {
+        *b = (*b & !0x60) | (u16::from(abr & 3) << 5);
+    }
 }

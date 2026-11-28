@@ -181,14 +181,16 @@ fn resume_after_use(active: &mut FieldMenuSubsession, world: &mut World) {
             let catalog = s.catalog().clone();
             let notice = apply_spell_outcome(s, world);
             let mut next = build_spell_session(world, &catalog);
+            let (caster_row, target_row) =
+                (caster_row.unwrap_or(0) as u8, target_row.unwrap_or(0) as u8);
             if notice.is_some() {
                 world.menu.pending_spell_notice = notice;
+                // The cast screen waits under the notice; its re-cast check
+                // runs once the notice is closed.
+                next.hold_cast_for_notice(caster_row, spell_id, target_row);
+            } else {
+                next.resume_cast(caster_row, spell_id, target_row);
             }
-            next.resume_cast(
-                caster_row.unwrap_or(0) as u8,
-                spell_id,
-                target_row.unwrap_or(0) as u8,
-            );
             *s = next;
         }
         _ => {}

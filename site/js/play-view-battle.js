@@ -322,6 +322,23 @@
             this.renderer.updateSceneMeshPositions(a.meshId, src);
           }
           a.morphed = src !== a.base || !!(hidden && hidden.length && !pose.length);
+          /* The untextured half takes the same pose, morph and hidden
+           * objects through its own rig. */
+          if (a.color) {
+            const c = a.color;
+            let csrc = c.base;
+            if (src !== a.base && typeof rt.play_battle_actor_color_morph === 'function') {
+              const cm = rt.play_battle_actor_color_morph(i);
+              if (cm.length === c.base.length) csrc = cm;
+            }
+            if (pose.length) {
+              poseInto(c.out, csrc, c.objectIds, pose, pose.length / 6, 0);
+            } else {
+              c.out.set(csrc);
+            }
+            hideObjects(c.out, c.objectIds, hidden);
+            this.renderer.updateSceneMeshPositions(c.meshId, c.out);
+          }
         }
         /* Rot limb dimming (FUN_80048A08's per-object colour rule) and the
          * near-camera ghost's flat packets (handler bank 2, one colour per
@@ -332,6 +349,9 @@
           const limbKey = rt.play_battle_actor_limb_key(i);
           if (limbKey !== (a.limbKey || 0)) {
             this.renderer.updateSceneMeshFlat(a.meshId, rt.play_battle_actor_limb_rgba(i));
+            if (a.color) {
+              this.renderer.updateSceneMeshFlat(a.color.meshId, rt.play_battle_actor_color_rgba(i));
+            }
             a.limbKey = limbKey;
           }
         }
@@ -343,6 +363,11 @@
           const blendKey = rt.play_battle_actor_blend_key(i);
           if (blendKey !== (a.blendKey || 0)) {
             this.renderer.updateSceneMeshCbaTsb(a.meshId, rt.play_battle_actor_blend_cba_tsb(i));
+            if (a.color) {
+              this.renderer.updateSceneMeshCbaTsb(a.color.meshId,
+                rt.play_battle_actor_color_cba_tsb(i));
+              this.renderer.updateSceneMeshFlat(a.color.meshId, rt.play_battle_actor_color_rgba(i));
+            }
             a.blendKey = blendKey;
           }
         }
@@ -431,6 +456,11 @@
           d.model = mulMat4(
             new Float32Array([1, 0, 0, 0, 0, c, s, 0, 0, -s, c, 0, 0, ty, tz, 1]),
             base);
+        }
+        /* The body's untextured half: the same draw (placement, cue, clip,
+         * NCLIP word) on its companion mesh. A shattering body draws none. */
+        if (a.color && drawMeshId === a.meshId) {
+          draws.push(Object.assign({}, draws[draws.length - 1], { meshId: a.color.meshId }));
         }
         /* Arts after-image ghosts: the engine's ghost plan (rate-scheduled
          * pose-history depths + per-character colour with the per-ghost
@@ -707,6 +737,36 @@
             poseInto(rec.out, rec.base, rec.objectIds, pose, pose.length / 6, 0);
             hideObjects(rec.out, rec.objectIds, hiddenOf(rt, i));
             this.renderer.updateSceneMeshPositions(meshId, rec.out);
+          }
+        }
+        /* The body's untextured half (its F / G prims, which the textured
+         * upload skips): a second scene mesh, every vertex an untextured fill
+         * (alpha 0), posed by its own object ids with the body's pose each
+         * frame and drawn beside it (`play_battle_actor_color_*`; the native
+         * window's `build_battle_body_color_meshes`). Guarded against a
+         * cached WASM without the exports. */
+        if (rec.objectIds.length
+            && typeof rt.play_battle_actor_color_positions === 'function') {
+          const cp = rt.play_battle_actor_color_positions(i);
+          if (cp.length) {
+            const cid = BATTLE_MESH_BASE + 64 + i;
+            this.renderer.uploadSceneMesh(cid, cp, new Uint8Array((cp.length / 3) * 2),
+              rt.play_battle_actor_color_cba_tsb(i), rt.play_battle_actor_color_indices(i),
+              rt.play_battle_actor_color_rgba(i));
+            rec.color = {
+              meshId: cid, base: cp,
+              objectIds: rt.play_battle_actor_color_object_ids(i),
+              out: new Float32Array(cp.length),
+            };
+          }
+        }
+        if (rec.color) {
+          const pose = rt.play_battle_actor_pose(i);
+          if (pose.length) {
+            const c = rec.color;
+            poseInto(c.out, c.base, c.objectIds, pose, pose.length / 6, 0);
+            hideObjects(c.out, c.objectIds, hiddenOf(rt, i));
+            this.renderer.updateSceneMeshPositions(c.meshId, c.out);
           }
         }
         b.actors.push(rec);

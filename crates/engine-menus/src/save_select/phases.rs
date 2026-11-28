@@ -177,6 +177,49 @@ pub enum CommitReport {
 /// `0x801DF9D8`): 90 sixtieth-second units.
 pub const COMMIT_RESULT_FRAMES: u16 = 90;
 
+/// Frames of a successful Load's launch ramp, after its result hold: retail's
+/// `LaunchFade` arm (sub-mode `0x16`) climbs its ramp word `0x801EF154` by
+/// the frame step `<< 8` once the hold passes `0x5A` and launches at `0x1200`
+/// (`0x801DF9D8..0x801DFA90`), so the "Load successful." line stays up `18`
+/// sixtieth-second units past the hold, the last of them the launch frame.
+pub const LOAD_LAUNCH_RAMP_FRAMES: u16 = 0x1200 / 0x100;
+
+/// A successful Load's result line: the `0x5A` hold and the launch ramp.
+/// [`SelectPhase::Committing`] counts it down to the frame that lands the
+/// outcome, which is the ramp's last.
+pub const COMMIT_LOAD_RESULT_FRAMES: u16 = COMMIT_RESULT_FRAMES + LOAD_LAUNCH_RAMP_FRAMES - 1;
+
+/// The result line's length for a session's direction. Both are the
+/// `LaunchFade` arm's: a clean write leaves sub-mode `3` for `0x16` too
+/// (`0x801DFC40..`, `0x17` then `0x16` while no retry is pending), whose
+/// "Save successful." holds and ramps as a Load's line does before sub-mode
+/// `6` closes the screen.
+pub fn commit_result_frames(_mode: SaveSelectMode) -> u16 {
+    COMMIT_LOAD_RESULT_FRAMES
+}
+
+/// The launch ramp word (`0x801EF154`) of a successful Load's result line
+/// with `frames_remaining` left on [`SelectPhase::Committing`]: `0` through
+/// the hold, `0x100` more each ramp frame, `0x1200` on the landing frame.
+pub fn load_launch_ramp(frames_remaining: u16) -> i32 {
+    i32::from(LOAD_LAUNCH_RAMP_FRAMES.saturating_sub(frames_remaining)) << 8
+}
+
+/// The live audio level (`_DAT_8007B910`) the `LaunchFade` arm stores each
+/// frame for `ramp` while the title's entry word `_DAT_8007BB00` is up -
+/// a Continue's Load or a New Game, never the pause menu's Load:
+/// `(0x1000 - ramp)` clamped to `0..=0xFFF`, times `0xFF`, over `0x1000`.
+/// So the hold stores `254`, above the configured `215` every other screen
+/// rests on (the title theme plays at sequence volume `127`, not `107`), and
+/// the ramp takes it to `0` in sixteen steps of `16`, two frames before the
+/// launch.
+///
+/// PORT: FUN_801DD35C (LaunchFade level store, `0x801DFA00..0x801DFA58`)
+pub fn launch_fade_music_level(ramp: i32) -> u8 {
+    let level = (0x1000 - ramp).clamp(0, 0xFFF);
+    ((level * 0xFF) >> 12) as u8
+}
+
 impl SelectPhase {
     /// Whether a save-select opened from the title is composed over the
     /// title art in this phase. Retail keeps the card up behind the pill

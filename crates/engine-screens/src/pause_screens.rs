@@ -1392,6 +1392,7 @@ pub fn save_select_overlay_draws(
         single_pill: m.single_pill,
         pills: &m.pills,
         pill_cursor: m.pill_cursor,
+        pill_shade: m.pill_shade,
         slide_t: m.slide_t,
         info_t: m.info_t,
         now_checking: m.now_checking,

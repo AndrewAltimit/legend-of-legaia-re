@@ -742,6 +742,10 @@ fn departure_scene(
     }
 }
 
+/// The casino seats' latches (`koin1` P1[0] `+0xEF..0x10C`, the floor's
+/// re-engage of P1[51..=56]): a raised one parks the floor's track.
+const CASINO_SEAT_LATCHES: [u16; 3] = [0x4B6, 0x4B7, 0x4B8];
+
 /// The engine side of a seeded minigame state.
 struct EngineMinigame {
     mode: SceneMode,
@@ -769,21 +773,64 @@ fn run_engine_minigame(
     retail: &RetailObs,
     departure: &str,
     film: Option<&super::minigame_film::MinigameFilm>,
+    mut listen: Option<&mut crate::audio_sweep::EngineAudio>,
 ) -> Result<EngineMinigame> {
     let mg = retail.minigame.context("no minigame observables")?;
     let sub = mg.minigame().context("sub-id names no overlay")?;
     let cfg = BootConfig {
         scene: departure.to_string(),
-        enable_audio: false,
+        enable_audio: listen.is_some(),
     };
-    let mut session = NativeSession::open(extracted, &cfg).context("open boot session")?;
+    let mut session = if listen.is_some() {
+        NativeSession::open_extracted_detached_audio(extracted, &cfg)
+    } else {
+        NativeSession::open(extracted, &cfg)
+    }
+    .context("open boot session")?;
+    let listening = listen.is_some();
+    let mut director = super::engine_run::RecordingDirector::default();
+    // The audio sweep's listener: the hosts' audio frame after every tick,
+    // the track words routed as both hosts route them.
+    let mut tick = |session: &mut NativeSession| -> Result<()> {
+        session.tick()?;
+        if let Some(audio) = listen.as_deref_mut() {
+            // The minigame arms' own audio steps, which both play hosts run
+            // each frame after the tick: the duel's announcer lines and the
+            // dome hub's cues (the dance's venue step the film runs).
+            session.sound_baka_announcer();
+            session.sound_muscle_hub();
+            super::engine_run::route_bgm(session, &mut director)?;
+            crate::audio_sweep::listen_frame(session, audio);
+            if std::env::var_os("LEGAIA_SWEEP_LISTEN_TICKS").is_some() {
+                eprintln!("listen tick {}", audio.ticks);
+            }
+        }
+        Ok(())
+    };
     crate::retail_compare::pin_seed_retail(&mut session.host.world.toggles, false);
-    let save = retail
+    let mut save = retail
         .seed_save()
         .context("retail state has no liftable save window")?;
+    // The casino seat's latch is the seat's own record's, raised after the
+    // floor's entry chose the track: lowered for the entry, the floor plays
+    // the `2018` it played on retail where its raised arms park the track
+    // (`koin1` P1[0] `+0xEF..0x10C`). The listener's seat alone.
+    let seat_latches: Vec<u16> = if listening && departure == "koin1" {
+        CASINO_SEAT_LATCHES
+            .iter()
+            .copied()
+            .filter(|&f| super::save_flags::system_flag_held(&save, f))
+            .collect()
+    } else {
+        Vec::new()
+    };
+    super::save_flags::clear_system_flags(&mut save, &seat_latches);
     let _landing = session.resume_save(save, departure, &FieldLiveOpts::default());
     for _ in 0..WARP_TICK {
-        session.tick()?;
+        tick(&mut session)?;
+    }
+    for &f in &seat_latches {
+        session.host.world.system_flag_set(f);
     }
     session.host.world.request_minigame_warp(sub.sub_id());
     let mut reached = None;
@@ -792,7 +839,7 @@ fn run_engine_minigame(
         _ => ENTRY_DEADLINE,
     };
     for t in 0..deadline {
-        session.tick()?;
+        tick(&mut session)?;
         if film.is_some() {
             // The film runs the venue step both play hosts run.
             let _ = session.step_dance_tail();
@@ -803,6 +850,12 @@ fn run_engine_minigame(
         };
         if at {
             reached = Some(t);
+            if listening && std::env::var_os("LEGAIA_SWEEP_LISTEN_TICKS").is_some() {
+                eprintln!(
+                    "minigame listen: the phase at listener tick {}",
+                    WARP_TICK + t + 1
+                );
+            }
             break;
         }
     }
@@ -821,7 +874,7 @@ fn run_engine_minigame(
                 .filter(|p| first + p.0 == t)
                 .fold(0u16, |m, p| m | p.1.mask());
             session.host.world.input.set_pad(mask);
-            session.tick()?;
+            tick(&mut session)?;
         }
         session.host.world.input.set_pad(0);
         // The player select's lineup clips are the frame's clock: tick on
@@ -851,7 +904,7 @@ fn run_engine_minigame(
                 if on_frame {
                     break;
                 }
-                session.tick()?;
+                tick(&mut session)?;
                 baka_lineup_ticks += 1;
             }
         }
@@ -889,6 +942,26 @@ fn run_engine_minigame(
             }
         });
     }
+    // The listener hears the phase for as long as it holds, up to the span
+    // the field sample listens across: a start the phase's own arm queued
+    // (the shore's venue track) is routed and sounds, and a phase that moves
+    // on (the dance's count-in) is not listened past.
+    // `LEGAIA_SWEEP_LISTEN_TICKS=<n>`: listen `n` ticks past the phase
+    // whatever it does, for a cue timeline against a retail key-on census
+    // run from the same state (harness).
+    let listen_on: Option<u32> = std::env::var("LEGAIA_SWEEP_LISTEN_TICKS")
+        .ok()
+        .and_then(|v| v.parse().ok());
+    if listening && (mg.drive().is_none() || listen_on.is_some()) {
+        session.host.world.input.set_pad(0);
+        let span = listen_on.map_or(crate::audio_sweep::LISTEN_SPAN, |n| n as usize);
+        for _ in 0..span {
+            tick(&mut session)?;
+            if listen_on.is_none() && !at_captured_phase(&session.host.world, &mg) {
+                break;
+            }
+        }
+    }
     if let Some(film) = film {
         film.run(
             &mut session,
@@ -896,6 +969,10 @@ fn run_engine_minigame(
             WARP_TICK + 1 + reached.unwrap_or(ENTRY_DEADLINE),
             retail.rand_seed,
         )?;
+    }
+    if let Some(audio) = listen {
+        crate::audio_sweep::finish_listen(&session, audio);
+        crate::cue_differential::probe(&mut session, audio);
     }
     let w = &session.host.world;
     Ok(EngineMinigame {
@@ -920,6 +997,30 @@ fn run_engine_minigame(
     })
 }
 
+/// Seed a minigame state with the audio director attached and listen to it
+/// (the audio sweep's minigame half): the same seed, warp and drive as the
+/// image corpus takes, the hosts' audio frame after every tick.
+pub fn run_minigame_listening(
+    extracted: &Path,
+    retail: &RetailObs,
+    cdname: &legaia_prot::cdname::IndexMap,
+    probe: Option<crate::cue_differential::CueProbe>,
+) -> Result<crate::audio_sweep::EngineAudio> {
+    let mg = retail.minigame.context("no minigame observables")?;
+    if let Some(why) = mg.unseeded_reason() {
+        anyhow::bail!(why);
+    }
+    let departure = departure_scene(retail, &mg, cdname);
+    let mut audio = crate::audio_sweep::EngineAudio::default();
+    audio.cue_probe = probe;
+    let engine = run_engine_minigame(extracted, retail, &departure, None, Some(&mut audio))?;
+    anyhow::ensure!(
+        engine.reached.is_some(),
+        "the engine never reached the captured phase"
+    );
+    Ok(audio)
+}
+
 /// Seed a minigame state and score it: `mode`, `scene`, `minigame` (the
 /// session's own words) and `image`.
 pub(super) fn run_minigame(
@@ -939,7 +1040,8 @@ pub(super) fn run_minigame(
     }
     let departure = departure_scene(retail, &mg, cdname);
     let film = super::minigame_film::MinigameFilm::from_env();
-    let engine = match run_engine_minigame(opts.extracted, retail, &departure, film.as_ref()) {
+    let engine = match run_engine_minigame(opts.extracted, retail, &departure, film.as_ref(), None)
+    {
         Ok(e) => e,
         Err(e) => {
             report.unseeded = format!("seeding failed: {e:#}");

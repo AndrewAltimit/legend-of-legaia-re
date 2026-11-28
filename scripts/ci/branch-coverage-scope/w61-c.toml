@@ -1,0 +1,174 @@
+# Interpreter-wide coverage rows: field VM, menus, minigames, shops, item apply, title, save, text.
+
+[[arm]]
+entry = "0x801D7518"
+image = "abfabb59516ea7ff"
+range = "0x801D7634..0x801D767C"
+verdict = "unported"
+reason = "PROT 0897 transition sweep, move-VM actor with +0x5A == 3 and +0xA4 > 0x10: the keyframe buffer re-alloc (FUN_80017888 of +0xA4 * +0xA6, then FUN_8005842C into +0xA0); sweep_actor reports the arm (move_vm_arm) and the engine allocates no PSX actor scratch."
+
+[[arm]]
+entry = "0x801D7518"
+image = "abfabb59516ea7ff"
+range = "0x801D76A0..0x801D77B4"
+verdict = "unported"
+reason = "PROT 0897 transition sweep, move-VM actor with +0x5A == 6: the six-column vertex copy from the +0x48 keyframe table into a fresh +0x4C buffer; raw buffer plumbing the port reports as move_vm_arm and does not model."
+
+[[arm]]
+entry = "0x800319A8"
+range = "0x80031A20..0x80031A74"
+verdict = "unported"
+reason = "Window destroy: the frees of the node's text buffer (+0x18, skipped for style < 2, 0xD and 0x11), +0x24 and +0x2C sub-objects through FUN_80017B94; MenuWidgetState keeps no PSX heap, so only the unlink is compared."
+
+[[arm]]
+entry = "0x800319A8"
+range = "0x80031AB0..0x80031AC0"
+verdict = "unported"
+reason = "Window destroy: the list-head free once only the sentinel is left (FUN_80017B94, then gp+0x148 = 0); the port's list has no sentinel node to free and reads empty either way."
+
+[[arm]]
+entry = "0x801E791C"
+image = "610af0846ca9fd6f"
+range = "0x801E7954..0x801E7954"
+verdict = "unreachable"
+reason = "PROT 0898 escape roll: the loop-entry test of the battle context (*0x8007BD24) +0, the party count; a battle the escape command runs in always seats at least one party member and one monster, so the count is never zero."
+
+[[arm]]
+entry = "0x801E791C"
+image = "610af0846ca9fd6f"
+range = "0x801E7A3C..0x801E7A3C"
+verdict = "unreachable"
+reason = "PROT 0898 escape roll: the loop-entry test of the battle context (*0x8007BD24) +1, the monster count; a battle the escape command runs in always seats at least one party member and one monster, so the count is never zero."
+
+[[arm]]
+entry = "0x801E791C"
+image = "610af0846ca9fd6f"
+range = "0x801E7B90..0x801E7B90"
+verdict = "unreachable"
+reason = "PROT 0898 escape roll: the loop-entry test of the battle context (*0x8007BD24) +0, the party count; a battle the escape command runs in always seats at least one party member and one monster, so the count is never zero."
+
+[[arm]]
+entry = "0x801E791C"
+image = "610af0846ca9fd6f"
+range = "0x801E7E3C..0x801E7E3C"
+verdict = "unreachable"
+reason = "PROT 0898 escape roll: the loop-entry test of the battle context (*0x8007BD24) +0, the party count; a battle the escape command runs in always seats at least one party member and one monster, so the count is never zero."
+
+[[arm]]
+entry = "0x801E791C"
+image = "610af0846ca9fd6f"
+range = "0x801E7EF0..0x801E7EF0"
+verdict = "unreachable"
+reason = "PROT 0898 escape roll: the loop-entry test of the battle context (*0x8007BD24) +0, the party count; a battle the escape command runs in always seats at least one party member and one monster, so the count is never zero."
+
+[[arm]]
+entry = "0x801E791C"
+image = "610af0846ca9fd6f"
+range = "0x801E7F14..0x801E7F14"
+verdict = "unreachable"
+reason = "PROT 0898 escape roll: the loop-entry test of the battle context (*0x8007BD24) +0, the party count, re-read inside the outer party loop; a battle the escape command runs in always seats at least one party member and one monster, so the count is never zero."
+
+[[arm]]
+entry = "0x801D5ED0"
+image = "3ca017e44535b38f"
+range = "0x801D6100..0x801D6100"
+verdict = "unreachable"
+reason = "PROT 0976 HUD quad emitter: the round-toward-zero fix-up of cell width * record scale (lw 0(record)); every one of the 51 shipped widget records has a positive scale, which the differential asserts, so the product is never negative."
+
+[[arm]]
+entry = "0x801D5ED0"
+image = "3ca017e44535b38f"
+range = "0x801D6134..0x801D6134"
+verdict = "unreachable"
+reason = "PROT 0976 HUD quad emitter: the same fix-up for the cell height * record scale; positive on every shipped widget record."
+
+[[arm]]
+entry = "0x801DC6B4"
+image = "a1c58af6ef79ef56"
+range = "0x801DC6C8..0x801DC70C"
+verdict = "unported"
+reason = "PROT 0899 pause driver: the menu's own curtain ramp (_DAT_8007B440 += DAT_801E46A0 * frame step, clamped to 0..0xF2, the delta zeroed at either end) ahead of FUN_8003479C; the port draws the field-side pause wipe (engine-system pause_wipe, FUN_801ED308) and keeps no menu-side level."
+
+[[arm]]
+entry = "0x801DC6B4"
+image = "a1c58af6ef79ef56"
+range = "0x801DC784..0x801DC784"
+verdict = "unreachable"
+reason = "PROT 0899 pause driver: the jump table's default (state word _DAT_8007B43C >= 9); the driver stores 0, 1 and 2, the Use screens 4 and 5, and the close arm adds 3, so the word never passes 8."
+
+[[arm]]
+entry = "0x801DC6B4"
+image = "a1c58af6ef79ef56"
+range = "0x801DC93C..0x801DC9CC"
+verdict = "unported"
+reason = "PROT 0899 pause driver states 1, 2 and 4/5: the wait for the curtain under 0x79, the sub-screen dispatch through the 0x801E4F40 table with its step reset, and the close wait for 0xF2 with no pending window; the port's FieldMenuSession phases and the per-screen sessions replace the state word, so no kernel steps _DAT_8007B43C."
+
+[[arm]]
+entry = "0x801D1C5C"
+image = "b074b33f8684800f"
+range = "0x801D1CA8..0x801D1CA8"
+verdict = "unported"
+reason = "PROT 0972 rod actor, swing word 0: retire at once (+0x10 |= 0xA) and zero the bob triple 0x801D9134; the session machine stores the 0 as it tears a cast down (0x801CF92C, 0x801CFE60), and the port's PondSession drops its RodActor at the same edge instead of ticking a zero state."
+
+[[arm]]
+entry = "0x801D1C5C"
+image = "b074b33f8684800f"
+range = "0x801D1F8C..0x801D1F8C"
+verdict = "unreachable"
+reason = "PROT 0972 rod actor: the +0x10 & 0x1000 test ahead of the model-slot fetch FUN_8001C604; the tick raises the bit itself at 0x801D1EC8 (ori 0x1000) on every path, so the skip is never taken."
+
+[[arm]]
+entry = "0x801D1C5C"
+image = "b074b33f8684800f"
+range = "0x801D2018..0x801D2018"
+verdict = "unreachable"
+reason = "PROT 0972 rod actor: the same +0x10 & 0x1000 test ahead of the model-slot store after the draw; the bit is raised at 0x801D1EC8 on every path."
+
+[[arm]]
+entry = "0x801D4004"
+image = "5de79147ed80b94f"
+range = "0x801D4030..0x801D4030"
+verdict = "unported"
+reason = "PROT 0972 hooked-fish tick: the debug readout behind _DAT_8007B9B0 (the species name through the debug printf FUN_80036888 at 0x801D406C); the port has no debug overlay text."
+
+[[arm]]
+entry = "0x801D4004"
+image = "5de79147ed80b94f"
+range = "0x801D4470..0x801D4484"
+verdict = "unported"
+reason = "PROT 0972 hooked-fish tick: the debug load override (with _DAT_8007B9B0 set and pad bit 2 held, the reel load is forced to 1 at 0x801D448C); a developer switch the port does not carry."
+
+[[arm]]
+entry = "0x801D4004"
+image = "5de79147ed80b94f"
+range = "0x801D4710..0x801D4710"
+verdict = "unreachable"
+reason = "PROT 0972 hooked-fish tick: the round-toward-zero fix-up of rand() / 4 (a1 = FUN_80056798's result at 0x801D470C); rand() returns 0..0x7FFF, never negative."
+
+[[arm]]
+entry = "0x801DB21C"
+image = "85f14627e5960000"
+range = "0x801DB230..0x801DB244"
+verdict = "unported"
+reason = "PROT 0899 shop buy list, steps 0 and 1 of the sub-screen step word 0x801E46AC: open the list window through the widget VM FUN_801D6628 (program 0x801E4E64, +0x46BC |= 0x1000) and wait out the slide latch; MenuRuntime's ShopBuy screen opens its list itself and keeps no step word."
+
+[[arm]]
+entry = "0x801DB21C"
+image = "85f14627e5960000"
+range = "0x801DB254..0x801DB254"
+verdict = "unreachable"
+reason = "PROT 0899 shop buy list: the fall-through past step 2; the routine stores only 1 (0x801DB28C) and 2 (0x801DB2B0) into 0x801E46AC, and a sub-screen change zeroes it."
+
+[[arm]]
+entry = "0x801DB21C"
+image = "85f14627e5960000"
+range = "0x801DB29C..0x801DB29C"
+verdict = "unported"
+reason = "PROT 0899 shop buy list, step 1: hold until the window walker's slide latch _DAT_8007BB80 clears, then arm list mode 1; the port's list has no slide latch to wait on."
+
+[[arm]]
+entry = "0x801E1C1C"
+image = "fa3ffdbb31fb7007"
+range = "0x801E1C98..0x801E1C98"
+verdict = "unreachable"
+reason = "PROT 0899 save-panel slide: the mode table's default (a0 >= 5); its eight jal sites in the overlay (0x801DD6E0 .. 0x801DFD7C) pass a0 = 0, 1, 2, 3 or 4."

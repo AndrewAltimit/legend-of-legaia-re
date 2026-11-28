@@ -1705,6 +1705,36 @@ Death Game's arms do `241..349` hblanks of work and their polled frames fit insi
 `4`, Kiss of Death's arm 4 does `665` and its polled frames span eight vsyncs, Glare's sit
 between. Grade `disassembly` for the per-polygon path, `capture` for the coefficients.
 
+The `2.78` divides by the work left between the CD interrupt spans, and that work carries the
+exception exits of the polls as well as the frame's own. A `--cd-trace` recording of Death Game
+(`battle_jou_puera_v3_death_game_mid_cast`) holds arms whose scene is the same polled and
+unpolled: the unpolled arms 4 to 8 cost `241`, the polled arms 2, 3 and 9 leave `264..284` beside
+`305..334` polls a frame (the exits about `.08..16` hblanks a poll), and they cost `3.13` to
+`3.43` times the unpolled `241`. Over the census's work, which counts no exits, the ratio is
+therefore the arts shout's census ratio (`ARTS_SHOUT_CENSUS_RATIO_MILLI`, `3.2`) rather than
+`2.78`: on it Death Game's first passes price `803` and run step `4` as retail's do, where
+`2.78` prices `717` (step `3`), and the film reads `.902` to `.965`. The module line keeps
+`2.78` because the census's own work is off on other module lines: Megaton Press
+(`nivora_duel_pre_megaton_press__7A`) reads `.943` to `.790` on `3.2`, its arms' census work
+`345` / `445` where retail's work between the interrupt spans is `136` / `650` (arms 5 and 9), so a ratio
+change moves its steps and the `rand()` picks behind them. Grade `capture`.
+
+Megaton Press's arms are not mis-counted. A `--gpu-cost` recording of it holds each frame's
+GPU table, and the census lands within `3%` of the table's polygons on every arm but two:
+arm 5's table holds `694` where the census counts `369` (and arm 6's `335`, the census `332`),
+and arm 11's `1399` against `1541`. Arm 5's extra primitives are not the party seat its arms 5
+and 6 hide (`+0x21C = 0xFF` on seat 0 from arm 5's first frame on both sides) and cost the
+frame about `17` hblanks over arm 6's. The `345` the recorder's `work` reads on arms 5 and 7 is
+the arm table's measured base, not the census's. What the census cannot read is where the
+frame waits: arm 15 is unpolled and costs `736` where its census work is `385`, because the
+GPU draws its `2331` polygons in about `690` hblanks and the frame waits on `DrawSync`; the
+polled arms 9 to 11 stretch past their census by the polls' share. Both run on the arm table's
+step, so neither the GPU wait (`WorldToggles::battle_gpu_cost_step`) nor a poll ratio moves the
+film's timing, only the line's wall-clock span: on the census ratio over the leaves' work
+Megaton Press reads `.943` to `.933` and Plasma Strike, the same duel, `.923` to `.906`, while
+Lapis Wave reads `.987` to `.997`, Zeto's Big Wave `.972` to `.985` and Orb's Heal `.948` to
+`.959`. Grade `capture`.
+
 Port: `frame_clock::polygon_frame_work` (`POLY_FRAME_BASE`, `POLY_WORK_MILLI`) and
 `xa_polled_work_cost` (`XA_POLL_WORK_RATIO_MILLI`), behind
 `WorldToggles::battle_poly_frame_cost` (`LEGAIA_BATTLE_POLY_COST=1`). The count is the
@@ -1764,6 +1794,22 @@ with Theeder's flinch `24` cursor units short. The world now leaves a census-pri
 close to the host (`World::close_pass_after_census`), which makes it once its count of the
 tick is in; the pass sequence then reads retail's cursor for cursor up to the commit. Grade
 `disassembly` for the order, `capture` for the film.
+
+The count is of the frame the pass draws, and that frame is not finished when the world's
+tick returns. The effect-script walk (`FUN_801DEA50`, from the anim tick) hands its spawns
+to the effect pool and the prototype scene ahead of the battle draw tick `FUN_800480D8`, so
+retail's frame links a hit's spark burst on the pass that struck it. The port routes those
+spawns, runs the hit bursts and runs the seater of every part the tick seated in the frame
+tail (`World::route_battle_effect_spawns`, from `World::step_world_frame_tail`), after the
+scene host's tick; counted behind the tick, the
+spawn pass was priced on the pass before's effects and its parts reached the ring a pass
+late. The scene host therefore closes a pass at the head of the next tick, on the census of
+the frame it drew (`SceneHost::tick`), and counts a held tick behind its own tick as before.
+On `battle_jou_nova_v3_strike` the swing's spark pass (retail over `0x2D0`, step `4` next)
+priced `709` on the pass before's census and `728` on its own, and the strike reads `.912` to
+`.954`; `battle_nilboa_neo_grude_strike` `.928` to `.964`, `battle_korb2_warhalf_strike`
+`.985` to `.993`. The recorder's `cost` column reads the push one tick later than before.
+Grade `disassembly` for the walk's place ahead of the draw, `capture` for the films.
 
 A sinking body costs more than it links. The defeat fade's sink raises the body's `+0x42`
 (`0x800504AC`), and `FUN_80048A08` then sends every object of it through `FUN_8001C204` and
@@ -2135,6 +2181,17 @@ the fit in turn, the frame cost reads rms `24` / `14` / `30` hblanks against the
 line's `30` / `27` / `39`, and the step right on `.956` / `.982` / `.920` of frames against
 `.926` / `.967` / `.905`. Grade `capture`; the per-unit prices are a fit, not instruction
 counts (the derived pricing holds those).
+
+Refitted on the census of the frame each pass draws ([the census](#the-census)), the same
+units read held-out rms `26.0` / `18.2` / `35.6` against the constants' `24.8` / `17.3` /
+`34.8` over the arts, strike and enemy films, and no census unit left out of the line (bodies,
+ghost objects, builds, segments, near-floor drops, off-screen stage primitives) correlates
+with the residual past `.13`: the constants stand, and the knife-edge frames (Dragon Fangs'
+lone-ghost pass `745` against `716`, Caruban's close shot about `20` over, King Frog's ghost
+frames over `0x2D0` where retail's sit at `711..719`) are the line's noise, not a missing unit. The derived
+pricing on the same census splits them: Caruban's strike reads `.939` to `.986` and Zeto's
+Poisonous Bubbles `.904` to `.988`, Dragon Fangs `.893` to `.776` and King Frog's strike `.926`
+to `.888`, so it stays opt-in.
 
 It is what lands the Super Arts' edge frames on retail's step together: Tri-Somersault's
 one-ghost frame `1521` prices `707` (retail `692`, the line `721`), Gala's Chain's commit
@@ -2581,6 +2638,67 @@ the same artifact: `XA_STREAM_FRAME_COST` (`1063`) is a frame of about `370` hbl
 the third of the CPU the polls leave. So the arm tables' whole-screen `4` is, on most voiced arms,
 PCSX-Redux's CD timing and not the draw. Grade `disassembly` for the stop watch, `capture` for
 both emulators, `docs` for the console.
+
+<a id="where-a-lines-clamp-ends"></a>
+
+**Where a line's clamp ends.** A capture-band module's line loads the frame from its `CdlReadS`
+to its `Pause`. The clip player puts the end sector `ceil(span * 2.5)` past the start
+(`(span * 150 + 0x95) / 60`, `0x8003D698..0x8003D6D8`), the drive's double speed over the
+span's vsyncs; the stop watch converts each `GetlocL` reply to a sector and, once it passes
+the end (`slt v1,v1,v0` at `0x8003D9E0`), steps to state `9`, whose arm sends `Pause`
+(`li a0,0x9` at `0x8003DA6C`). The module issues `CdlSetloc`, `CdlSeekL`, `CdlSetmode`,
+`CdlSetfilter` and `CdlReadS` on the dispatch's own vsync, so the read runs from the cue. On
+PCSX-Redux the head runs behind the clock, the emulator deferring a sector while a poll's
+interrupt is pending. Twelve `--cd-trace` recordings of the enemy films' lines read the
+`Pause` `13` vsyncs plus `13` a thousand of the span past it, each within one vsync of the
+fit:
+
+| Line | Span | `CdlReadS` to `Pause` |
+|---|---:|---:|
+| Death Game's second (`jou_puera_v3_death_game`) | `180` | `195` |
+| Thunder Needle (`nilboa_koru_pre_thunder_needle`) | `408` | `427` |
+| Death Game's first | `425` | `443` |
+| Curse All (`battle_kor_dead_bone_curse_all_mid_cast`) | `447` | `466` |
+| Clone (`battle_deroa_jette_clone_mid_cast`) | `473` | `492` |
+| Call Wave (`garmel_zeto_pre_call_wave`) | `479` | `498` |
+| Spore Gas (`teien_berserker_pre_spore_gas`) | `522` | `542` |
+| Medusa's Glare (`battle_korb2_medusa_glare_mid_cast`) | `539` | `559` |
+| Neo Star Slash (`gaza2_card_pre_neo_star_slash`) | `849` | `874` |
+| Lapis Wave (`battle_deene_lapis_lapis_wave_mid_cast`) | `1061` | `1088` |
+| Rogue Wind (`rugi_rogue_pre_rogue_wind`) | `1292` | `1321` |
+| Megaton Press (`nivora_duel_pre_megaton_press`) | `1437` | `1469` |
+
+The frame cost ends with the polls: Call Wave's frames read the clamp from vsync `37` to
+`530`, three after its `Pause`, and the step falls from `4` to `3` on the next pass, the
+clamped entries reading `3` in the ring. Port: `frame_clock::xa_read_tail_vsyncs`, the load
+window a capture-band module's line opens (`World::arm_battle_xa_load_window`); the cue
+funnel's clips keep [`XA_READ_TAIL_VSYNCS`](#the-cd-stop-watch), which counts their seek.
+
+The arm tables do not see the line end. A capture arm's [table step](#what-the-arm-step-table-is)
+is what retail's frames ran under it, and where the line ends inside the arm that is the
+clamp's `4`; held at the table, Call Wave's arm 2 ran `4` to the end of the arm, forty vsyncs
+past retail's drop, and every ring the arm seats ran a step long
+([renderer port](renderer-port.md)). An arm whose `4` is the line's alone
+(`cast_module_frame_step::CAPTURE_ARM_LINE_CLAMPS`, ten arms read off the enemy films: past
+the line retail's frames run `4` on under a tenth of their vsyncs) prices its own work once the
+line stops loading (`World::stage_pass_frame_cost`). No pass count holds that edge: the line
+is a span of vsyncs, and the two Zeto Call Wave films drop on other passes. The arms a line
+ends inside that keep their table are work: Thunder Storm's arm 6 runs `4` on `.98` of its
+frames past the line, Chaos Flare's arm 8 on all of them, and priced on the census both fell
+(the three Thunder Storm films `-.019` to `-.023`, Chaos Flare `-.019`). Big Wave's arm 7 and
+Power Up's arm 2 take the row and still run `4`: the census prices their frames past the line
+at `890` and `720`, over retail's. Grade `disassembly` for the end sector and the `Pause`,
+`capture` for the tail and the arms.
+
+The same recordings caught two lines the port picked wrong. The split body of PROT 0940 calls
+`0x141` for Divide and `0x1A9` for any other action (the `li a0,0x1a9` in the branch's delay
+slot at `0x801F7994`), and Jette's Clone dispatches `0x1A9` (`473` vsyncs) where the port
+played the scan's nearest `0x141` (`286`), so its arm 3 ran out of the line at step `3` where
+retail's holds `4` to the Done band. PROT 0962's fork on the head monster sits in the body
+Ultra Charge (`0xA5`) runs; Blade Breath, Thunder Needle and Gigaton Press call their own
+`0x18B`, `0x18C` and `0x18D`, and the port had played the fork's `0x18E` (`702`) for all four:
+Thunder Needle's arm 4 ran `302` vsyncs for retail's `255` and now runs `272`
+(`battle_cast_cue::forked_head_cue`). Grade `disassembly` and `capture` (`--sfx-callers`).
 
 <a id="an-arts-shouts-seek"></a>
 

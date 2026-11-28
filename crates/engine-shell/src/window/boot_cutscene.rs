@@ -519,6 +519,12 @@ impl PlayWindowApp {
                 use legaia_engine_session::ContinueStep;
                 let ports = [self.port1_card.as_ref(), self.card.as_ref()];
                 let step = screen.step(raw_pressed, ports);
+                // The Load's `LaunchFade` stores the live audio level each
+                // frame: the title theme swells, then fades out.
+                let level = screen.music_level();
+                if let Some(bgm) = self.session.bgm.as_mut() {
+                    bgm.front_end_level_frame(level);
+                }
                 if let Some(blip) = step.blip() {
                     self.fire_menu_cue(u16::from(blip.cue()));
                 }
@@ -551,6 +557,8 @@ impl PlayWindowApp {
                         // track when it is a global-pool id.
                         if let Some(bgm) = self.session.bgm.as_mut() {
                             bgm.stop();
+                            // The scene load rests the level the fade left at 0.
+                            bgm.rest_audio_level();
                         }
                         self.session.restore_field_bgm();
                         self.boot_ui = BootUiState::Inactive;

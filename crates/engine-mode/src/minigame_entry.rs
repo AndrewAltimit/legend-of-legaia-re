@@ -142,6 +142,21 @@ pub const DANCE_LONG_SONG_BGM_ID: u16 = 2066;
 /// inherits there.
 pub const SOL_CASINO_FLOOR_BGM_ID: u16 = 2018;
 
+/// Global `music_01` track the fishing venue plays: sound-test **17**,
+/// extraction PROT `1005`. The fishing init `FUN_801CF070` (PROT 0972) stages
+/// it at the head of the asset buffer, `FUN_8001FC00(0x3EF, 5, buf, 0,
+/// 0x32000)` at `0x801CF2CC..0x801CF2E0`, and state `0xA`'s first arrival
+/// installs category 5 from there on the battle source `0x8007056C` and
+/// starts it (`0x801CF7E0..0x801CF82C`); the scene's own track word is not
+/// read.
+pub const FISHING_VENUE_BGM_ID: u16 = 2017;
+
+/// Global `music_01` track a hooked fish plays: sound-test **27**, extraction
+/// PROT `1015`, which the same init stages `0x32000` bytes into the buffer
+/// (`FUN_8001FC00(0x3F9, 5, buf + 0x32000, ..)`, `0x801CF2F8..0x801CF30C`) and
+/// the strike installs from there (`FUN_801D26CC`, `0x801D361C..0x801D3664`).
+pub const FISHING_HOOK_BGM_ID: u16 = 2027;
+
 impl MinigameSubId {
     /// All seven slots in `sub_id` order.
     pub const ALL: [MinigameSubId; 7] = [
@@ -224,6 +239,10 @@ impl MinigameSubId {
     /// the fishing venue load no track at all - the casino / lake scene's own
     /// music keeps playing under them.
     ///
+    /// Fishing is `None` for the same reason: its init stages its two tracks
+    /// ([`FISHING_VENUE_BGM_ID`], [`FISHING_HOOK_BGM_ID`]) and only releases the
+    /// scene's source, and the shore starts the venue's.
+    ///
     /// The dance is `None` here even though it has two tracks of its own
     /// ([`DANCE_SHORT_SONG_BGM_ID`] / [`DANCE_LONG_SONG_BGM_ID`]): its song
     /// starts when the pre-song count-in clears, not at entry, so
@@ -248,13 +267,14 @@ impl MinigameSubId {
     /// standalone minigames page. [`Self::bgm_id`] where the overlay brings
     /// its own; the Sol casino floor's track for the slot machine, which
     /// inherits its scene's; the dance's short song, which the world holds
-    /// until the count-in clears; `None` for fishing (its venue's track is
-    /// the lake scene's, which a standalone page has no scene to read) and
-    /// the two dev slots.
+    /// until the count-in clears; the fishing venue's track, which the venue
+    /// starts at the shore ([`FISHING_VENUE_BGM_ID`]); `None` for the two dev
+    /// slots.
     pub fn standalone_bgm_id(self) -> Option<u16> {
         match self {
             MinigameSubId::SlotMachine => Some(SOL_CASINO_FLOOR_BGM_ID),
             MinigameSubId::Dance => Some(DANCE_SHORT_SONG_BGM_ID),
+            MinigameSubId::Fishing => Some(FISHING_VENUE_BGM_ID),
             other => other.bgm_id(),
         }
     }
@@ -345,7 +365,7 @@ mod tests {
             Some(legaia_minigame_formats::slot_payout::SLOT_HOST_BGM_PROT_INDEX as u32)
         );
         assert_eq!(M::Dance.standalone_bgm_id(), Some(DANCE_SHORT_SONG_BGM_ID));
-        assert_eq!(M::Fishing.standalone_bgm_id(), None);
+        assert_eq!(M::Fishing.standalone_bgm_id(), Some(FISHING_VENUE_BGM_ID));
     }
 
     #[test]
@@ -354,6 +374,10 @@ mod tests {
         assert_eq!(prot_entry_for_bgm_id(BAKA_FIGHTER_BGM_ID), Some(1043));
         assert_eq!(prot_entry_for_bgm_id(DANCE_SHORT_SONG_BGM_ID), Some(1048));
         assert_eq!(prot_entry_for_bgm_id(DANCE_LONG_SONG_BGM_ID), Some(1054));
+        // The fishing init's raw TOC indices `0x3EF` / `0x3F9`, two past the
+        // extraction labels.
+        assert_eq!(prot_entry_for_bgm_id(FISHING_VENUE_BGM_ID), Some(0x3EF - 2));
+        assert_eq!(prot_entry_for_bgm_id(FISHING_HOOK_BGM_ID), Some(0x3F9 - 2));
         // The dome reuses the battle engine, so it plays a battle theme.
         assert_eq!(
             MinigameSubId::MuscleDome.bgm_id(),

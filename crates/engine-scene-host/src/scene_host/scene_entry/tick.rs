@@ -270,7 +270,22 @@ impl SceneHost {
             return Ok(SceneTickEvent::Stepped);
         }
         let was_battle = matches!(self.world.mode, legaia_engine_mode::mode::SceneMode::Battle);
-        // A pass the census prices closes behind the census of its tick
+        // The pass the previous tick opened closes on the census of the frame
+        // it drew: the tick, then its frame tail, then the draw. Retail prices
+        // a frame from one `VSync` return to the next (`FUN_800173BC`), so its
+        // cost holds everything the frame's draw links, the parts the
+        // effect-script walk (`FUN_801DEA50`, from the anim tick) and the hit
+        // bursts seated ahead of the draw tick `FUN_800480D8` among them. The
+        // port seats those in the frame tail (`World::step_world_frame_tail`),
+        // after this tick returns, so a census taken here behind the world's
+        // tick missed them on the pass that spawned them and priced it on the
+        // pass before's effects.
+        if was_battle && self.world.battle.pass_close_deferred {
+            self.refresh_battle_link_census();
+            self.world.close_pass_after_census();
+            self.world.reprice_opening_pass_on_census();
+        }
+        // A pass the census prices closes behind the census of its frame
         // (`World::close_pass_after_census`).
         self.world.battle.pass_close_after_census = self.world.toggles.battle_poly_frame_cost;
         let _ = self.world.tick();
@@ -285,9 +300,14 @@ impl SceneHost {
             }
             self.install_battle_monster_action_clips();
             self.ensure_battle_party_forms();
-            self.refresh_battle_link_census();
-            self.world.close_pass_after_census();
-            self.world.reprice_opening_pass_on_census();
+            // A pass this tick opened waits for its frame's census at the
+            // head of the next tick (above); a held tick's census is the
+            // frame it holds.
+            if !self.world.battle.pass_close_deferred {
+                self.refresh_battle_link_census();
+                self.world.close_pass_after_census();
+                self.world.reprice_opening_pass_on_census();
+            }
         } else {
             self.world.close_pass_after_census();
             self.battle_party_forms = None;

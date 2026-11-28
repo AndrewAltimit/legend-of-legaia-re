@@ -117,6 +117,11 @@ const COPY_REPORT_HINT: &str = "Click or Ctrl+C: report";
 const KEY_HINT: &str = "Arrows, Enter, Tab, Esc";
 /// The disc finder's row to the folder above.
 const FINDER_UP: &str = "Up one folder";
+/// A file dialog that came back empty sooner than this never appeared (a
+/// desktop with no file-dialog portal and no `zenity`), so the launcher's own
+/// finder opens in its place, as Legaia Explorer's in-app browser does. A
+/// dialog the player cancelled takes longer than this to close.
+const DIALOG_NEVER_SHOWN: std::time::Duration = std::time::Duration::from_millis(250);
 
 /// What the finder on the Recent page was opened to pick: the list a
 /// controller works where the desktop's file dialog wants a mouse or a
@@ -1073,8 +1078,12 @@ impl LauncherApp {
         if let Some(w) = self.win.window.as_deref() {
             dialog = dialog.set_parent(w);
         }
+        let asked = std::time::Instant::now();
         match dialog.pick_file() {
             Some(p) => self.try_disc(&p),
+            None if asked.elapsed() < DIALOG_NEVER_SHOWN => {
+                self.dialog_fallback(FinderTarget::Disc);
+            }
             None => {
                 self.status = Some(vec![(
                     "No file chosen. If no dialog appeared, drag the .bin onto this window, \
@@ -1199,8 +1208,13 @@ impl LauncherApp {
         if let Some(w) = self.win.window.as_deref() {
             dialog = dialog.set_parent(w);
         }
-        if let Some(p) = dialog.pick_file() {
-            self.try_expansion(&p);
+        let asked = std::time::Instant::now();
+        match dialog.pick_file() {
+            Some(p) => self.try_expansion(&p),
+            None if asked.elapsed() < DIALOG_NEVER_SHOWN => {
+                self.dialog_fallback(FinderTarget::Expansion);
+            }
+            None => {}
         }
     }
 
@@ -1599,8 +1613,13 @@ impl LauncherApp {
         if let Some(w) = self.win.window.as_deref() {
             dialog = dialog.set_parent(w);
         }
-        if let Some(p) = dialog.pick_file() {
-            self.try_card(&p);
+        let asked = std::time::Instant::now();
+        match dialog.pick_file() {
+            Some(p) => self.try_card(&p),
+            None if asked.elapsed() < DIALOG_NEVER_SHOWN => {
+                self.dialog_fallback(FinderTarget::Card);
+            }
+            None => {}
         }
     }
 
@@ -1782,6 +1801,22 @@ impl LauncherApp {
     /// asking for one.
     fn uses_found_disc(&self) -> bool {
         self.disc.is_none() && self.found_disc.is_some()
+    }
+
+    /// A file dialog that never appeared ([`DIALOG_NEVER_SHOWN`]): the
+    /// finder for `target` instead, saying why it opened.
+    fn dialog_fallback(&mut self, target: FinderTarget) {
+        log::warn!("launcher: the desktop file dialog did not open; using the disc finder");
+        self.open_finder_for(target);
+        if self.finder.is_some() {
+            self.status = Some(vec![(
+                "This desktop has no file window, so the launcher's own finder opened: \
+                 Enter opens a folder or takes a file, Backspace goes up."
+                    .into(),
+                DIM,
+            )]);
+        }
+        self.win.request_redraw();
     }
 
     /// Open the disc finder on the Recent page, in the folder of the disc
@@ -4986,6 +5021,7 @@ mod tests {
                 jewel_fix: true,
                 no_hp_readout_guard: true,
                 no_stone_scale_fix: true,
+                no_bio_castle_approach: true,
                 spirit_ap: Some(-16),
                 damage_ap: Some(200),
                 seru_catch_pct: Some(75),
@@ -5008,6 +5044,7 @@ mod tests {
                 jewel_fix,
                 no_hp_readout_guard,
                 no_stone_scale_fix,
+                no_bio_castle_approach,
                 spirit_ap,
                 damage_ap,
                 seru_catch_rate,
@@ -5027,6 +5064,7 @@ mod tests {
                 assert!(no_tetsu_spar_fix);
                 assert!(no_hp_readout_guard);
                 assert!(no_stone_scale_fix);
+                assert!(no_bio_castle_approach);
                 assert_eq!(exp_rate, Some(2000));
             }
             other => panic!("expected play-window, got {other:?}"),

@@ -298,9 +298,12 @@ impl SummonPartDraw {
     /// (`lw v0,-0x2e0(t2)` / `or t8,t8,v0` at `0x800449B8` in the kind-12
     /// leaf, `0x80044B94` in kind 13); only the textured leaves read the ABR
     /// word into their page halfword. An `F*` / `G*` packet has no page, so
-    /// it blends on the draw mode the chain left, the PSX default mode `0`
-    /// here: the map display's pointer (`0xC9000000`, ABR `1`) is an average
-    /// over the ground in retail's packets, not an add.
+    /// it blends in the ABR the GPU's texpage register holds when it is
+    /// drawn - the last `E1` or textured polygon before it in the table -
+    /// which is mode `0` for every part the hosts draw this way: the map
+    /// display's pointer (`0xC9000000`, ABR `1`) follows the ground's ABR-0
+    /// packets in retail's table, an average, not an add
+    /// (`docs/subsystems/renderer-port.md`, "The GPU carries its draw mode").
     ///
     /// The shatter word is not applied here: no shipped part that carries
     /// one draws untextured prims, and the shatter kernel splits a

@@ -9,6 +9,13 @@ colour at the pixel, its blend mode, and for a textured one the texel it samples
 out of a VRAM image (`sstate_vram.py`). It then prints the pixel the VRAM holds
 there, so a layer law can be checked against what the GPU drew.
 
+An untextured primitive has no page of its own: it blends in the ABR of the
+GPU's texpage register as the stream left it. The register starts at the
+DRAWENV's `E1` word (the DR_ENV `PutDrawEnv` sends ahead of the table), and
+every `E1` packet and every textured polygon's page halfword rewrite it (bits
+0..8 and 11; PCSX-Redux `SoftRenderer::texturePage`), so the walk carries it
+through both.
+
 Inputs come from a cast-sequence recording made with `LEGAIA_RAM_AT`
 (`ram_<vsync>.bin`, `state_<vsync>.rawsstate`). Read-only; writes nothing.
 
@@ -69,7 +76,13 @@ def main():
     def c5(h):
         return (h & 31, (h >> 5) & 31, (h >> 10) & 31)
 
+    # The texpage register at the table's start: the DR_ENV's E1 word.
     drawmode = 0
+    for k in range(1, 16):
+        word = w(rec + 0x1C + 4 * k)
+        if word >> 24 == 0xE1:
+            drawmode = word & 0x3FFF
+    setter = "drawenv"
     for _ in range(200000):
         head = w(off)
         cnt, nxt = head >> 24, head & 0xFFFFFF
@@ -78,7 +91,8 @@ def main():
         while i < cnt:
             c = ws[i] >> 24
             if c == 0xE1:
-                drawmode = ws[i] & 0xFFFF
+                drawmode = ws[i] & 0x3FFF
+                setter = "E1"
                 i += 1
                 continue
             if not 0x20 <= c <= 0x3F:
@@ -113,9 +127,13 @@ def main():
                     tx = texel(tp, cl, u, v)
                     line += f" tpage={tp:#06x} abr={(tp >> 5) & 3} texel={c5(tx)} stp={tx >> 15}"
                 else:
-                    line += f" abr={(drawmode >> 5) & 3} (draw mode)"
+                    line += f" abr={(drawmode >> 5) & 3} (texpage register, set by {setter})"
                 print(line)
                 break
+            if tex:
+                # A textured polygon's page halfword rewrites the register.
+                drawmode = (drawmode & ~0x9FF) | ((uvs[1] >> 16) & 0x9FF)
+                setter = f"{c:#04x} page {uvs[1] >> 16:#06x}"
             i += ln
         if nxt == 0xFFFFFF or nxt & 0x800000:
             break

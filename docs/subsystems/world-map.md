@@ -1583,6 +1583,68 @@ honouring the C1 one-shot latch. While such a timeline runs,
 `step_world_map_locomotion` stands the player down and `World::tick`'s
 world-map arm steps the timeline.
 
+#### The Bio Castle door
+
+Once story flag `0x3BA` is up (`town0d` `P2[31]` raises it before `MV4.STR`,
+whose hand-off enters `jou`), `map01` rebuilds Rim Elm's site as the fused
+castle. Four disc records do it:
+
+| Record | Effect with `0x3BA` set |
+|---|---|
+| `P1[0]` `0x00A2..0x00C1` | Four `4C 7x` paints: tiles `(94..98, 25)`, `(95..97, 24..27)`, `(97, 23)` walled, `(96, 27)` cleared |
+| `P0[8]` (key tile `(96, 21)`) | `23 60 19` moves Rim Elm's landmark to tile `(96, 25)`; `4C 50 1E` swaps it to the castle |
+| `P2[0]` (trigger `(96, 24)`) | The Rim Elm gate to `town0c` parks shut |
+| `P2[37]` (trigger `(95, 23)`) | Raises flag `2` and changes to `jou`; with the flag clear it parks |
+
+With the flag clear, `P1[0]` paints Rim Elm's gate instead (`0x00C4..0x00DF`,
+a block over `(95..97, 23..24)` with quarter cells cleared).
+
+The paint arm is `FUN_801DE840` case 7 (`0x801E1C64..0x801E1E9C`): rows run
+`[z0 + 1, z1 + 2)` and columns `[x0, x1 + 1)`, which the biased wall read
+(`FUN_801D56C4`, row `(z >> 7) + 1`) brings back onto the operand tiles - see
+`ghidra/scripts/funcs/overlay_cutscene_dialogue_801de840.txt`.
+
+**The door opens only from the west.** The door tile is the castle's
+north-west corner: the cliffs of row 22 close its north, the painted body
+its south and east, and `(96, 23)` beside it is a pocket. Every way back onto
+the map seats the party on `(94, 23)`, the tile west of the door: the `jou`
+exit (`P2[6]`), the Door of Light's region triple in every `jou*` room, and
+the Door of Wind's Rim Elm row, which `jou` moves from record 0
+(`(96, 25)`, flag `0x20`) to record 1 (`(94, 23)`, flag `0x33`) by clearing
+the one flag and raising the other.
+
+Retail measures the same. A PCSX-Redux run of
+[`autorun_bio_castle_entrance.lua`](../../scripts/pcsx-redux/autorun_bio_castle_entrance.lua)
+leaves `jouind_field_card_boot` by tile pokes onto `map01`, dumps the live
+grid (identical to the port's over tiles `x 86..104`, `z 15..31`), then pad-walks
+from poked seats:
+
+| Seat | Pad | Retail and port |
+|---|---|---|
+| `(90, 23)` | Right | Enter `jou` |
+| `(91, 27)` | Down+Right | Enter `jou` |
+| `(99, 23)` | Left | Rest at `(12590, 3008)` |
+| `(99, 24)` | Left | Rest at `(12590, 3136)` |
+| `(98, 27)` | Down+Left | Rest at `(12590, 3374)` |
+| `(93, 28)` | Down+Right | Rest at `(12114, 3374)` |
+| `(95, 28)` | Down | Wall-slides round the west side to tile `(93, 23)` |
+
+Down is world `-Z` under the fixed overworld camera. The rests hold with
+the leading-edge wall probes both play hosts run; under the candidate-centre
+test the east walk stops `44` units deeper. 
+**The port's approach cue.** A party arriving from the south or the east
+meets a wall with no visible way round to the door. The enhancement
+`WorldToggles::bio_castle_approach` (on by default, off under `--retail` /
+`--no-bio-castle-approach`) lets a press into the castle cross the door:
+`World::bio_castle_approach_cue`, run from the overworld auto-engage, engages
+the door's `P2[37]` portal when a leading-edge wall probe of the held
+direction lands on a wall sub-cell of one of the painted body tiles, from
+outside them. The grid is only read, so the castle stays solid, and the
+crossing, its flag writes and the `(0x17, 0x16)` arrival in `jou` are the
+door's. With the cue on, the Down walk from `(95, 28)` and the Left walk from
+`(99, 23)` enter; with it off, the seven walks above end where retail's do.
+Pin: `crates/engine-session/tests/bio_castle_entrance_disc.rs`.
+
 #### NPC dialogue text source
 
 Placement-NPC and event dialogue text is **inline** in the record, not in the
