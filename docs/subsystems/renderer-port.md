@@ -177,9 +177,11 @@ from `2048` at its record's channel rates, `-512` a pass at the step's `8`ths,
 and the caller `0x801F78CC` seats a set every eleven vsyncs, so a ring's radius
 is the frame step's sum. Retail's step falls from `4` to `3` at vsync `531`, the
 pass after its frame cost leaves the XA stream's clamp (`700` from vsync `37`,
-`494` vsyncs for clip `10`'s `479`); the port holds the clamp `519` ticks, to
-the capture-3 opening, so its rings run a step long for about forty vsyncs
-([frame span](battle-stage-camera.md#a-frames-span)).
+`494` vsyncs for clip `10`'s `479`). Held at its arm table's `4` to the
+capture-3 opening, `519` ticks, the port's rings ran a step long for about forty
+vsyncs; the arm now prices its own work once the line's read ends, and the step
+falls within four vsyncs of retail's (the film `.941` to `.970`,
+[where a line's clamp ends](battle-stage-camera.md#where-a-lines-clamp-ends)).
 
 **A draw can force semi-transparency on every prim.** Retail's prim
 dispatcher `FUN_80043390` reads the actor's colour word (`+0x74`) top byte as

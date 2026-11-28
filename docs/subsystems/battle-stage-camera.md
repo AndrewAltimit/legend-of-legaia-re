@@ -2639,6 +2639,67 @@ the third of the CPU the polls leave. So the arm tables' whole-screen `4` is, on
 PCSX-Redux's CD timing and not the draw. Grade `disassembly` for the stop watch, `capture` for
 both emulators, `docs` for the console.
 
+<a id="where-a-lines-clamp-ends"></a>
+
+**Where a line's clamp ends.** A capture-band module's line loads the frame from its `CdlReadS`
+to its `Pause`. The clip player puts the end sector `ceil(span * 2.5)` past the start
+(`(span * 150 + 0x95) / 60`, `0x8003D698..0x8003D6D8`), the drive's double speed over the
+span's vsyncs; the stop watch converts each `GetlocL` reply to a sector and, once it passes
+the end (`slt v1,v1,v0` at `0x8003D9E0`), steps to state `9`, whose arm sends `Pause`
+(`li a0,0x9` at `0x8003DA6C`). The module issues `CdlSetloc`, `CdlSeekL`, `CdlSetmode`,
+`CdlSetfilter` and `CdlReadS` on the dispatch's own vsync, so the read runs from the cue. On
+PCSX-Redux the head runs behind the clock, the emulator deferring a sector while a poll's
+interrupt is pending. Twelve `--cd-trace` recordings of the enemy films' lines read the
+`Pause` `13` vsyncs plus `13` a thousand of the span past it, each within one vsync of the
+fit:
+
+| Line | Span | `CdlReadS` to `Pause` |
+|---|---:|---:|
+| Death Game's second (`jou_puera_v3_death_game`) | `180` | `195` |
+| Thunder Needle (`nilboa_koru_pre_thunder_needle`) | `408` | `427` |
+| Death Game's first | `425` | `443` |
+| Curse All (`battle_kor_dead_bone_curse_all_mid_cast`) | `447` | `466` |
+| Clone (`battle_deroa_jette_clone_mid_cast`) | `473` | `492` |
+| Call Wave (`garmel_zeto_pre_call_wave`) | `479` | `498` |
+| Spore Gas (`teien_berserker_pre_spore_gas`) | `522` | `542` |
+| Medusa's Glare (`battle_korb2_medusa_glare_mid_cast`) | `539` | `559` |
+| Neo Star Slash (`gaza2_card_pre_neo_star_slash`) | `849` | `874` |
+| Lapis Wave (`battle_deene_lapis_lapis_wave_mid_cast`) | `1061` | `1088` |
+| Rogue Wind (`rugi_rogue_pre_rogue_wind`) | `1292` | `1321` |
+| Megaton Press (`nivora_duel_pre_megaton_press`) | `1437` | `1469` |
+
+The frame cost ends with the polls: Call Wave's frames read the clamp from vsync `37` to
+`530`, three after its `Pause`, and the step falls from `4` to `3` on the next pass, the
+clamped entries reading `3` in the ring. Port: `frame_clock::xa_read_tail_vsyncs`, the load
+window a capture-band module's line opens (`World::arm_battle_xa_load_window`); the cue
+funnel's clips keep [`XA_READ_TAIL_VSYNCS`](#the-cd-stop-watch), which counts their seek.
+
+The arm tables do not see the line end. A capture arm's [table step](#what-the-arm-step-table-is)
+is what retail's frames ran under it, and where the line ends inside the arm that is the
+clamp's `4`; held at the table, Call Wave's arm 2 ran `4` to the end of the arm, forty vsyncs
+past retail's drop, and every ring the arm seats ran a step long
+([renderer port](renderer-port.md)). An arm whose `4` is the line's alone
+(`cast_module_frame_step::CAPTURE_ARM_LINE_CLAMPS`, ten arms read off the enemy films: past
+the line retail's frames run `4` on under a tenth of their vsyncs) prices its own work once the
+line stops loading (`World::stage_pass_frame_cost`). No pass count holds that edge: the line
+is a span of vsyncs, and the two Zeto Call Wave films drop on other passes. The arms a line
+ends inside that keep their table are work: Thunder Storm's arm 6 runs `4` on `.98` of its
+frames past the line, Chaos Flare's arm 8 on all of them, and priced on the census both fell
+(the three Thunder Storm films `-.019` to `-.023`, Chaos Flare `-.019`). Big Wave's arm 7 and
+Power Up's arm 2 take the row and still run `4`: the census prices their frames past the line
+at `890` and `720`, over retail's. Grade `disassembly` for the end sector and the `Pause`,
+`capture` for the tail and the arms.
+
+The same recordings caught two lines the port picked wrong. The split body of PROT 0940 calls
+`0x141` for Divide and `0x1A9` for any other action (the `li a0,0x1a9` in the branch's delay
+slot at `0x801F7994`), and Jette's Clone dispatches `0x1A9` (`473` vsyncs) where the port
+played the scan's nearest `0x141` (`286`), so its arm 3 ran out of the line at step `3` where
+retail's holds `4` to the Done band. PROT 0962's fork on the head monster sits in the body
+Ultra Charge (`0xA5`) runs; Blade Breath, Thunder Needle and Gigaton Press call their own
+`0x18B`, `0x18C` and `0x18D`, and the port had played the fork's `0x18E` (`702`) for all four:
+Thunder Needle's arm 4 ran `302` vsyncs for retail's `255` and now runs `272`
+(`battle_cast_cue::forked_head_cue`). Grade `disassembly` and `capture` (`--sfx-callers`).
+
 <a id="an-arts-shouts-seek"></a>
 
 **An arts shout's seek.** Where the polls open depends on where the head stands. The battle
