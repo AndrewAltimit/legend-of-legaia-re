@@ -24,6 +24,12 @@ const NO_COMMAND_STATUS_BITS: u16 = 0x0F84;
 /// REF: FUN_801E295C (states `0x5A` / `0xFF`), FUN_801D0748 (`0x14`)
 pub(in crate::world) const ROUND_BOUNDARY_FRAMES: u8 = 3;
 
+/// The caster MP the cast-sequence film's inject writes (`LEGAIA_MP_TOPUP`'s
+/// default in `scripts/pcsx-redux/autorun_cast_sequence.lua`): the figure an
+/// unpaid seed ([`BattleState::seed_mp_unpaid`](legaia_engine_battle_loop::battle_state::BattleState::seed_mp_unpaid))
+/// seats on its caster. A harness seat.
+const FILM_INJECT_MP: u16 = 999;
+
 /// Spirit an [`InflightArtSeed`](legaia_engine_battle_loop::battle_state::InflightArtSeed)
 /// grants its caster: the 99 a Miracle Art costs covers every string.
 const ART_SEED_SPIRIT: u16 = 99;
@@ -472,6 +478,15 @@ impl World {
         if let Some(a) = self.actors.get_mut(usize::from(seed.caster)) {
             a.battle.action_category = 2;
             a.battle.mp = a.battle.mp.saturating_add(price);
+            // The film's inject also tops the caster's MP up
+            // (`LEGAIA_MP_TOPUP`, `+0x150 = 999` in
+            // `autorun_cast_sequence.lua`), so the queue builder's MP gate
+            // (`spells::committed_spell_casts`) passes the cast there: seat
+            // the same figure, or a caster short of the price - Vahn's Ozma
+            // on `party_basic_attack_vs_gobu_gobu` - drops to no action.
+            if self.battle.seed_mp_unpaid {
+                a.battle.mp = FILM_INJECT_MP;
+            }
         }
         self.dispatch_pending_party_action(
             seed.caster,
