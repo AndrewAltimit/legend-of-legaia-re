@@ -36,12 +36,24 @@ impl FieldHostImpl<'_> {
     ) {
         // Instruction ids resolve through the actor-list walk (retail
         // `FUN_8003C83C`) to the placement slots the engine's field-NPC
-        // state is keyed by; an unmatched id passes through raw (tests /
-        // channel-less scenes).
+        // state is keyed by; an unmatched id (a channel-less world, above)
+        // passes through raw.
         fn resolve(world: &World, id: u8) -> u8 {
             legaia_engine_field::field_channels::resolve_target(&world.field_vm.channels, id)
                 .map(|ci| world.field_vm.channels[ci].placement_index as u8)
                 .unwrap_or(id)
+        }
+        // The arm resolves all three before it calls the spawner and skips
+        // the call on any miss (`beq s2,zero` / `beq s1,zero` / `beq
+        // s0,zero` at `0x801DF5E0..0x801DF5F0`, each to the `PC += 8` exit),
+        // so a talk naming an actor the scene does not hold arms nothing: no
+        // party collapse, no talk flags, no lock. A world with no channels
+        // at all keeps no actor list to ask, and stages the talk as named.
+        // REF: FUN_801DE840 (0x801DF5BC..0x801DF620)
+        if !self.world.channel_view().is_empty()
+            && actor_ids.iter().any(|&id| self.actor_guard(id).is_none())
+        {
+            return;
         }
         let w = &mut *self.world;
         let (saved, saved_party, saved_party_len, saved_leader) = if !w.system_flag_test(0xD) {

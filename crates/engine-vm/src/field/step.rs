@@ -1026,8 +1026,18 @@ pub fn step_from_caller<H: FieldHost>(
 ///
 /// Use this only when [`peek_extended`] returned `Some(target_id)` and
 /// `target_ctx != caller_ctx`. Equivalent to [`step`] for the dispatch +
-/// state-write side, plus the original's "if target is the player, propagate
-/// the YIELD halt to caller as well" behaviour.
+/// state-write side, plus the original's "if the target is the player, park
+/// the caller as well" behaviour.
+///
+/// Every acquiring arm carries that clause, not only the yielding ones: the
+/// arm seats the op on the target (`+0x10 |= 0x400`, `+0x94` the opcode,
+/// `+0x54 = 0`) and, when the target is `_DAT_8007C364`, does the same to the
+/// caller (`bne s5,v0` at `0x801DEEFC` for `38`, `0x801DEF94` for `37` /
+/// `41`, `0x801DF02C` for `47`, `0x801DF3F0` for the `43` arcs, `0x801E1C2C`
+/// for `4C 61`, `0x801E1F38` for `4C 80`, `0x801E21B4` for `4C 85` / `8E` /
+/// `8F`). The `4C`
+/// acquires advance rather than yield, so the park is read off the target:
+/// raised by this step onto this opcode.
 ///
 /// `caller_player` is `true` when `caller_ctx` is the active player script
 /// (the original branches on `iVar18 == _DAT_8007C364`). The host is the
@@ -1041,8 +1051,17 @@ pub fn step_with_caller<H: FieldHost>(
     bytecode: &[u8],
     pc: usize,
 ) -> StepResult {
+    let before = (
+        target_ctx.is_halted(),
+        target_ctx.saved_pc,
+        target_ctx.wait_accum,
+    );
     let result = step(host, target_ctx, bytecode, pc);
-    if target_is_player && let StepResult::Yield { .. } = result {
+    let parked = target_ctx.is_halted()
+        && target_ctx.saved_pc == pc as u32
+        && target_ctx.wait_accum == 0
+        && before != (true, pc as u32, 0);
+    if target_is_player && (matches!(result, StepResult::Yield { .. }) || parked) {
         // The original copies pbVar43 (opcode pointer) into both
         // target.saved_pc and caller.saved_pc. step() already set
         // target.saved_pc = pc; mirror it onto caller.
