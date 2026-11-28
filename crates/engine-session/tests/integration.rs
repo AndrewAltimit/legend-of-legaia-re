@@ -17,6 +17,7 @@ mod battle_party_forms_headless;
 mod battle_return_audio_disc;
 mod battle_xa_clip_bank;
 mod bgm_scene_resolution;
+mod bio_castle_entrance_disc;
 mod bylon_dinner_disc;
 mod bylon_mist_apply_snap_disc;
 mod cast_voice_lazy_stage;
