@@ -313,6 +313,9 @@ pub struct SpellMenuSession {
     /// would be affected. Empty = no probe ran (a disc-free session), which
     /// leaves every row to the MP and field-use gates.
     unaffected: Vec<u8>,
+    /// A cast whose come-back waits on the notice it raised
+    /// ([`Self::hold_cast_for_notice`]): `(caster, spell, target row)`.
+    held_resume: Option<(u8, u8, u8)>,
 }
 
 impl SpellMenuSession {
@@ -323,6 +326,7 @@ impl SpellMenuSession {
             catalog,
             phase: SpellMenuPhase::CharSelect { cursor: 0 },
             unaffected: Vec::new(),
+            held_resume: None,
         }
     }
 
@@ -367,6 +371,54 @@ impl SpellMenuSession {
                 cursor: target_row.min(self.targets.len().saturating_sub(1) as u8),
             }
         };
+    }
+
+    /// Come back from an applied cast that raised a notice (the magic
+    /// level-up, window 7): retail parks the cast screen on its message step
+    /// (`0x801D97C4` / its group twin `0x801D9458`: the mailbox
+    /// `0x8007BB70` left off `0xFF` moves the step to `3`), so the target or
+    /// group screen stays up on the same spell and cursor under the notice,
+    /// and the re-cast check of [`Self::resume_cast`] runs only once a
+    /// confirm or cancel has closed it (`0x801D97E0..0x801D9834`). Hosts hold
+    /// the pad on the notice and do not tick the session meanwhile, so the
+    /// check lands on the session's next tick
+    /// ([`Self::resume_held_cast`]).
+    ///
+    /// PORT: FUN_801D9594 (`0x801D97B4..0x801D9834`, the message step)
+    // PORT: FUN_801D9280 (`0x801D9448..0x801D94C4`, the group screen's twin)
+    pub fn hold_cast_for_notice(&mut self, caster: u8, spell_id: u8, target_row: u8) {
+        let row = self
+            .party
+            .get(caster as usize)
+            .and_then(|c| c.spells.iter().position(|&id| id == spell_id));
+        let (Some(row), Some(def)) = (row, self.catalog.get(spell_id)) else {
+            self.resume_cast(caster, spell_id, target_row);
+            return;
+        };
+        self.phase = if spell_targets_group(def.target.retail_target_flag_bits()) {
+            SpellMenuPhase::GroupConfirm {
+                caster,
+                spell_id,
+                cursor: row as u8,
+            }
+        } else {
+            SpellMenuPhase::TargetSelect {
+                caster,
+                spell_id,
+                cursor: target_row.min(self.targets.len().saturating_sub(1) as u8),
+            }
+        };
+        self.held_resume = Some((caster, spell_id, target_row));
+    }
+
+    /// Run the re-cast check a [`Self::hold_cast_for_notice`] parked, once the
+    /// notice is gone. [`Self::tick`] calls it first; `true` when one ran.
+    pub fn resume_held_cast(&mut self) -> bool {
+        let Some((caster, spell_id, row)) = self.held_resume.take() else {
+            return false;
+        };
+        self.resume_cast(caster, spell_id, row);
+        true
     }
 
     /// End the session with nothing further to apply.
@@ -528,6 +580,7 @@ impl SpellMenuSession {
     }
 
     pub fn tick(&mut self, input: SpellMenuInput) -> Vec<SpellMenuEvent> {
+        self.resume_held_cast();
         let mut events = Vec::new();
         match self.phase.clone() {
             SpellMenuPhase::CharSelect { cursor } => {

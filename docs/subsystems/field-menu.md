@@ -1754,7 +1754,11 @@ path uses. Both cast flows run the SCUS effect applier `FUN_800402F4` (dump
   closes it and steps back to its own cursor, so the Items or Magic screen
   stays under the notice and resumes after it. The port's
   `field_menu_dispatch::resume_after_use` keeps the screen up and leaves the
-  notice for the host (`take_raised_notices`). The notice's body covers the
+  notice for the host (`take_raised_notices`); the Magic screen parks on the
+  cast's own target or group screen under it
+  (`SpellMenuSession::hold_cast_for_notice`) and runs the re-cast check on its
+  first tick after the notice closes, as retail's phase 3 runs it on the
+  closing press. The notice's body covers the
   text below it; the hosts draw text after every sprite, so
   `pause_menu::occlude_under_menu_notices` drops the screen's glyphs inside
   the notice's frame.
