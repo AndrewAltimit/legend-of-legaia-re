@@ -2100,3 +2100,35 @@ reason = "The still seed now seats a standing player's scene clip from retail RA
 changes = [
   ["states/urudre3_dojo_pair/image", 1.0, 0.999],
 ]
+
+[[loosening]]
+file = "scripts/replays/full_game_baseline.toml"
+reason = "Wave 61 turns a talk's speaker at its line, partner first (retail order), which re-deals the ladder's random rolls from run 3 on; on seed 12 the hand's beat replay seats the balden teleporter pair (29, 19) a second time (each touch sets its flag and clears the other's), one more touch_far. The run still reaches 35/35 with 0 reloads."
+changes = [
+  ["shortcuts/walked/seed_12/touch_far", 2, 3],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Wave 61 opens a talk's dialog box on the frame after the talk starts and ignores the opening frame's Cross (retail order); the still's talk probe now waits out the 16-frame release pad hold, so the King's box on koin3_disco_king_talk_open is sampled a frame later against a strobing floor. The field cutscene and walk films are none worse."
+changes = [
+  ["states/koin3_disco_king_talk_open/image", 0.873, 0.87],
+]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "Wave 61 draws a battle body's untextured groups as a second mesh on both hosts (16fb8f6a6, measured against its parent with a bench-alloc build): battle and summon frames +63 allocations, field and world-map frames +14 KB (the colour-mesh path's per-frame buffers, though no battle body draws there). The page bundle grew 7 KB gzip over the whole wave's changes (not split per commit); the browser wasm byte counts moved by 1 and 8 bytes."
+changes = [
+  ["counts/browser/town01/retail/wasm_bytes_per_frame", 48879, 48880],
+  ["counts/browser/world_map/retail/wasm_bytes_per_frame", 290891, 290899],
+  ["counts/bundle/gzip_bytes", 7426399, 7452338],
+  ["counts/bundle/play_gzip_bytes", 5293993, 5301150],
+  ["counts/native/battle/enhanced/allocs_per_frame", 1337.8, 1400.5],
+  ["counts/native/battle/retail/allocs_per_frame", 1312.6, 1375.2],
+  ["counts/native/summon_cast/enhanced/allocs_per_frame", 1354.1, 1417.2],
+  ["counts/native/summon_cast/retail/allocs_per_frame", 1333.6, 1396.3],
+  ["counts/native/town01/enhanced/alloc_kb_per_frame", 1714.4, 1727.4],
+  ["counts/native/town01/retail/alloc_kb_per_frame", 1190.4, 1203.3],
+  ["counts/native/world_map/enhanced/alloc_kb_per_frame", 1491.4, 1505.3],
+  ["counts/native/world_map/retail/alloc_kb_per_frame", 1229.4, 1243.3],
+]
