@@ -189,12 +189,13 @@ pub const LOAD_LAUNCH_RAMP_FRAMES: u16 = 0x1200 / 0x100;
 /// outcome, which is the ramp's last.
 pub const COMMIT_LOAD_RESULT_FRAMES: u16 = COMMIT_RESULT_FRAMES + LOAD_LAUNCH_RAMP_FRAMES - 1;
 
-/// The result line's length for a session's direction.
-pub fn commit_result_frames(mode: SaveSelectMode) -> u16 {
-    match mode {
-        SaveSelectMode::Save => COMMIT_RESULT_FRAMES,
-        SaveSelectMode::Load => COMMIT_LOAD_RESULT_FRAMES,
-    }
+/// The result line's length for a session's direction. Both are the
+/// `LaunchFade` arm's: a clean write leaves sub-mode `3` for `0x16` too
+/// (`0x801DFC40..`, `0x17` then `0x16` while no retry is pending), whose
+/// "Save successful." holds and ramps as a Load's line does before sub-mode
+/// `6` closes the screen.
+pub fn commit_result_frames(_mode: SaveSelectMode) -> u16 {
+    COMMIT_LOAD_RESULT_FRAMES
 }
 
 /// The launch ramp word (`0x801EF154`) of a successful Load's result line

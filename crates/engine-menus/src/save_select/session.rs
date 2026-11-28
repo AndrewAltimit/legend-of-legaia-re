@@ -762,10 +762,12 @@ impl SaveSelectSession {
         let in_result = frames_remaining <= result_frames;
         let press = input.cross || input.circle || input.triangle;
         let skip = in_result && press;
-        // A successful Load's press ends the hold, not the line: retail's
-        // `LaunchFade` adds `0x5A` to the hold (`0x801DF8F0..0x801DF910`), so
-        // the ramp starts on the press's frame and runs its whole length.
-        if self.mode == SaveSelectMode::Load && report == CommitReport::Ok && in_result {
+        // A successful card op's press ends the hold, not the line: retail's
+        // `LaunchFade` (sub-mode `0x16`, which a Save's "Save successful."
+        // runs too: the write arm's tail routes a clean write there) adds
+        // `0x5A` to the hold (`0x801DF8F0..0x801DF910`), so the ramp starts
+        // on the press's frame and runs its whole length.
+        if report == CommitReport::Ok && in_result {
             let rest = if press && frames_remaining > LOAD_LAUNCH_RAMP_FRAMES {
                 LOAD_LAUNCH_RAMP_FRAMES - 1
             } else {
@@ -773,8 +775,13 @@ impl SaveSelectSession {
             };
             // The ramp's eighteenth frame (`0x1200`) is the landing's.
             if frames_remaining <= 1 {
-                events.push(SelectEvent::LoadConfirmed { slot });
-                self.phase = SelectPhase::Done(SelectOutcome::Loaded(slot));
+                self.phase = SelectPhase::Done(match self.mode {
+                    SaveSelectMode::Load => {
+                        events.push(SelectEvent::LoadConfirmed { slot });
+                        SelectOutcome::Loaded(slot)
+                    }
+                    SaveSelectMode::Save => SelectOutcome::Saved(slot),
+                });
             } else {
                 self.phase = SelectPhase::Committing {
                     slot,

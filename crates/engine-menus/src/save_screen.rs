@@ -1495,9 +1495,17 @@ mod tests {
                 }
             );
             // A press on the result line cuts it short - as a Cross, which is
-            // the confirm cue retail sounds.
+            // the confirm cue retail sounds. A clean write's line is the
+            // `LaunchFade` arm's, so the press starts its ramp and the screen
+            // leaves when the ramp ends.
             assert_eq!(flow.before_tick(&mut s, PadButton::Circle.mask()), cross());
             s.tick(SelectInput::from_pad_edge(cross()));
+            if ok {
+                for _ in 1..crate::save_select::LOAD_LAUNCH_RAMP_FRAMES {
+                    assert_eq!(s.outcome(), None, "the ramp runs out first");
+                    s.tick(SelectInput::default());
+                }
+            }
             if ok {
                 assert_eq!(s.outcome(), Some(SelectOutcome::Saved(0)));
                 assert_eq!(flow.commit(&s), None, "the write already happened");
