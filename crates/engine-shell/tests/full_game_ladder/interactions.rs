@@ -349,6 +349,9 @@ pub(super) fn interact_at(
         if !by_pad {
             shortcut("examine_face");
         }
+        // The talk probe sits behind the player tick's walk gate: a press
+        // while a release's pad hold drains talks to no one.
+        pad_field_upkeep::wait_out_pad_hold(session);
         match press_edge(session, PadButton::Cross.mask()) {
             Ok(Some(name)) => return Run::Entered(name),
             Ok(None) => {}
