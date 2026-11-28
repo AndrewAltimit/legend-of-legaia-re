@@ -1001,7 +1001,7 @@ fire comes off Gala's body on the anim tick's accumulator.
 | 0923 Gilium | 20, pass (`0x801F8A24`) | live row | `0x3FF00000` | `1` |
 | 0932 Meta | 18, pass (`0x801F7C78`) | live row | `0x3FF` | `1` |
 | 0934 Ozma | 17, 18, every pass (`0x801F7F38`, `0x801F7F58`) | creature | - | `2` |
-| 0934 Ozma | 21..=23, pass (`0x801F85D4`, `0x801F86CC`, `0x801F8948`); 24, every pass, ahead of its countdown (`0x801F8D4C`) | live row | `0x3FF003FF` | `2` |
+| 0934 Ozma | 21, pass (`0x801F85D4`); 22 and 23, every pass, at the arm's head (`0x801F86CC`, `0x801F8948`); 24, every pass, ahead of its countdown (`0x801F8D4C`) | live row | `0x3FF003FF` | `2` |
 | 0937 Hyper Lightning | 7, every pass (`0x801F7580`) | victim | - | `2` |
 | 0948 Cross Beam | 3, pass (`0x801F7044`) | victim | `0x3FF` | `1` |
 | 0950 Rolling Flare | 3, countdown at most `0x40` scalars (`0x801F7F44`, `0x801F7F48`) | both seats | - | `1` |

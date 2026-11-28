@@ -99,6 +99,14 @@ const fn tint(entry: u32, arm: u8, seat: ImpactSeat, colour: u32, selector: u8) 
     }
 }
 
+/// `m` on every pass of its arm rather than the gate's.
+const fn every_pass(m: ModuleImpact) -> ModuleImpact {
+    ModuleImpact {
+        edge: ImpactEdge::EveryPass,
+        ..m
+    }
+}
+
 const fn latch(
     entry: u32,
     arm: u8,
@@ -157,15 +165,20 @@ pub const MODULE_IMPACTS: &[ModuleImpact] = &[
     // PROT 0932 Meta: the row strike (`0x801F7C5C..0x801F7C78`).
     tint(932, 18, ImpactSeat::LiveMonsters, RED, 1),
     // PROT 0934 Ozma. Arms 17 and 18 hold the creature's sparks every pass
-    // (`0x801F7F38`, `0x801F7F58`, `s4 = actor_table[7]`), arms 21..=24 flash
-    // the live row magenta every time they run (`0x801F85B0..0x801F85D4`,
-    // `0x801F86B4..0x801F86CC`, `0x801F8948`, `0x801F8D4C`).
+    // (`0x801F7F38`, `0x801F7F58`, `s4 = actor_table[7]`). The live row
+    // turns magenta on arm 21's exit, past its countdown
+    // (`0x801F85B0..0x801F85D4`, behind the `bgtz` at `0x801F8510`), then
+    // arms 22 and 23 store it again at the head of every pass, ahead of any
+    // gate (`0x801F865C..0x801F86EC`, `0x801F88D8..0x801F8968`; the dispatch
+    // `0x801F69D8` enters them there), and arm 24 every pass ahead of its
+    // countdown (`0x801F8D4C`). So the row holds magenta from arm 21's exit
+    // to arm 25, where the tint machine's arm 0 eases it back.
     latch(934, 17, ImpactEdge::EveryPass, ImpactSeat::Creature, 2),
     latch(934, 18, ImpactEdge::EveryPass, ImpactSeat::Creature, 2),
     tint(934, 21, ImpactSeat::LiveMonsters, MAGENTA, 2),
-    tint(934, 22, ImpactSeat::LiveMonsters, MAGENTA, 2),
-    tint(934, 23, ImpactSeat::LiveMonsters, MAGENTA, 2),
-    tint(934, 24, ImpactSeat::LiveMonsters, MAGENTA, 2),
+    every_pass(tint(934, 22, ImpactSeat::LiveMonsters, MAGENTA, 2)),
+    every_pass(tint(934, 23, ImpactSeat::LiveMonsters, MAGENTA, 2)),
+    every_pass(tint(934, 24, ImpactSeat::LiveMonsters, MAGENTA, 2)),
     // PROT 0937 Hyper Lightning: arm 7's victim sparks, every pass
     // (`0x801F7580`, `s2 = actor_table[caster + 0x1DD]`, `s3` the caster).
     latch(937, 7, ImpactEdge::EveryPass, ImpactSeat::Victim, 2),
