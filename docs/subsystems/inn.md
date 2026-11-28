@@ -96,6 +96,14 @@ A2 F8 <clip>  AC F8 08  AD F8 08    ; play a player clip, clear its end
 1F <good morning> 00
 ```
 
+What the stay sounds like, from `retock_inn_stay_prompt` with a Cross every `40` vsyncs
+(`autorun_audio_timeline.lua`, `V` the vsync the release arms): the `35` is sub-op `5` with a
+deadline of `90`, so the field track (`2015`) fades from `107` one unit a vsync and stops at
+`V + 98` with its read cursor rewound; the rest cue is a CD-XA one-shot, so no SPU cue voice keys
+while the score's own releases ring out; the closing `35` replays the track from its head at
+`V + 214`, at `107`. The audio level `_DAT_8007B910` holds `215` throughout. A second stay in the
+same run reads the same offsets.
+
 Nothing but the record's own text boxes is drawn during a stay: the rest
 itself is the fade, the cue and the waits, with no caption over the dark
 screen.

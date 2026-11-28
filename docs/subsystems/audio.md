@@ -1060,6 +1060,24 @@ scores over each other, which retail never does. The compressed close keeps both
 things the player hears: the battle score ends in a fade, and the field's track is
 at its head when the field appears.
 
+The load's length is the scene's, so the offsets move and the order does not. From
+`rim_elm_gimard_victory` (`town0b`, a scripted fight on the scene-local `1000`), with `E` the
+mode-`2` store: the battle score plays at `107` through the results hold, its ramp starts at
+`E + 151` and reaches `1` at `E + 258`, the poller forces `-100` at `E + 297`, the battle sequence
+closes and the field track plays from its head at `E + 368`, and the first field frame is `E + 424`.
+No cue keys between the results frame and the field.
+
+<a id="the-game-over-keeps-the-battle-score-through-the-load"></a>
+**The game over keeps the battle score through the load.** From
+`battle_jou_party_wipe_results_retail` (`autorun_audio_timeline.lua`, no input), with `E` the
+mode-`2` store: the battle score plays at `107` through the loss's hold and on into the field init,
+whose `0xB4` ramp starts at `E + 167` and steps one unit a vsync; mode `0x16` is stored at `E + 169`,
+the CARD init closes both sources at `E + 244` with the score at `31`, nothing sounds for `128`
+vsyncs, and the title theme starts from its head at mode `0x17`, `E + 373`, at `0` and then `107`.
+The port holds the frozen wipe frame for `TITLE_HANDOFF_FRAMES` and then stops the battle score and
+starts the title theme (`NativeSession::step_party_wipe_hold`): the load it does not spend takes the
+ramp and the silence with it, as on the victory return.
+
 **A fight on the park word ends the music.** The return loads what the track word
 names, and the word `0x1000` names nothing. `retockin`'s word is the park, the door
 from `retock` having kept `2014` behind sub-op 6, and a capture from
