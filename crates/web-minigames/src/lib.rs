@@ -663,7 +663,7 @@ mod countin_tests {
         assert_eq!(mg.minigame_bgm_id("slot"), 2018);
         assert_eq!(mg.minigame_bgm_id("muscle"), 2026);
         assert_eq!(mg.minigame_bgm_id("dance"), 2060);
-        assert_eq!(mg.minigame_bgm_id("fishing"), -1);
+        assert_eq!(mg.minigame_bgm_id("fishing"), 2017);
         assert_eq!(mg.minigame_bgm_id("nope"), -1);
     }
 }

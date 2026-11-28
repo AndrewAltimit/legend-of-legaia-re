@@ -103,6 +103,9 @@ impl BgmDirector for RecordingDirector {
     // Sub-op 5's decrescendo ramps the occupant's volume; the release that
     // follows is what stops it, so the fade moves neither field.
     fn timed_release_fade(&mut self, _deadline: i16) {}
+    // A decrescendo (`FUN_80062004`) is a level ramp on the sounding track:
+    // it neither selects a track nor holds one.
+    fn decrescendo(&mut self, _amount: i16, _ticks: i32) {}
 }
 
 /// Seed the engine from a retail state and sample it after [`SETTLE_TICKS`].
