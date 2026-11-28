@@ -1356,7 +1356,8 @@ impl PlayWindowApp {
         }
         // `fxparts.csv` beside it (no header): every live part of the
         // battle's other scene graphs - `tick,scene,index,finished,flags,
-        // u0 (+0xA8),x,y,z` with scene `m` (move FX), `a<n>` (effect-script
+        // u0 (+0xA8),x,y,z,tag,colour (+0x74),level (+0x78),kind (+0x56),
+        // +0xA0,+0xA4` with scene `m` (move FX), `a<n>` (effect-script
         // action FX) or `s` (stage) - so a melee burst's lifetime reads
         // part by part against the probe's `parts.csv`.
         if std::env::var_os("LEGAIA_DIAG_CAST_PARTS").is_some()
@@ -1383,7 +1384,7 @@ impl PlayWindowApp {
                     let st = &part.state;
                     let _ = writeln!(
                         f,
-                        "{tick},{name},{i},{},{:#06x},{:#06x},{},{},{},{:#010x}",
+                        "{tick},{name},{i},{},{:#06x},{:#06x},{},{},{},{:#010x},{:#010x},{},{},{:#010x},{:#010x}",
                         u8::from(part.finished),
                         st.flags,
                         st.actor_u16(0xA8),
@@ -1391,6 +1392,11 @@ impl PlayWindowApp {
                         st.world_y,
                         st.world_z,
                         part.tag.unwrap_or(0),
+                        st.field_74,
+                        st.field_78,
+                        st.actor_u16(0x56),
+                        u32::from(st.actor_u16(0xA0)) | u32::from(st.actor_u16(0xA2)) << 16,
+                        u32::from(st.actor_u16(0xA4)) | u32::from(st.actor_u16(0xA6)) << 16,
                     );
                 }
             }
