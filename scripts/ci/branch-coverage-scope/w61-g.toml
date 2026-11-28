@@ -226,3 +226,34 @@ entry = "0x801D2E74"
 range = "0x801D2FFC..0x801D2FFC"
 verdict = "unreachable"
 reason = "PROT 0899 Magic info window: the description skip on a zero +4 index of the spell table record; every player spell 0x81..=0xA0 on the disc carries a description index, so the skip is never taken."
+
+[[arm]]
+entry = "0x80034358"
+range = "0x80034404..0x80034404"
+verdict = "unreachable"
+reason = "The arts list's row count is the text actor's height (+0x10) / 28; the one actor it draws is registered once at height 144 (FUN_801DBB8C: FUN_8003541C(0, 0xC, 0, -146, 36, 138, 144, 3)) and the list driver FUN_801D3444 rewrites only its x, so the count is 5 and the zero-row exit is never taken."
+
+[[arm]]
+entry = "0x80034358"
+range = "0x80034458..0x80034458"
+verdict = "unreachable"
+reason = "The arts list's walk of the art table at 0x80075EC4 stops on the 0x63 terminator byte; the table's first record opens on character byte 0x00, so the loop's entry test always falls into the walk."
+
+[[arm]]
+entry = "0x801D2910"
+range = "0x801D2958..0x801D2958"
+verdict = "unreachable"
+reason = "PROT 0899 Options window rows: the empty-range exit when the first row a1 exceeds the last a2; the one call in the image (0x801DCEFC) passes rows 0..9, so the exit is never taken."
+
+[[arm]]
+entry = "0x801D2910"
+range = "0x801D29F0..0x801D29F0"
+verdict = "unreachable"
+reason = "PROT 0899 Options window rows: the value-label lookup skips when the label table at 0x801E44B8 opens on a zero word; its first word is the pointer 0x8007E8C8, so the walk always runs."
+
+[[arm]]
+entry = "0x801D2B44"
+image = "57d74793591355fc"
+range = "0x801D2B90..0x801D2B90"
+verdict = "unreachable"
+reason = "PROT 0899 Options popup: the value-label lookup skips when the label table at 0x801E44B8 opens on a zero word; its first word is the pointer 0x8007E8C8, so the walk always runs."
