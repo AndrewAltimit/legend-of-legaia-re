@@ -110,6 +110,14 @@ pub trait BgmDirector {
         let _ = deadline;
     }
 
+    /// A decrescendo of `amount` units of sequence volume over `ticks`
+    /// vsyncs on the sounding track, as `FUN_80062004` arms it (the shim
+    /// clamps the amount to the level). The default is a no-op for stub
+    /// directors with no sequence volume.
+    fn decrescendo(&mut self, amount: i16, ticks: i32) {
+        let _ = (amount, ticks);
+    }
+
     /// The field init's close of the field-BGM source (`FUN_801D6704`: the
     /// decrescendo at `0x801D6AC0` while the map reads, then `FUN_800266E0`
     /// and `FUN_80026520` at `0x801D7164`). A director whose load is instant
@@ -210,8 +218,9 @@ pub fn bgm_bank_id(bgm_id: u16) -> u16 {
 }
 
 use legaia_engine_core::world::{
-    BGM_SUB_OP_ENGINE_FADE, BGM_SUB_OP_ENGINE_FIELD_CLOSE, BGM_SUB_OP_ENGINE_LATCH,
-    BGM_SUB_OP_ENGINE_RESTART, BGM_SUB_OP_ENGINE_STOP,
+    BGM_DECRESCENDO_AMOUNT, BGM_SUB_OP_ENGINE_DECRESCENDO, BGM_SUB_OP_ENGINE_FADE,
+    BGM_SUB_OP_ENGINE_FIELD_CLOSE, BGM_SUB_OP_ENGINE_LATCH, BGM_SUB_OP_ENGINE_RESTART,
+    BGM_SUB_OP_ENGINE_STOP,
 };
 
 /// Discards every BGM event. Useful for tests + engines that haven't wired

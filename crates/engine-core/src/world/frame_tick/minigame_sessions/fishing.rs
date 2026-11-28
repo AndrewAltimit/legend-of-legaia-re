@@ -336,6 +336,20 @@ impl World {
         // Both are the init's staged tracks: the strike installs the second
         // half of the buffer, the restores its head.
         use legaia_engine_mode::minigame_entry::{FISHING_HOOK_BGM_ID, FISHING_VENUE_BGM_ID};
+        /// The lift's decrescendo length (`li a2,0xc8` at `0x801D4B08`).
+        const FISHING_LIFT_FADE_VSYNCS: u16 = 0xC8;
+        // The landing is the line actor's sub-state `4` entry: on its first
+        // frame (`+0x22` still zero) it decrescendos the battle source's
+        // sequence, the hook theme, by `0xFF` over `0xC8` vsyncs
+        // (`FUN_801D4948`, `0x801D4AF4..0x801D4B18`).
+        if self.minigames.fishing_hook_music
+            && events.iter().any(|e| matches!(e, PondEvent::Landed(_)))
+        {
+            self.pending_field_events.push(FieldEvent::Bgm {
+                text_id: FISHING_LIFT_FADE_VSYNCS,
+                sub_op: crate::world::BGM_SUB_OP_ENGINE_DECRESCENDO,
+            });
+        }
         if hooked && !self.minigames.fishing_hook_music {
             self.minigames.fishing_hook_music = true;
             self.start_minigame_track(FISHING_HOOK_BGM_ID);
@@ -569,6 +583,19 @@ mod hook_audio_tests {
         w.fishing_hook_music(&[PondEvent::Hooked(3)]);
         assert!(bgm_starts(&mut w).is_empty(), "the latch holds");
         w.fishing_hook_music(&[PondEvent::Landed(40)]);
+        let fades: Vec<_> = w
+            .pending_field_events
+            .iter()
+            .filter_map(|e| match *e {
+                FieldEvent::Bgm { text_id, sub_op }
+                    if sub_op == crate::world::BGM_SUB_OP_ENGINE_DECRESCENDO =>
+                {
+                    Some(text_id)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(fades, [0xC8], "the lift fades the hook theme");
         assert!(
             bgm_starts(&mut w).is_empty(),
             "the catch keeps the hook theme"

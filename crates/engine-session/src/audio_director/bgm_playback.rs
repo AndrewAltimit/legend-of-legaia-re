@@ -358,6 +358,13 @@ impl<S: AudioSink> BgmDirector for AudioDirector<S> {
         self.audio.sequencer_decrescendo(amount, ticks);
     }
 
+    fn decrescendo(&mut self, amount: i16, ticks: i32) {
+        if self.hold_for_switch(|| super::scene_switch::HeldCommand::Decrescendo(amount, ticks)) {
+            return;
+        }
+        self.audio.sequencer_decrescendo(amount, ticks);
+    }
+
     fn unhalt_pause(&mut self) {
         if self.hold_for_switch(|| super::scene_switch::HeldCommand::UnhaltPause) {
             return;

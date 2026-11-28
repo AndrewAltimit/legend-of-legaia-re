@@ -45,6 +45,7 @@ pub(super) enum HeldCommand {
     Resume,
     UnhaltPause,
     TimedReleaseFade(i16),
+    Decrescendo(i16, i32),
 }
 
 /// The director's switch-fade state.
@@ -134,6 +135,7 @@ impl<S: AudioSink> AudioDirector<S> {
                 HeldCommand::Resume => BgmDirector::resume(self),
                 HeldCommand::UnhaltPause => BgmDirector::unhalt_pause(self),
                 HeldCommand::TimedReleaseFade(d) => BgmDirector::timed_release_fade(self, d),
+                HeldCommand::Decrescendo(a, t) => BgmDirector::decrescendo(self, a, t),
             }
         }
     }

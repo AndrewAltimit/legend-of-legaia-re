@@ -48,6 +48,17 @@ pub const BGM_SUB_OP_ENGINE_FADE: u8 = 0xFC;
 /// op-`0x35` word.
 pub const BGM_SUB_OP_ENGINE_RESTART: u8 = 0xFB;
 
+/// The `FieldEvent::Bgm` sub-op the **engine** raises for a decrescendo a
+/// minigame overlay hands straight to `FUN_80062004` on the sounding track:
+/// `text_id` is the ramp's length in vsyncs, the amount the whole sequence
+/// volume ([`BGM_DECRESCENDO_AMOUNT`], which the shim clamps to the level).
+/// The fishing lift's (`FUN_801D4948`, `0x801D4B04..0x801D4B18`) is the one
+/// producer. Not a retail op-`0x35` word.
+pub const BGM_SUB_OP_ENGINE_DECRESCENDO: u8 = 0xFA;
+
+/// The amount the overlay decrescendos pass (`li a1,0xff`).
+pub const BGM_DECRESCENDO_AMOUNT: i16 = 0xFF;
+
 /// Audio-side state: BGM selection and resume, the SFX cue / delay slots, sound-bank handshakes and the battle SFX / XA / shout cue queues.
 #[derive(Debug)]
 pub struct AudioState {
