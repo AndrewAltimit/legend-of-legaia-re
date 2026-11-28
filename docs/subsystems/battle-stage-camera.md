@@ -1765,6 +1765,22 @@ close to the host (`World::close_pass_after_census`), which makes it once its co
 tick is in; the pass sequence then reads retail's cursor for cursor up to the commit. Grade
 `disassembly` for the order, `capture` for the film.
 
+The count is of the frame the pass draws, and that frame is not finished when the world's
+tick returns. The effect-script walk (`FUN_801DEA50`, from the anim tick) hands its spawns
+to the effect pool and the prototype scene ahead of the battle draw tick `FUN_800480D8`, so
+retail's frame links a hit's spark burst on the pass that struck it. The port routes those
+spawns, runs the hit bursts and runs the seater of every part the tick seated in the frame
+tail (`World::route_battle_effect_spawns`, from `World::step_world_frame_tail`), after the
+scene host's tick; counted behind the tick, the
+spawn pass was priced on the pass before's effects and its parts reached the ring a pass
+late. The scene host therefore closes a pass at the head of the next tick, on the census of
+the frame it drew (`SceneHost::tick`), and counts a held tick behind its own tick as before.
+On `battle_jou_nova_v3_strike` the swing's spark pass (retail over `0x2D0`, step `4` next)
+priced `709` on the pass before's census and `728` on its own, and the strike reads `.912` to
+`.954`; `battle_nilboa_neo_grude_strike` `.928` to `.964`, `battle_korb2_warhalf_strike`
+`.985` to `.993`. The recorder's `cost` column reads the push one tick later than before.
+Grade `disassembly` for the walk's place ahead of the draw, `capture` for the films.
+
 A sinking body costs more than it links. The defeat fade's sink raises the body's `+0x42`
 (`0x800504AC`), and `FUN_80048A08` then sends every object of it through `FUN_8001C204` and
 the TMD renderer `FUN_8002735C` instead of the dispatcher's leaves
