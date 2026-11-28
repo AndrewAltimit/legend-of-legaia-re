@@ -1605,6 +1605,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_line_clamped_arm_is_named_on_pcsx_redux_alone() {
+        assert!(capture_arm_line_clamped(0x55, 2, CdTiming::PcsxRedux));
+        assert!(!capture_arm_line_clamped(0x55, 3, CdTiming::PcsxRedux));
+        assert!(!capture_arm_line_clamped(0x77, 6, CdTiming::PcsxRedux));
+        assert!(!capture_arm_line_clamped(0x55, 2, CdTiming::Console));
+    }
+
+    #[test]
     fn a_summon_arm_changes_cost_on_its_measured_pass() {
         let pcsx = CdTiming::PcsxRedux;
         assert_eq!(cast_arm_frame_step_on_pass(934, 21, 0, pcsx), Some(4));

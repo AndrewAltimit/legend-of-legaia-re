@@ -1368,6 +1368,26 @@ impl RetailRandTrack {
 mod tests {
     use super::*;
 
+    /// The `--cd-trace` recordings' `CdlReadS`-to-`Pause` spans, each within a
+    /// vsync of the tail.
+    #[test]
+    fn a_lines_read_tail_grows_with_its_span() {
+        for (span, read) in [
+            (180u16, 195u16),
+            (408, 427),
+            (425, 443),
+            (479, 498),
+            (539, 559),
+            (849, 874),
+            (1061, 1088),
+            (1292, 1321),
+            (1437, 1469),
+        ] {
+            let fit = span + xa_read_tail_vsyncs(span);
+            assert!(fit.abs_diff(read) <= 1, "{span}: {fit} for {read}");
+        }
+    }
+
     #[test]
     fn leaf_pricing_reads_each_unit_at_its_own_price() {
         use crate::derived_cost::{DerivedUnits, PrimTally};
