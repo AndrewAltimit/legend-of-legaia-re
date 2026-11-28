@@ -1705,6 +1705,20 @@ Death Game's arms do `241..349` hblanks of work and their polled frames fit insi
 `4`, Kiss of Death's arm 4 does `665` and its polled frames span eight vsyncs, Glare's sit
 between. Grade `disassembly` for the per-polygon path, `capture` for the coefficients.
 
+The `2.78` divides by the work left between the CD interrupt spans, and that work carries the
+exception exits of the polls as well as the frame's own. A `--cd-trace` recording of Death Game
+(`battle_jou_puera_v3_death_game_mid_cast`) holds arms whose scene is the same polled and
+unpolled: the unpolled arms 4 to 8 cost `241`, the polled arms 2, 3 and 9 leave `264..284` beside
+`305..334` polls a frame (the exits about `.08..16` hblanks a poll), and they cost `3.13` to
+`3.43` times the unpolled `241`. Over the census's work, which counts no exits, the ratio is
+therefore the arts shout's census ratio (`ARTS_SHOUT_CENSUS_RATIO_MILLI`, `3.2`) rather than
+`2.78`: on it Death Game's first passes price `803` and run step `4` as retail's do, where
+`2.78` prices `717` (step `3`), and the film reads `.902` to `.965`. The module line keeps
+`2.78` because the census's own work is off on other module lines: Megaton Press
+(`nivora_duel_pre_megaton_press__7A`) reads `.943` to `.790` on `3.2`, its arms' census work
+`345` / `445` where retail's work between the interrupt spans is `136` / `650` (arms 5 and 9), so a ratio
+change moves its steps and the `rand()` picks behind them. Grade `capture`.
+
 Port: `frame_clock::polygon_frame_work` (`POLY_FRAME_BASE`, `POLY_WORK_MILLI`) and
 `xa_polled_work_cost` (`XA_POLL_WORK_RATIO_MILLI`), behind
 `WorldToggles::battle_poly_frame_cost` (`LEGAIA_BATTLE_POLY_COST=1`). The count is the
@@ -2151,6 +2165,17 @@ the fit in turn, the frame cost reads rms `24` / `14` / `30` hblanks against the
 line's `30` / `27` / `39`, and the step right on `.956` / `.982` / `.920` of frames against
 `.926` / `.967` / `.905`. Grade `capture`; the per-unit prices are a fit, not instruction
 counts (the derived pricing holds those).
+
+Refitted on the census of the frame each pass draws ([the census](#the-census)), the same
+units read held-out rms `26.0` / `18.2` / `35.6` against the constants' `24.8` / `17.3` /
+`34.8` over the arts, strike and enemy films, and no census unit left out of the line (bodies,
+ghost objects, builds, segments, near-floor drops, off-screen stage primitives) correlates
+with the residual past `.13`: the constants stand, and the knife-edge frames (Dragon Fangs'
+lone-ghost pass `745` against `716`, Caruban's close shot about `20` over, King Frog's ghost
+frames over `0x2D0` where retail's sit at `711..719`) are the line's noise, not a missing unit. The derived
+pricing on the same census splits them: Caruban's strike reads `.939` to `.986` and Zeto's
+Poisonous Bubbles `.904` to `.988`, Dragon Fangs `.893` to `.776` and King Frog's strike `.926`
+to `.888`, so it stays opt-in.
 
 It is what lands the Super Arts' edge frames on retail's step together: Tri-Somersault's
 one-ghost frame `1521` prices `707` (retail `692`, the line `721`), Gala's Chain's commit
