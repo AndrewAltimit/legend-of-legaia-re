@@ -559,10 +559,13 @@ impl<S: AudioSink> AudioDirector<S> {
         // `frame_step`, which retail applies once per *game tick* of that
         // many vsyncs. The two schedules are the same in wall time.
         self.apply_sfx_ring_ops(&ops, world.clock.display_frame_step.clamp(1, 255) as u8);
+        // Retail's `3` (the field, the overworlds' too) and `0x17`, the card
+        // mode a pause menu runs in (`SceneMode::Menu`).
         let field_family = matches!(
             world.mode,
             legaia_engine_mode::mode::SceneMode::Field
                 | legaia_engine_mode::mode::SceneMode::WorldMap
+                | legaia_engine_mode::mode::SceneMode::Menu
         );
         // A slot-6 side-band bank is not a tail borrower: retail streams it
         // over the field bank in the shared region, and the residency below
