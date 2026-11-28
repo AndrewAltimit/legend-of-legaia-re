@@ -72,8 +72,13 @@ fn the_bag_behaves_as_retail_does() {
         );
         let mut raw = vec![(0u8, 0u8); SLOTS];
         let ids = 1 + rng.below(0x60);
-        for s in raw.iter_mut() {
-            if rng.below(3) == 0 {
+        // A quarter of the sessions open on a full window of distinct ids,
+        // so an add of a new id finds no hole (`0x8004229C`, `0x800422CC`).
+        let full = rng.below(4) == 0;
+        for (i, s) in raw.iter_mut().enumerate() {
+            if full && (usize::from(start)..usize::from(end)).contains(&i) {
+                *s = ((i - usize::from(start)) as u8 + 1, 1 + rng.below(99) as u8);
+            } else if rng.below(3) == 0 {
                 *s = (1 + rng.below(ids) as u8, rng.below(100) as u8);
             }
         }
@@ -83,9 +88,17 @@ fn the_bag_behaves_as_retail_does() {
         }
         port.slots_mut().copy_from_slice(&raw);
         for op in 0..60 {
-            let id = 1 + rng.below(ids + 4) as u8;
-            let qty = [0u8, 1, 1, 2, 50, 99, 100, 255][rng.below(8) as usize];
+            // Id 0 now and then: the add writes the empty id and skips the
+            // count (`0x800422D8`).
             let what = rng.below(7);
+            let id = if what < 2 && rng.below(8) == 0 {
+                0
+            } else if full && rng.below(2) == 0 {
+                0xF0 + rng.below(0x10) as u8
+            } else {
+                1 + rng.below(ids + 4) as u8
+            };
+            let qty = [0u8, 1, 1, 2, 50, 99, 100, 255][rng.below(8) as usize];
             let label = match what {
                 0 | 1 => {
                     call(&mut cpu, 0x8004_21D4, &[u32::from(id), u32::from(qty)]);

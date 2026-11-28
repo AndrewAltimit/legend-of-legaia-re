@@ -703,6 +703,20 @@ impl RetailInventory {
     /// [`AddOutcome::OobIdWrite`] **without** writing anything.
     // PORT: FUN_800421D4
     pub fn add(&mut self, id: u8, qty: u8) -> AddOutcome {
+        // (0) The empty id: retail's merge scan compares slot ids with the
+        // argument, so id `0` matches the window's first hole; the id store
+        // writes the `0` it already holds and the count is skipped on a zero
+        // id (`andi v0,t0,0xFF; beqz` at `0x800422D8`). Nothing changes.
+        if id == 0 {
+            let (s, e) = self.window;
+            let e = e.min(self.slots.len());
+            if let Some(i) = self.slots[s.min(e)..e]
+                .iter()
+                .position(|&(sid, _)| sid == 0)
+            {
+                return AddOutcome::Placed { slot: s + i };
+            }
+        }
         // (1) MERGE pass: existing stack of the same id.
         if let Some(i) = self.find_slot(id) {
             let new_count = self.slots[i].1.saturating_add(qty).min(STACK_CAP);
