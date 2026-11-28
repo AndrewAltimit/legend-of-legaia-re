@@ -2117,12 +2117,12 @@ changes = [
 
 [[loosening]]
 file = "scripts/ci/cost-baseline.json"
-reason = "Wave 61 draws a battle body's untextured groups as a second mesh on both hosts (16fb8f6a6, measured against its parent with a bench-alloc build): battle and summon frames +63 allocations, field and world-map frames +14 KB (the colour-mesh path's per-frame buffers, though no battle body draws there). The page bundle grew 7 KB gzip over the whole wave's changes (not split per commit); the browser wasm byte counts moved by 1 and 8 bytes."
+reason = "Wave 61 draws a battle body's untextured groups as a second mesh on both hosts (16fb8f6a6, measured against its parent with a bench-alloc build): battle and summon frames +63 allocations, field and world-map frames +14 KB (the colour-mesh path's per-frame buffers, though no battle body draws there). The page bundle grew 7 KB gzip over the whole wave's changes (not split per commit); the browser wasm byte counts moved by 1 and 8 bytes. The play bundle also carries the Bio Castle approach cue (66b30345c): its World cue, the set_bio_castle_approach export and the page box, 388 bytes gzip of the play figure."
 changes = [
   ["counts/browser/town01/retail/wasm_bytes_per_frame", 48879, 48880],
   ["counts/browser/world_map/retail/wasm_bytes_per_frame", 290891, 290899],
   ["counts/bundle/gzip_bytes", 7426399, 7452338],
-  ["counts/bundle/play_gzip_bytes", 5293993, 5301150],
+  ["counts/bundle/play_gzip_bytes", 5293993, 5301538],
   ["counts/native/battle/enhanced/allocs_per_frame", 1337.8, 1400.5],
   ["counts/native/battle/retail/allocs_per_frame", 1312.6, 1375.2],
   ["counts/native/summon_cast/enhanced/allocs_per_frame", 1354.1, 1417.2],
