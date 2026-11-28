@@ -18,6 +18,7 @@ fn render(actor_idx: usize) -> BattleActorRender {
         object_ids: vec![0; 3],
         rest_pose: vec![0; 6],
         morph_src: None,
+        color_src: None,
     }
 }
 

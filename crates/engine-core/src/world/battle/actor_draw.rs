@@ -121,6 +121,16 @@ impl BattleActorDrawPlan {
         }
     }
 
+    /// [`Self::apply_body_blend`] for the body's untextured half: the colour
+    /// word's ABE onto every blend word of its colour mesh, ORing the word's
+    /// ABR over the one the mesh carries, and bank 2's flat colours
+    /// ([`legaia_engine_battle::battle_body_blend::apply_body_blend_words`]).
+    pub fn apply_body_blend_color(&self, mesh: &mut legaia_tmd::mesh::ColorMesh) {
+        use legaia_engine_battle::battle_body_blend as bb;
+        bb::apply_body_blend_words(&mut mesh.blend, self.semi_mode());
+        self.apply_flat_bank_colours(&mut mesh.colors, &mesh.indices);
+    }
+
     /// Flatten this body's per-vertex packet colours when its colour word
     /// takes handler bank 2 (the near-camera ghost, bit `0x04000000`),
     /// whose leaves write one colour per primitive

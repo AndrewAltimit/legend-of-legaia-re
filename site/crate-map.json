@@ -4963,6 +4963,7 @@
     "play",
     "play_battle",
     "play_battle_body_blend",
+    "play_battle_body_color",
     "play_battle_fx",
     "play_battle_limb_dim",
     "play_battle_render",

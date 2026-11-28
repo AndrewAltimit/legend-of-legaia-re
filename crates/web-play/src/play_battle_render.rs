@@ -206,6 +206,9 @@ impl BattleMesh {
     }
 }
 
+/// A body's TMD and its bytes, shared between the bind and its rebuilds.
+type TmdSrc = std::sync::Arc<(legaia_tmd::Tmd, Vec<u8>)>;
+
 /// One battle actor's render bundle, index-parallel with the JS side's
 /// per-actor mesh instances.
 #[derive(Clone)]
@@ -226,6 +229,12 @@ struct BattleActorRender {
     /// ([`LegaiaRuntime::play_battle_actor_morph`]). `None` for party forms
     /// and summon creatures.
     morph_src: Option<std::sync::Arc<(legaia_tmd::Tmd, Vec<u8>)>>,
+    /// The body's TMD and bytes its **untextured half** is built from
+    /// (`legaia_engine_world_views::battle_draws::battle_body_color_mesh`,
+    /// the `play_battle_actor_color_*` exports): a monster's or summon
+    /// creature's archive TMD, an assembled party form's. `None` for an
+    /// upload with no rig to pose it by.
+    color_src: Option<TmdSrc>,
 }
 
 /// The live battle render state, built on the `Field -> Battle` mode edge
@@ -296,6 +305,13 @@ impl BattleRender {
         self.actors.get(i).map(|a| a.mesh.mesh.indices.as_slice())
     }
 
+    /// Bound actor mesh `i`'s world slot and the TMD its untextured half is
+    /// built from ([`BattleActorRender::color_src`]).
+    pub(crate) fn actor_color_src(&self, i: usize) -> Option<(usize, &TmdSrc)> {
+        let a = self.actors.get(i)?;
+        Some((a.actor_idx, a.color_src.as_ref()?))
+    }
+
     pub(crate) fn actor_colour_stream(&self, i: usize) -> Option<(usize, &[u8], &[u32])> {
         self.actors
             .get(i)
@@ -329,6 +345,7 @@ impl BattleRender {
             mesh: BattleMesh::textured(mesh),
             object_ids,
             rest_pose,
+            color_src: Some(morph_src.clone()),
             morph_src: Some(morph_src),
         });
     }
@@ -592,12 +609,14 @@ impl LegaiaRuntime {
             // engine's to install - `SceneHost::tick` stages them the tick a
             // battle is up, independent of this build - so none is staged
             // here; the install below sets the texture slot and the idle.
+            let src = std::sync::Arc::new((tmd, mesh.tmd_bytes().to_vec()));
             actors.push(BattleActorRender {
                 actor_idx,
                 mesh: BattleMesh::textured(vmesh),
                 object_ids,
                 rest_pose,
-                morph_src: Some(std::sync::Arc::new((tmd, mesh.tmd_bytes().to_vec()))),
+                morph_src: Some(src.clone()),
+                color_src: Some(src),
             });
         }
         let tex_slots_used =
@@ -761,6 +780,7 @@ impl LegaiaRuntime {
                     .flatten()
                     .and_then(|a| a.frames.first().map(|f| flatten_frame(f)))
                     .unwrap_or_default();
+            let src = std::sync::Arc::new((tmd, mesh.tmd_bytes().to_vec()));
             br.push_wave_monster(
                 vram.clone(),
                 BattleActorRender {
@@ -768,7 +788,8 @@ impl LegaiaRuntime {
                     mesh: BattleMesh::textured(vmesh),
                     object_ids,
                     rest_pose,
-                    morph_src: Some(std::sync::Arc::new((tmd, mesh.tmd_bytes().to_vec()))),
+                    morph_src: Some(src.clone()),
+                    color_src: Some(src),
                 },
             );
             bound += 1;
@@ -860,12 +881,17 @@ fn party_actor_render(
     if vmesh.indices.is_empty() {
         return None;
     }
+    // The untextured half poses by the same object ids, so only a rigged
+    // (assembled) form carries one.
+    let color_src = (!object_ids.is_empty())
+        .then(|| std::sync::Arc::new((form.tmd.clone(), form.tmd_bytes.clone())));
     Some(BattleActorRender {
         actor_idx: form.member,
         mesh: BattleMesh::textured(vmesh),
         object_ids,
         rest_pose,
         morph_src: None,
+        color_src,
     })
 }
 

@@ -94,6 +94,7 @@ DIAG_GATES: list[dict[str, object]] = [
     {"env": "LEGAIA_DIAG_FX_ALL", "additive": False, "note": "log every effect sprite's projected centre each frame; draws nothing"},
     {"env": "LEGAIA_DIAG_NOFX", "additive": False, "note": "suppress the effect layer"},
     {"env": "LEGAIA_DIAG_NO_GHOSTS", "additive": False, "note": "suppress the battle after-image ghost pass (A/B attribution)"},
+    {"env": "LEGAIA_DIAG_NO_BODY_UNTEXTURED", "additive": False, "note": "draw battle bodies textured-only, without their untextured half (A/B attribution)"},
     {"env": "LEGAIA_DIAG_NO_PRIM_NEAR", "additive": False, "note": "disarm the per-primitive near reject (A/B attribution; the browser never disarms it)"},
     {"env": "LEGAIA_DIAG_NO_GROUND_DROP", "additive": False, "note": "keep the field ground's retail buckets off retail's vantage (A/B attribution; the browser always drops)"},
     {"env": "LEGAIA_DIAG_NO_PRIM_ORDER", "additive": False, "note": "draw the field per pixel instead of at each primitive's link in PSX mode (A/B attribution; the browser always links)"},

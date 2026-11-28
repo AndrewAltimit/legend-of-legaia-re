@@ -38,6 +38,23 @@ pub fn apply_body_blend(cba_tsb: &mut [[u16; 2]], mode: Option<u8>) {
     }
 }
 
+/// [`apply_body_blend`] for an untextured colour mesh's blend words
+/// (`legaia_tmd::mesh::ColorMesh::blend`, the ABE bit 15 / ABR bits 5..=6
+/// packing): with `Some(abr)` every word gets the ABE enable and `abr` ORed
+/// into the ABR it already carries. The untextured leaves take only the
+/// word's ABE (`0x800449B8`); their mode is the texpage register the body's
+/// textured packets left, each carrying the TMD's ABR with the word's ORed
+/// in, which the mesh builder seats in the word
+/// (`legaia_tmd::mesh::carry_untextured_abr`) and this ORs over.
+pub fn apply_body_blend_words(blend: &mut [u16], mode: Option<u8>) {
+    let Some(abr) = mode else {
+        return;
+    };
+    for b in blend {
+        *b |= legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT | (u16::from(abr & 3) << 5);
+    }
+}
+
 /// Whether the colour word selects handler bank 2 (bit `0x04000000`,
 /// `FUN_80043390`): the near-camera ghost pass and the after-image walk both
 /// raise it, and the bank's textured leaves write flat packets, one colour
@@ -96,6 +113,19 @@ fn flatten<T: Copy>(colours: &mut [T], plan: &[[u32; 5]]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn untextured_words_take_abe_and_or_the_mode() {
+        // A Songi word (TMD ABR 1) under the capture fade (ABR 1) and the
+        // near-camera pass (ABR 3).
+        let mut w = vec![1u16 << 5; 3];
+        apply_body_blend_words(&mut w, None);
+        assert_eq!(w, vec![0x20; 3], "an opaque body leaves the words");
+        apply_body_blend_words(&mut w, Some(1));
+        assert!(w.iter().all(|&b| b == 0x8020));
+        apply_body_blend_words(&mut w, Some(3));
+        assert!(w.iter().all(|&b| b == 0x8060));
+    }
 
     #[test]
     fn a_bank_2_word_draws_flat_packets() {

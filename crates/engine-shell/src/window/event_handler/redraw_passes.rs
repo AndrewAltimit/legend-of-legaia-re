@@ -374,6 +374,96 @@ impl PlayWindowApp {
         .ok()
     }
 
+    /// Each battle body's **untextured half** this frame, by actor slot: its
+    /// `F*` / `G*` prims, which the textured builders skip and retail's body
+    /// draw hands to the prim dispatcher's untextured leaves
+    /// (`legaia_engine_world_views::battle_draws::battle_body_color_mesh_posed`),
+    /// posed, morphed and masked as the textured mesh is, with the colour
+    /// word's ABE ORed over the ABR the body's textured packets carry
+    /// (`BattleActorDrawPlan::apply_body_blend_color`). Built only for a body
+    /// whose TMD holds an untextured group (a header walk), so the frame cost
+    /// is one colour build of those few bodies. A shattering body and the
+    /// after-image ghosts draw no untextured half (not modelled).
+    /// The browser page's twin is `play_battle_actor_color_*`.
+    pub(super) fn build_battle_body_color_meshes(
+        &self,
+        r: &legaia_engine_render::Renderer,
+    ) -> Vec<Option<UploadedColorMesh>> {
+        let world = &self.session.host.world;
+        let mut out: Vec<Option<UploadedColorMesh>> =
+            (0..world.actors.len()).map(|_| None).collect();
+        // A/B diagnostic: draw the bodies textured-only, as before the
+        // untextured half was ported.
+        if world.mode != SceneMode::Battle
+            || std::env::var_os("LEGAIA_DIAG_NO_BODY_UNTEXTURED").is_some()
+        {
+            return out;
+        }
+        for (ai, actor) in world.actors.iter().enumerate() {
+            if !actor.active {
+                continue;
+            }
+            let Some(tmd_idx) = actor.tmd_binding else {
+                continue;
+            };
+            let Some((tmd, raw)) = self.scene_tmd_data.get(tmd_idx) else {
+                continue;
+            };
+            if !legaia_tmd::mesh::has_untextured_prims(tmd, raw) {
+                continue;
+            }
+            let plan = self.body_draw_plan(ai);
+            if plan.as_ref().is_some_and(|p| p.shatter.is_some()) {
+                continue;
+            }
+            let pose = world
+                .battle_draw_pose_frame(ai)
+                .or(actor.pose_frame.as_ref());
+            let morphed = world.battle_morphed_tmd(ai, tmd);
+            let tmd = morphed.as_ref().unwrap_or(tmd);
+            let masked = legaia_engine_world_views::battle_draws::battle_drawn_objects(
+                world,
+                ai,
+                tmd.objects.len(),
+            )
+            .filter(|d| !d.iter().all(|&drawn| drawn))
+            .map(|d| legaia_engine_battle::battle_attach_swap::mask_tmd(tmd, &d));
+            let tmd = masked.as_ref().unwrap_or(tmd);
+            let mesh = match pose {
+                Some(pose) => {
+                    let rotate = actor.battle_animation.is_some()
+                        || world.player_actor_slot == Some(ai as u8);
+                    legaia_engine_world_views::battle_draws::battle_body_color_mesh_posed(
+                        world,
+                        ai,
+                        tmd,
+                        raw,
+                        &pose.bone_outputs,
+                        rotate,
+                    )
+                }
+                None => legaia_engine_world_views::battle_draws::battle_body_color_mesh(tmd, raw)
+                    .map(|(m, _)| m),
+            };
+            let Some(mut mesh) = mesh else {
+                continue;
+            };
+            if let Some(plan) = plan.as_ref() {
+                plan.apply_body_blend_color(&mut mesh);
+            }
+            match r.upload_color_mesh_blended(
+                &mesh.positions,
+                &mesh.colors,
+                &mesh.indices,
+                &mesh.blend,
+            ) {
+                Ok(m) => out[ai] = Some(m),
+                Err(e) => log::warn!("battle body colour upload: {e:#}"),
+            }
+        }
+        out
+    }
+
     pub(super) fn build_posed_actor_overrides(
         &self,
         r: &legaia_engine_render::Renderer,
