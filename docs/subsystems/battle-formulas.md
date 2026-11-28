@@ -2023,6 +2023,27 @@ cast, and a caster below the raw price but at the discounted one can cast.
 (`field_menu_dispatch::apply_spell_outcome`), the battle list, the battle fold
 and the Muscle Dome price.
 
+#### The committed spell's turn gate
+
+The Magic menu refuses a spell the member cannot pay for and greys Magic
+under Curse, so a commit is always affordable when it is made. The turn comes
+later in the round, and the queue builder `FUN_801EED1C`, which the action
+seed runs for every party turn (`0x801E2C7C`), tests the commit again
+(`0x801EF1CC..0x801EF294`, PROT 0898):
+
+```text
+if actor.category == 2:                         // Magic
+    if actor.status & 0x1000:  actor.category = 0       // Cursed since the menu
+    elif actor.mp < cost(actor.stream[0]):  actor.category = 0   // the fold above
+```
+
+Category `0` sends the seed straight to the Done band: the member stands for
+the turn and nothing is cast or paid. A Curse or an MP drain that lands
+between the commit and the turn therefore cancels the spell.
+**Port.** `legaia_engine_battle::spells::committed_spell_casts`, read by the
+party dispatch's Spell arm; differential
+`queue_head::a_committed_spell_holds_where_retail_holds_it`.
+
 ### RNG primitive
 
 ```text
