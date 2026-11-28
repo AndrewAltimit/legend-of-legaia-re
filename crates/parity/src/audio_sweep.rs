@@ -150,6 +150,14 @@ pub struct RetailAudio {
     pub cue_sounds: usize,
     /// Sounding sequence-owned voices.
     pub seq_voices: u32,
+    /// The card manager's `LaunchFade` under a Continue's Load, when the
+    /// state stands in it: the hold word `0x801EF104` and the ramp word
+    /// `0x801EF154`, read when master mode `0x17` holds sub-mode `0x16`
+    /// (`0x801F0204`) with the result word `0x801EF158` on a load and the
+    /// title's entry word `0x8007BB00` up - the arm that stores the live
+    /// audio level ([`crate::retail_compare::run_front_end_listening`]).
+    #[serde(default)]
+    pub card_launch: Option<(i32, i32)>,
 }
 
 /// What the engine's director is doing after the seed.
@@ -386,6 +394,11 @@ impl RetailAudio {
             cue_voices,
             cue_sounds,
             seq_voices,
+            card_launch: (rd16(0x8007_B83C) == 0x17
+                && rd32(0x801F_0204) == 0x16
+                && rd32(0x801E_F158) == 1
+                && rd32(0x8007_BB00) != 0)
+                .then(|| (rd32(0x801E_F104) as i32, rd32(0x801E_F154) as i32)),
         }
     }
 
@@ -707,9 +720,12 @@ pub fn run_sweep(
         // No track word yet: the front end, which no field seed reaches.
         let front_end = obs.class == StateClass::Menu && row.retail.track_word == 0;
         let run = match door {
-            _ if front_end => {
-                crate::retail_compare::run_front_end_listening(extracted, &obs).map(|a| ((), a))
-            }
+            _ if front_end => crate::retail_compare::run_front_end_listening(
+                extracted,
+                &obs,
+                row.retail.card_launch,
+            )
+            .map(|a| ((), a)),
             Some(d) => crate::retail_compare::run_engine_listening_through_door(extracted, &obs, d)
                 .map(|(_, a)| ((), a)),
             None => {
@@ -846,6 +862,34 @@ mod tests {
         assert!(a.seqs.is_empty());
         assert!(a.cue_voices.is_empty());
         assert_eq!(a.seq_voices, 0);
+    }
+
+    /// A state inside a Continue's `LaunchFade` hands its hold and ramp to
+    /// the front-end seat; the same words outside sub-mode `0x16`, or on the
+    /// pause menu's Load (entry word down), hand nothing.
+    #[test]
+    fn a_continue_load_state_reads_its_launch_position() {
+        let mut ram = row_ram();
+        let put32 = |ram: &mut [u8], va: u32, v: u32| {
+            let o = (va & 0x1F_FFFF) as usize;
+            ram[o..o + 4].copy_from_slice(&v.to_le_bytes());
+        };
+        put32(&mut ram, 0x8007_B83C, 0x17);
+        put32(&mut ram, 0x801F_0204, 0x16);
+        put32(&mut ram, 0x801E_F158, 1);
+        put32(&mut ram, 0x8007_BB00, 1);
+        put32(&mut ram, 0x801E_F104, 63);
+        put32(&mut ram, 0x801E_F154, 0);
+        let bank = TrackBank { tracks: Vec::new() };
+        assert_eq!(
+            RetailAudio::from_ram(&ram, &bank, None).card_launch,
+            Some((63, 0))
+        );
+        put32(&mut ram, 0x8007_BB00, 0);
+        assert_eq!(RetailAudio::from_ram(&ram, &bank, None).card_launch, None);
+        put32(&mut ram, 0x8007_BB00, 1);
+        put32(&mut ram, 0x801F_0204, 0x0B);
+        assert_eq!(RetailAudio::from_ram(&ram, &bank, None).card_launch, None);
     }
 
     /// Two records of one cue with no SPU envelope to vouch for them (a

@@ -227,9 +227,17 @@ pub fn run_engine_listening_through_door(
 /// check behind them, which play the title theme the hosts start on the title
 /// card ([`legaia_engine_session::BootSession::start_title_bgm`]). Nothing
 /// ticks the world; the audio frame alone runs, over the field sample's span.
+///
+/// A state inside a Continue's Load (`launch`, retail's `LaunchFade` hold and
+/// ramp words) is heard under the port's own Load: the save-select session
+/// is driven through a Load to the frame of its result line that matches
+/// the state's, and each frame stores the level the hosts take from it
+/// (`ContinueScreen::music_level`, `AudioDirector::front_end_level_frame`),
+/// so the score reads the port's level and not a seat's.
 pub fn run_front_end_listening(
     extracted: &Path,
     retail: &RetailObs,
+    launch: Option<(i32, i32)>,
 ) -> Result<crate::audio_sweep::EngineAudio> {
     let cfg = BootConfig {
         scene: retail.scene.clone(),
@@ -239,11 +247,75 @@ pub fn run_front_end_listening(
         .context("open boot session")?;
     anyhow::ensure!(session.start_title_bgm(), "the title theme did not start");
     let mut audio = crate::audio_sweep::EngineAudio::default();
-    for _ in 0..crate::audio_sweep::LISTEN_SPAN {
-        crate::audio_sweep::listen_frame(&mut session, &mut audio);
+    let Some((hold, ramp)) = launch else {
+        for _ in 0..crate::audio_sweep::LISTEN_SPAN {
+            crate::audio_sweep::listen_frame(&mut session, &mut audio);
+        }
+        crate::audio_sweep::finish_listen(&session, &mut audio);
+        return Ok(audio);
+    };
+    let (mut select, to_result) = load_commit_session()?;
+    // The state's frame of the line, counted from its first: the hold's
+    // `hold - 1`, or the whole hold and `ramp >> 8` ramp frames.
+    let into_line = if ramp > 0 {
+        usize::from(legaia_engine_menus::save_select::COMMIT_RESULT_FRAMES - 1)
+            + usize::try_from(ramp >> 8)?
+    } else {
+        usize::try_from(hold.max(1) - 1)?
+    };
+    let total = to_result + into_line;
+    let listen_from = total.saturating_sub(crate::audio_sweep::LISTEN_SPAN);
+    for t in 0..total {
+        if t >= listen_from {
+            crate::audio_sweep::listen_frame(&mut session, &mut audio);
+        }
+        select.tick(legaia_engine_menus::save_select::SelectInput::default());
+        if let (Some(r), Some(d)) = (select.load_launch_ramp(), session.bgm.as_mut()) {
+            d.store_audio_level(legaia_engine_menus::save_select::launch_fade_music_level(r));
+        }
     }
+    // The state's own frame: the driver applies the last store.
+    crate::audio_sweep::listen_frame(&mut session, &mut audio);
     crate::audio_sweep::finish_listen(&session, &mut audio);
     Ok(audio)
+}
+
+/// A title Continue's save-select (one readable block) taken through the
+/// block, its confirm and the Yes onto the Load's commit, and the ticks from
+/// there to the result line's first frame.
+fn load_commit_session() -> Result<(legaia_engine_menus::save_select::SaveSelectSession, usize)> {
+    use legaia_engine_menus::save_select::{
+        SaveSelectMode, SaveSelectSession, SelectInput, SlotContent, SlotSnapshot,
+    };
+    let mut slot = SlotSnapshot::empty(0);
+    slot.present = true;
+    slot.content = SlotContent::LegaiaSave;
+    let mut select = SaveSelectSession::new(SaveSelectMode::Load, vec![slot]);
+    select.set_card_slots_mode(true);
+    select.set_now_checking_frames(0);
+    let cross = SelectInput {
+        cross: true,
+        ..Default::default()
+    };
+    let left = SelectInput {
+        left: true,
+        ..Default::default()
+    };
+    for input in [cross, SelectInput::default(), cross, left, cross] {
+        select.tick(input);
+    }
+    anyhow::ensure!(
+        select.committing_work() == Some(true),
+        "the Load did not reach its read beat"
+    );
+    let mut probe = select.clone();
+    let mut to_result = 0;
+    while probe.load_launch_ramp().is_none() {
+        probe.tick(SelectInput::default());
+        to_result += 1;
+        anyhow::ensure!(to_result < 1000, "the Load's result line never came up");
+    }
+    Ok((select, to_result))
 }
 
 /// Ticks a door replay may take to land in the captured scene: a walk-on
