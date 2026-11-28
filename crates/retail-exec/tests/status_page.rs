@@ -158,8 +158,11 @@ fn the_condition_page_matches() {
         put16(&mut raw, 0x10E, rng.below(101) as u16);
         // The live stats, at times past what the page prints.
         for off in (0x110..=0x11A).step_by(2) {
-            let v = match rng.below(5) {
+            // Now and then past the cap, so each printed word meets the
+            // page's 999 clamp (`slti 0x3E8` at `0x801D3ABC` and its kin).
+            let v = match rng.below(6) {
                 0 => 999,
+                1 => 999 + rng.below(300),
                 _ => rng.below(1000),
             };
             put16(&mut raw, off, v as u16);

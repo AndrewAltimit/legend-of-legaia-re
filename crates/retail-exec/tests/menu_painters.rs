@@ -997,6 +997,7 @@ fn the_magic_casters_and_info_match() {
     );
     let mut rng = Rng(0x4D41_4749);
     let mut levels = 0;
+    let mut blank = 0;
     for run in 0..3_000 {
         let r = rect(&mut rng);
         // The present party, every member a caster (ids below 3).
@@ -1071,6 +1072,22 @@ fn the_magic_casters_and_info_match() {
             rig.cpu.mem.wr8(rec + 0x13D + k, id as u8);
             rig.cpu.mem.wr8(rec + 0x161 + k, rng.below(10) as u8);
         }
+        // With no spell under the hand (`0x801E46B0` zero, the caster
+        // focus) the window draws nothing (`blez` at `0x801D2EBC`).
+        if rng.below(8) == 0 {
+            rig.cpu.mem.wr32(SELECTED, 0);
+            let log = rig.run(MAGIC_INFO, r);
+            let text = magic_screen_draws_for_with(
+                &rig.font,
+                Some(&pool),
+                &magic_view(&[], None),
+                (0, 0),
+                (0, 0),
+                (r.x, r.y),
+            );
+            same_text(&rig, &log, &text, &format!("run {run}: no spell"));
+            blank += 1;
+        }
         rig.cpu.mem.wr32(SELECTED, spell);
         let log = rig.run(MAGIC_INFO, r);
         let srec = SPELLS + spell * 12;
@@ -1126,7 +1143,7 @@ fn the_magic_casters_and_info_match() {
         );
         levels += 1;
     }
-    assert!(levels > 2000, "{levels}");
+    assert!(levels > 2000 && blank > 200, "{levels} {blank}");
 }
 
 #[test]

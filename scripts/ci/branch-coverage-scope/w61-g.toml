@@ -159,3 +159,70 @@ image = "3d92de18c186341d"
 range = "0x801F3E98..0x801F3E98"
 verdict = "unreachable"
 reason = "PROT 0898 Seru debuff stager: the `sltiu 7` exit on the summon record's element (+0x1D off 0x801C9358). The stager is called only from the 21 Seru-magic images (casts 0x81..=0x95), whose summon.dat actor records all hold elements 0..6; the two element-7 records (0x96, 0x99) belong to casts that never call it (seru_debuff::every_cast_record_names_an_element_the_stager_tables_hold)."
+
+[[arm]]
+entry = "0x801D8D00"
+image = "3dd1752918e7389b"
+range = "0x801D8D6C..0x801D8D6C"
+verdict = "unreachable"
+reason = "PROT 0898 target-ring accessor: the direction switch on a0 (`beqz` then `beq 1`); all nine calls in the image (0x801D21FC..0x801D260C) pass a0 = 0 or 1 in the delay slot, so past `beqz` a0 is always 1 and the default arm is dead."
+
+[[arm]]
+entry = "0x801D9C14"
+range = "0x801D9CBC..0x801D9CBC"
+verdict = "unreachable"
+reason = "PROT 0899 equipment candidate step: the step switch's case chain on the pause step word 0x801E46AC: past `beq 1` and `slti 2`, `beqz` sees a step below 1, and the word is only ever stored as 0..6 or incremented from those, so the default `j` behind it is dead."
+
+[[arm]]
+entry = "0x801D33D8"
+range = "0x801D41C8..0x801D41C8"
+verdict = "unreachable"
+reason = "PROT 0899 status panel, Magic page: the row loop runs s6 from the list top while s6 < record +0x13C (the learned count, 0x801D4164 / 0x801D436C), and this `blez` skips a row whose id at +0x13D + s6 is zero; the learn path only prepends real spell ids and raises the count with each, so no row below the count holds id 0."
+
+[[arm]]
+entry = "0x801D33D8"
+range = "0x801D420C..0x801D420C"
+verdict = "unreachable"
+reason = "PROT 0899 status panel, Magic page: the row loop runs s6 from the list top while s6 < record +0x13C (the learned count, 0x801D4164 / 0x801D436C), and this `blez` skips a row whose id at +0x13D + s6 is zero; the learn path only prepends real spell ids and raises the count with each, so no row below the count holds id 0."
+
+[[arm]]
+entry = "0x801D33D8"
+range = "0x801D42D0..0x801D42D0"
+verdict = "unreachable"
+reason = "PROT 0899 status panel, Magic page: the row loop runs s6 from the list top while s6 < record +0x13C (the learned count, 0x801D4164 / 0x801D436C), and this `blez` skips a row whose id at +0x13D + s6 is zero; the learn path only prepends real spell ids and raises the count with each, so no row below the count holds id 0."
+
+[[arm]]
+entry = "0x801D33D8"
+range = "0x801D42FC..0x801D42FC"
+verdict = "unreachable"
+reason = "PROT 0899 status panel, Magic page: the row loop runs s6 from the list top while s6 < record +0x13C (the learned count, 0x801D4164 / 0x801D436C), and this `blez` skips a row whose id at +0x13D + s6 is zero; the learn path only prepends real spell ids and raises the count with each, so no row below the count holds id 0."
+
+[[arm]]
+entry = "0x801D2E74"
+range = "0x801D2F1C..0x801D2F1C"
+verdict = "unreachable"
+reason = "PROT 0899 Magic info window: the level lookup's empty-list skip on record +0x13C (the learned count); the window draws only for a spell under the hand (0x801E46B0 > 0, 0x801D2EBC), and that spell is a row of the caster's learned list, so the count is at least 1."
+
+[[arm]]
+entry = "0x801D2E74"
+range = "0x801D2F60..0x801D2F60"
+verdict = "unreachable"
+reason = "PROT 0899 Magic info window: the level lookup's loop bound; the selected spell is a row of the caster's learned list, so the scan always finds it before the count runs out."
+
+[[arm]]
+entry = "0x801D2E74"
+range = "0x801D2F90..0x801D2F90"
+verdict = "unreachable"
+reason = "PROT 0899 Magic info window: the found-index test after the level lookup; the selected spell is always found in the caster's learned list, so the not-found arm is dead."
+
+[[arm]]
+entry = "0x801D2E74"
+range = "0x801D2FA8..0x801D2FA8"
+verdict = "unreachable"
+reason = "PROT 0899 Magic info window: a second `blez` on 0x801E46B0, already tested above zero at 0x801D2EBC with no store to it between, so the skip is never taken."
+
+[[arm]]
+entry = "0x801D2E74"
+range = "0x801D2FFC..0x801D2FFC"
+verdict = "unreachable"
+reason = "PROT 0899 Magic info window: the description skip on a zero +4 index of the spell table record; every player spell 0x81..=0xA0 on the disc carries a description index, so the skip is never taken."
