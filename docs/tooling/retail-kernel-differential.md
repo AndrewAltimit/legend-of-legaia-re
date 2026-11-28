@@ -2296,7 +2296,13 @@ unsigned, which no shipped operand (`0..=8`, `0xFFFF`) tells apart but a
 script's `0x00FF` or `0x80xx` does. Op `43`'s arc jump hands `FUN_801D25EC`
 the landing, apex and frames `ScriptArcRequest::landing` builds. The list-order
 page in `FUN_801DA2A0` tests its page keys Right then Left, so a frame with
-both pages forward and back; the port took Right alone.
+both pages forward and back; the port took Right alone. The save-panel slide
+`FUN_801E1C1C` draws the browsing pill row at the grey `min(0x801EF120 >> 5,
+0x80)` and its hand only at a pre-roll of `0x1000`, so on the title's
+Continue screen the pills rise out of black; the port drew them full with the
+hand up at once. The fishing driver's tail clears the hook banner's timer on
+every frame the reel-in timer runs, where the port cleared it once at the
+landing.
 
 The list kernel `FUN_80032A44`'s header and page triangles, run on random node rects, showed the battle item
 and magic lists drawing both one pixel low and the next-page triangle one pixel left: their seats were read off a
