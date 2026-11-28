@@ -165,3 +165,10 @@ image = "85f14627e5960000"
 range = "0x801DB29C..0x801DB29C"
 verdict = "unported"
 reason = "PROT 0899 shop buy list, step 1: hold until the window walker's slide latch _DAT_8007BB80 clears, then arm list mode 1; the port's list has no slide latch to wait on."
+
+[[arm]]
+entry = "0x801E1C1C"
+image = "fa3ffdbb31fb7007"
+range = "0x801E1C98..0x801E1C98"
+verdict = "unreachable"
+reason = "PROT 0899 save-panel slide: the mode table's default (a0 >= 5); its eight jal sites in the overlay (0x801DD6E0 .. 0x801DFD7C) pass a0 = 0, 1, 2, 3 or 4."
