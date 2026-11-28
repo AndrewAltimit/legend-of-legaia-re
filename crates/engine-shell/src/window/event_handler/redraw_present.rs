@@ -1516,6 +1516,41 @@ impl PlayWindowApp {
             }
             let _ = writeln!(f, "{tick},{}", cols.join(","));
         }
+        // `LEGAIA_DIAG_CAST_PARTS=1`: `tint.csv` (no header), per tick and
+        // per retail seat 0..7 the tint state machine's words - colour
+        // `+0x04`, blend `+0x0C`, state `+0x21C`, impact selector `+0x21F` -
+        // the engine half of the probe's `tint.csv` (`--retail-parts`).
+        if std::env::var_os("LEGAIA_DIAG_CAST_PARTS").is_some()
+            && let Ok(f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(rec.dir.join("tint.csv"))
+        {
+            let mut f = std::io::BufWriter::new(f);
+            let tint = |a: &legaia_engine_core::world::Actor| {
+                format!(
+                    "{:#010x},{:#06x},{},{}",
+                    a.battle.render_color,
+                    a.battle.render_blend,
+                    a.battle.render_flag,
+                    a.battle.impact_state
+                )
+            };
+            let mut cols = vec!["-1,-1,-1,-1".to_string(); 8];
+            for (i, a) in w.actors.iter().enumerate().take(pc + 5) {
+                if let Some(c) = cols.get_mut(seat_of(i)) {
+                    *c = tint(a);
+                }
+            }
+            if let Some(a) = w
+                .casting
+                .summon_actor_slot
+                .and_then(|c| w.actors.get(usize::from(c)))
+            {
+                cols[7] = tint(a);
+            }
+            let _ = writeln!(f, "{tick},{}", cols.join(","));
+        }
         // `rates.csv` (no header): per tick, then per retail seat 0..7 the
         // animation rate `+0x21D` and the node cursor `+0x68` (`-1` with no
         // clip playing) - the engine half of the probe's file, off which a

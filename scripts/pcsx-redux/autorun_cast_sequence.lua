@@ -301,6 +301,24 @@ function probe.cast_parts_row(cast_seen, elapsed, st7, cx)
         probe.cast_fxpool = probe.csv_open(probe.out_path("fxpool.csv"),
             "vsync,st7,phase,slot,frames,cursor,x,y,z")
     end
+    -- tint.csv: per vsync and per pool slot 0..7 the tint state machine's
+    -- words (FUN_80050120): colour +0x04, blend +0x0C, state +0x21C, impact
+    -- selector +0x21F (`-1` columns for an empty slot).
+    if probe.cast_tint == nil then
+        local cols = {}
+        for k = 0, 7 do cols[#cols + 1] = string.format("s%dcol,s%dblend,s%dstate,s%dsel", k, k, k, k) end
+        probe.cast_tint = probe.csv_open(probe.out_path("tint.csv"), "vsync,st7,phase," .. table.concat(cols, ","))
+    end
+    local tint = {}
+    for k = 0, 7 do
+        local a = u32(ACTOR_TABLE + 4 * k)
+        if a >= 0x80000000 and a < 0x80200000 then
+            tint[#tint + 1] = string.format("0x%08X,0x%04X,%d,%d", u32(a + 0x04), u32(a + 0x0C), u8(a + 0x21C), u8(a + 0x21F))
+        else
+            tint[#tint + 1] = "-1,-1,-1,-1"
+        end
+    end
+    probe.cast_tint:row("%d,%d,%d,%s", elapsed, st7, u8(cx + 0x279), table.concat(tint, ","))
     local pool = u32(0x8007BD30)
     if pool >= 0x80000000 and pool < 0x80200000 then
         for k = 0, 127 do
