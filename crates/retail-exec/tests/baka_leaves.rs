@@ -684,6 +684,19 @@ mod widgets {
             assert_eq!(cpu.call(EMIT, &args), Stop::Returned);
             let retail = decode(&mut cpu);
             let port = hud_widget_quad(&hud[id as usize], x, y, brightness, size, mirror);
+            // Verts 1 and 3 carry verts 0's and 2's colours (`+0x10`, `+0x28`).
+            let rgb = |m: &mut psx_retail_exec::Memory, o: u32| {
+                [
+                    m.rd8(PACKET + o),
+                    m.rd8(PACKET + o + 1),
+                    m.rd8(PACKET + o + 2),
+                ]
+            };
+            assert_eq!(
+                (rgb(&mut cpu.mem, 0x10), rgb(&mut cpu.mem, 0x28)),
+                (port.rgb_top, port.rgb_bottom),
+                "round {round} widget {id} brightness {brightness}: verts 1 and 3"
+            );
             assert_eq!(
                 retail, port,
                 "round {round} widget {id} {:?} x {x} y {y} brightness {brightness} size {size:#x} mirror {mirror}",
