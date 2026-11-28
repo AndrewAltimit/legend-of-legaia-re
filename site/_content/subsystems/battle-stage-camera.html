@@ -180,6 +180,41 @@
     <figcaption>Each set's frames priced with that set left out of the fit, against its PCSX-Redux recordings. Hover a bar for the share of frames that land on retail&rsquo;s step.</figcaption>
   </figure>
   <p>That is what puts a Super Art&rsquo;s edge frames on retail&rsquo;s step. Tri-Somersault&rsquo;s one-ghost frame prices <code>707</code> hblanks (retail <code>692</code>, the line <code>721</code>) and Gala&rsquo;s Chain&rsquo;s commit pass <code>719</code> (retail <code>717</code>, the line <code>723</code>). The arts films go from <code>.9517</code> to <code>.9656</code> (Tri-Somersault <code>.817</code> to <code>.939</code>), the strikes from <code>.9849</code> to <code>.9882</code> with none down, the enemy casts from <code>.9620</code> to <code>.9634</code>. It is on by default in both hosts (<code>WorldToggles::battle_census_retail_culls</code>; <code>LEGAIA_CENSUS_RETAIL_CULLS=0</code> restores the float rules and the line on a native session), and like every frame-cost term it changes when a frame runs, never what it draws.</p>
+  <h3 id="the-frame-it-drew">A pass is priced on the frame it drew</h3>
+  <p>The census counts the frame a pass draws, and that frame is not finished when the world&rsquo;s tick returns. Retail&rsquo;s effect-script walk (<code>FUN_801DEA50</code>, from the anim tick) hands its spawns to the effect pool ahead of the battle draw tick <code>FUN_800480D8</code>, so the frame that strikes links its own spark burst. The port routes those spawns, runs the hit bursts and seats the parts the tick placed in the frame tail, after the scene host&rsquo;s tick (<code>World::route_battle_effect_spawns</code>). Counted at the end of the tick, the spawn pass was priced on the pass before&rsquo;s effects and its parts reached the ring a pass late, so a strike&rsquo;s spark pass, which in retail runs past <code>0x2D0</code> hblanks and puts the next pass on step 4, priced under it. The scene host therefore closes a pass at the head of its next tick, on the census of the frame it drew (<code>SceneHost::tick</code>), on both hosts.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 214" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="One battle pass in retail and in the port. Retail: the anim tick, then the effect-script walk spawns the hit's sparks, then the draw tick links them, and the frame is priced on what it linked. Port: the world tick, then the frame tail routes the spawns and seats the parts, then the host draws, and the next tick's head closes the pass on the census of that drawn frame.">
+      <defs><marker id="bsc-fd-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text class="dg-label dg-start" x="16" y="54">retail</text>
+      <rect class="dg-node" x="90" y="30" width="160" height="44" rx="5"/>
+      <text class="dg-label" x="170" y="50">anim tick</text><text class="dg-sub" x="170" y="66">the hit lands</text>
+      <rect class="dg-node" x="280" y="30" width="170" height="44" rx="5"/>
+      <text class="dg-label" x="365" y="50">effect-script walk</text><text class="dg-sub" x="365" y="66">FUN_801DEA50 spawns</text>
+      <rect class="dg-node" x="480" y="30" width="160" height="44" rx="5"/>
+      <text class="dg-label" x="560" y="50">draw tick</text><text class="dg-sub" x="560" y="66">FUN_800480D8 links</text>
+      <rect class="dg-node-accent" x="670" y="30" width="174" height="44" rx="5"/>
+      <text class="dg-label" x="757" y="50">priced</text><text class="dg-sub" x="757" y="66">on what it linked</text>
+      <path class="dg-edge" d="M250 52 L278 52" marker-end="url(#bsc-fd-arrow)"/>
+      <path class="dg-edge" d="M450 52 L478 52" marker-end="url(#bsc-fd-arrow)"/>
+      <path class="dg-edge" d="M640 52 L668 52" marker-end="url(#bsc-fd-arrow)"/>
+      <text class="dg-label dg-start" x="16" y="134">port</text>
+      <rect class="dg-node" x="90" y="110" width="160" height="44" rx="5"/>
+      <text class="dg-label" x="170" y="130">world tick</text><text class="dg-sub" x="170" y="146">SceneHost::tick</text>
+      <rect class="dg-node" x="280" y="110" width="170" height="44" rx="5"/>
+      <text class="dg-label" x="365" y="130">frame tail</text><text class="dg-sub" x="365" y="146">spawns routed, parts seated</text>
+      <rect class="dg-node" x="480" y="110" width="160" height="44" rx="5"/>
+      <text class="dg-label" x="560" y="130">host draw</text><text class="dg-sub" x="560" y="146">either host</text>
+      <rect class="dg-node-accent" x="670" y="110" width="174" height="44" rx="5"/>
+      <text class="dg-label" x="757" y="130">next tick's head</text><text class="dg-sub" x="757" y="146">closes the pass</text>
+      <path class="dg-edge" d="M250 132 L278 132" marker-end="url(#bsc-fd-arrow)"/>
+      <path class="dg-edge" d="M450 132 L478 132" marker-end="url(#bsc-fd-arrow)"/>
+      <path class="dg-edge" d="M640 132 L668 132" marker-end="url(#bsc-fd-arrow)"/>
+      <path class="dg-edge-dim" d="M250 162 C 300 196, 620 196, 668 156" marker-end="url(#bsc-fd-arrow)"/>
+      <text class="dg-edge-label" x="460" y="204">counted at the world tick's end, the census missed the tail's spawns: the pass before's effects</text>
+    </svg>
+    <figcaption>One pass, left to right. The census the port prices is the drawn frame&rsquo;s, the frame retail&rsquo;s draw tick links.</figcaption>
+  </figure>
+  <p>What the census cannot see is a wait. Megaton Press&rsquo;s arms land within a few percent of the polygons in the GPU table a PCSX-Redux recording holds on all but two of them, yet arm 15 costs about twice its census work: the GPU draws its <code>2331</code> polygons in about <code>690</code> hblanks and the frame waits on <code>DrawSync</code>, and the polled arms stretch past their census by the polls&rsquo; share. Both run on the arm table&rsquo;s step, so neither moves the cast&rsquo;s timing, only how long its frames take on the wall clock.</p>
   <p>An enemy cast&rsquo;s module arms run on a second table read the same way, fitted on the enemy cast films: one row per recorded cast. Over the enemy cast films that reads retail&rsquo;s step right about three times in four. A cast no film has recorded keeps the ordinary step: most of its arms likely run at four, but a still captured on a counted pass lands on another pass there, so each waits for its own recording. Death Game stays on the ordinary step until its port bodies count by the vsync as retail&rsquo;s do.</p>
 </section>
 
