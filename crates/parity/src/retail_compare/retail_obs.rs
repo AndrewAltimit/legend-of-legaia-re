@@ -316,6 +316,9 @@ pub struct RetailObs {
     /// The player's clip words ([`retail_player_clip`]), handed to the image
     /// child as `LEGAIA_SEAT_PLAYER_CLIP`.
     pub player_clip: Option<ObjectClipSeed>,
+    /// The player's clip words as the RAM holds them
+    /// ([`retail_player_clip_ram`]): the walk film's seat.
+    pub player_clip_ram: Option<ObjectClipSeed>,
     /// Field actors' live VDF morph envelopes ([`retail_morphs`]), handed to
     /// the image child as `LEGAIA_SEAT_MORPHS`.
     pub morphs: Vec<MorphSeed>,
@@ -677,6 +680,11 @@ impl RetailObs {
             },
             player_clip: if matches!(class, StateClass::Field | StateClass::WorldMap) {
                 retail_player_clip(ram)
+            } else {
+                None
+            },
+            player_clip_ram: if matches!(class, StateClass::Field | StateClass::WorldMap) {
+                retail_player_clip_ram(ram)
             } else {
                 None
             },

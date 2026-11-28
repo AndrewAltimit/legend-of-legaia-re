@@ -167,6 +167,11 @@ impl WalkFilm {
                     c.rate,
                 );
             }
+            if std::env::var_os("LEGAIA_RC_NO_PLAYER_CLIP_SEAT").is_none()
+                && let Some(c) = retail.player_clip_ram
+            {
+                seat_player_clip(session, c);
+            }
         }
         // A placed object the state holds collision-exempt (a door the player
         // pushed open, `+0x10 & 3`) stops blocking from the film's first
@@ -245,6 +250,22 @@ impl WalkFilm {
             // of the frame before (`0x1F800392`, stored after the wait).
             if let Some((wait, _)) = retail.step_bytes.filter(|b| b.0 > 0) {
                 world.clock.pass_wait = Some(wait.max(world.clock.frame_step_floor));
+            }
+            // A state saved on phase `0` holds a frame whose pacer block has
+            // not run: its sample lands in the ring on the film's first
+            // vsync (every cached phase-`0` film reads the ring cursor one
+            // past the state's there), ahead of the first pass the engine
+            // runs, and its resolve is the step that pass takes. The sample
+            // is the newest one's stand-in. A harness seat;
+            // `LEGAIA_RC_NO_RING_FLIGHT=1` leaves the ring as saved.
+            if retail.vsync_phase == 0 && std::env::var_os("LEGAIA_RC_NO_RING_FLIGHT").is_none() {
+                let floor = world.clock.frame_step_floor;
+                let step = world
+                    .clock
+                    .frame_step_telemetry
+                    .resolve(cost, true, floor)
+                    .vsyncs_per_tick();
+                world.clock.frame_step = step.max(floor).max(1);
             }
             // The frame-cost model, where it prices the field, carries the
             // change from the state's measured cost, not its own level
@@ -807,6 +828,46 @@ fn seat_frame_accums(world: &mut legaia_engine_core::world::World, accum: u8) {
 /// actors were bound from (`SceneHost::headless_clip_banks`), and latch it
 /// as the playing move (`+0x5E`) the ambient walker's requests compare
 /// against. A harness seat.
+/// The player's clip where the RAM holds it: a scene-bank clip the script
+/// bound (`A2 F8 <id>` with the party-bank bit down) is bound first, then the
+/// cursor, control word and rate are seated on the player's clip and on the
+/// cross-context cursor a talk's `AD F8 08` reads. The seed's record ran
+/// from its start and reached the gate PC with the clip at another phase,
+/// so an end-latch wait behind the gate ran out on the seed's phase, not
+/// retail's. A harness seat; `LEGAIA_RC_NO_PLAYER_CLIP_SEAT=1` leaves it.
+fn seat_player_clip(session: &mut NativeSession, c: ObjectClipSeed) {
+    let scene = c.record == 1;
+    if scene
+        && let Some(record) = u16::from(c.clip).checked_sub(1)
+        && let Some(bank) = session
+            .host
+            .headless_clip_banks
+            .as_ref()
+            .and_then(|b| b.scene_anm.clone())
+        && let Some(clip) = legaia_engine_field::field_anim::FieldClipPlayer::from_record(
+            &bank,
+            usize::from(record),
+        )
+        && let Some(anim) = session.host.world.locomotion.player_anim.as_mut()
+    {
+        anim.bind_scripted(record, clip);
+    }
+    let world = &mut session.host.world;
+    world.seed_player_clip(c.clip, c.cursor, c.flags, c.rate, scene);
+    if scene {
+        use legaia_engine_scene::field_env::{PLAYER_ANCHOR_TARGET, PLAYER_CLIP_STANDIN_FRAMES};
+        let bank = &mut world.props.bank;
+        bank.bind_actor_clip(PLAYER_ANCHOR_TARGET, c.clip, PLAYER_CLIP_STANDIN_FRAMES);
+        if let Some(a) = bank.actor_clip_mut(PLAYER_ANCHOR_TARGET) {
+            a.cursor = c.cursor;
+            a.flags = c.flags;
+            if c.rate != 0 {
+                a.rate = c.rate;
+            }
+        }
+    }
+}
+
 fn seat_npc_clip_ids(session: &mut NativeSession, retail: &RetailObs) {
     let Some(banks) = session.host.headless_clip_banks.clone() else {
         return;
