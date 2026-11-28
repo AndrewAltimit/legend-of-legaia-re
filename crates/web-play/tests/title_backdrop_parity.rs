@@ -209,3 +209,92 @@ fn a_reopened_title_keeps_the_row_the_last_one_held() {
     assert_eq!(outcome, "continue", "the reopened title opened on CONTINUE");
     eprintln!("[ran] title row memory");
 }
+
+/// The title Continue's card pills rise out of black on the page as the
+/// session's model shades them, and the pointing hand waits for them: mode
+/// `2` of `FUN_801E1C1C` draws the browsing pills at the grey
+/// `min(0x801EF120 >> 5, 0x80)` (`0x801E1E0C..0x801E1E40`) and the hand only
+/// at a pre-roll of `0x1000` (`0x801E1DE0..0x801E1DE8`). The page reaches the
+/// shared `save_select_overlay_draws` through `boot_continue_draws_json`, so
+/// the quads it blits carry that grey.
+#[test]
+fn the_title_continue_pills_fade_in_and_the_hand_waits() {
+    let Some(disc) = std::env::var("LEGAIA_DISC_BIN").ok() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let bytes = std::fs::read(&disc).expect("read disc");
+    let mut rt = LegaiaRuntime::new();
+    rt.load_disc(bytes, String::new()).expect("load disc");
+    rt.enter_field("town01").expect("enter town01");
+    rt.insert_card(0, card_with_save(3), "card A".into())
+        .expect("insert card into port 1");
+    rt.boot_title_start();
+    for _ in 0..240 {
+        rt.boot_title_step(0);
+    }
+    rt.boot_title_step(START);
+    rt.boot_title_step(0);
+    rt.boot_title_step(0x0040);
+    let mut outcome = String::new();
+    for _ in 0..240 {
+        rt.boot_title_step(0);
+        outcome = rt.boot_title_step(CROSS);
+        if !outcome.is_empty() {
+            break;
+        }
+    }
+    assert_eq!(outcome, "continue");
+    let greys = |rt: &LegaiaRuntime| -> Vec<f64> {
+        let v: serde_json::Value =
+            serde_json::from_str(&rt.boot_continue_draws_json(320, 240)).expect("draws json");
+        v["sprites"]
+            .as_array()
+            .expect("sprites")
+            .iter()
+            .map(|s| s["color"][0].as_f64().unwrap_or(1.0))
+            .collect()
+    };
+    let mut frames = Vec::new();
+    for _ in 0..40 {
+        rt.boot_continue_step(0);
+        frames.push(greys(&rt));
+    }
+    // The pills are the quads below full grey; the hand is the one quad
+    // that joins once they are up.
+    let dim = |g: &Vec<f64>| g.iter().copied().filter(|&c| c < 0.999).collect::<Vec<_>>();
+    let first = dim(&frames[0]);
+    assert!(
+        !first.is_empty() && first.iter().all(|&c| c <= 0.04),
+        "the pills open out of black: {first:?}"
+    );
+    let base = frames[0].len();
+    let mut last = 0.0f64;
+    let mut up_at = None;
+    for (i, g) in frames.iter().enumerate() {
+        let d = dim(g);
+        if d.is_empty() {
+            up_at.get_or_insert(i);
+            assert_eq!(
+                g.len(),
+                base + 1,
+                "frame {i}: the hand joins the risen pills"
+            );
+            continue;
+        }
+        assert!(up_at.is_none(), "frame {i}: the pills dim again");
+        assert_eq!(g.len(), base, "frame {i}: no hand while the pills fade");
+        assert!(
+            d[0] > last,
+            "frame {i}: the grey rises ({} after {last})",
+            d[0]
+        );
+        last = d[0];
+    }
+    let up_at = up_at.expect("the pills reach full grey");
+    eprintln!(
+        "[page-continue] pills full and hand up on step {}",
+        up_at + 1
+    );
+    assert_eq!(up_at + 1, 32, "32 frame steps of the 0x80 pre-roll ramp");
+}
