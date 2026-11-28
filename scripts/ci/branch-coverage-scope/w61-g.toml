@@ -152,3 +152,10 @@ entry = "0x80034358"
 range = "0x80034504..0x80034504"
 verdict = "unreachable"
 reason = "The arts list's AP numeral: the place walk's zero-terminator exit on the first word of the power table at 0x80073DCC, which is 400000000; the exit never fires."
+
+[[arm]]
+entry = "0x801F3D3C"
+image = "3d92de18c186341d"
+range = "0x801F3E98..0x801F3E98"
+verdict = "unreachable"
+reason = "PROT 0898 Seru debuff stager: the `sltiu 7` exit on the summon record's element (+0x1D off 0x801C9358). The stager is called only from the 21 Seru-magic images (casts 0x81..=0x95), whose summon.dat actor records all hold elements 0..6; the two element-7 records (0x96, 0x99) belong to casts that never call it (seru_debuff::every_cast_record_names_an_element_the_stager_tables_hold)."

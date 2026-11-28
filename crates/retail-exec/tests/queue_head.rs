@@ -49,6 +49,7 @@ struct Turn {
     lead_status: u16,
     terra_hp: u16,
     terra_mp: u16,
+    terra_status: u16,
     monsters: u8,
     alive: [bool; 3],
     classes: [u8; 3],
@@ -76,6 +77,8 @@ fn gen_turn(rng: &mut Rng) -> Turn {
         },
         terra_hp: 1 + rng.below(200) as u16,
         terra_mp: rng.below(200) as u16,
+        // Her own limbs: the builder's strip runs on her stream as well.
+        terra_status: [0u16, 0, 0, 0x08, 0x10, 0x20, 0x30][rng.below(7) as usize],
         monsters,
         alive,
         classes: [rng.below(4) as u8, rng.below(4) as u8, rng.below(4) as u8],
@@ -117,6 +120,7 @@ fn the_companion_picks_what_retail_picks() {
         cpu.mem.wr16(actor(0) + 0x16E, t.lead_status);
         cpu.mem.wr16(actor(1) + 0x14C, t.terra_hp);
         cpu.mem.wr16(actor(1) + 0x150, t.terra_mp);
+        cpu.mem.wr16(actor(1) + 0x16E, t.terra_status);
         for m in 0..3u32 {
             let rec = MONSTER + m * 0x80;
             cpu.mem.wr32(MONSTER_RECORDS + m * 4, rec);
@@ -168,6 +172,7 @@ fn the_companion_picks_what_retail_picks() {
         split_statuses(&mut w, t.seed);
         w.actors[1].battle.hp = t.terra_hp;
         w.actors[1].battle.mp = t.terra_mp;
+        w.actors[1].battle.field_flags = t.terra_status;
         w.rng_state = t.seed;
         w.queue_builder_head();
         assert!(w.arm_ai_companion(1), "seat 1 is the companion");

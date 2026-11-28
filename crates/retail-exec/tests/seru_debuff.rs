@@ -214,3 +214,46 @@ fn a_stager_call_stages_what_retail_stages() {
     assert!(suppressed > 1000, "{suppressed}");
     assert!(moved > 100, "{moved}");
 }
+
+/// The stager reads the summon record's element (`lbu 0x1D` off
+/// `0x801C9358`, the slot-4 record each cast's own `summon.dat` actor record
+/// is copied onto) and leaves at `sltiu 7` (`0x801F3E98`); past it, its two
+/// tables (`0x801F53E8`, eight bytes a row, and `0x801F6870`, thirty-two)
+/// would be read out of range. Every cast that calls the stager (the 21 Seru,
+/// `0x81..=0x95`) holds an element below 7; the two element-7 records (`0x96`,
+/// `0x99`) belong to casts whose images make no such call. The port's
+/// summon-element table (the archive twin's byte) names the same element as
+/// each cast record, so neither the exit nor the out-of-table read is reached.
+#[test]
+fn every_cast_record_names_an_element_the_stager_tables_hold() {
+    not_a_differential!(
+        "reads the summon.dat actor records and the monster archive; runs no routine"
+    );
+    use legaia_actor_formats::summon_readef as sr;
+    let Some(d) = disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let summon_dat = d
+        .read_entry(usize::from(sr::SUMMON_PROT_INDEX))
+        .expect("summon.dat");
+    let archive = d.read_entry(867).expect("monster archive");
+    let mut seen = 0;
+    for spell in sr::PLAYER_CAST_IDS {
+        let Ok(head) = sr::cast_record_stats(&summon_dat, spell) else {
+            continue;
+        };
+        seen += 1;
+        // `0x96` and `0x99` are element 7; their images carry no call to the
+        // stager (it sits in the 21 Seru images, `0x81..=0x95`).
+        if spell <= 0x95 {
+            assert!(head.element < 7, "{spell:#04x}: element {}", head.element);
+        }
+        if let Some((_, twin)) =
+            legaia_engine_effects::summon::summon_creature_record(spell, &archive)
+        {
+            assert_eq!(twin.element, head.element, "{spell:#04x}: archive twin");
+        }
+    }
+    assert!(seen >= 0x15, "{seen} cast records");
+}

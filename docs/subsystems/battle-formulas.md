@@ -2038,7 +2038,13 @@ if actor.category == 2:                         // Magic
 ```
 
 Category `0` sends the seed straight to the Done band: the member stands for
-the turn and nothing is cast or paid. A Curse or an MP drain that lands
+the turn and nothing is cast or paid. The builder's limb strip runs on the whole
+16-byte stream first (`0x801EF03C..0x801EF1A4`, every category, the AI
+companion's arms excepted - they jump to the epilogue): a stream byte
+`0x0C..0x0F` under the matching Rot limb leaves it. On a Magic or Item commit
+that byte is the spell or item id, but no player spell (`0x81..`) and no
+battle-usable item falls in that range (items `0x0C..0x0F` are field-only), so
+the strip never touches a commit the menus can make. A Curse or an MP drain that lands
 between the commit and the turn therefore cancels the spell.
 **Port.** `legaia_engine_battle::spells::committed_spell_casts`, read by the
 party dispatch's Spell arm; differential
