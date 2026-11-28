@@ -20,9 +20,12 @@ pub struct ColorMesh {
     /// mode byte's ABE bit packed into bit 15 (the same
     /// [`TSB_SEMI_TRANSPARENT_BIT`] convention the textured path rides on
     /// TSB), ABR blend mode in bits 5..=6. Legaia's untextured prims carry
-    /// no texpage/ABR field, so ABR is 0 (B/2+F/2, the PSX draw-env
-    /// default); only the ABE enable varies. All corners of a prim share
-    /// one word.
+    /// no texpage/ABR field: the GPU blends one in the ABR its texpage
+    /// register holds, which the last `E1` or textured polygon set. That is
+    /// mode 0 (B/2+F/2) for every untextured semi prim the hosts draw
+    /// (`docs/subsystems/renderer-port.md`, "The GPU carries its draw
+    /// mode"), so ABR is 0 here; only the ABE enable varies. All corners of
+    /// a prim share one word.
     ///
     /// [`TSB_SEMI_TRANSPARENT_BIT`]: super::TSB_SEMI_TRANSPARENT_BIT
     pub blend: Vec<u16>,

@@ -106,9 +106,53 @@ word (same ABE/ABR bit positions, `psx_blend::pack_blend_word`); with
 semi-blend on, the opaque colour pass discards ABE prims and the colour-mesh blend
 pipelines re-draw their per-ABR-mode index tail
 (`psx_blend::append_semi_tail_words`) with the prim colour as
-`F`. Untextured TMD prims carry no texpage, so the caller resolves ABR
-from draw-env state (mode 0 = the PSX default); plain
-`upload_color_mesh` keeps every prim opaque.
+`F`. Untextured TMD prims carry no texpage: the GPU blends them in the ABR its
+texpage register holds when it reaches them ([below](#the-gpu-carries-its-draw-mode)),
+which is mode 0 for every untextured semi prim the port draws, so the caller
+packs `0`; plain `upload_color_mesh` keeps every prim opaque.
+
+#### The GPU carries its draw mode
+
+The GPU keeps one draw mode across the packet stream, and a packet that does not
+set a field draws with what the stream left in it. The texpage register (page,
+ABR, colour depth, dither bit) starts at the DRAWENV's `E1` word, which
+`PutDrawEnv` sends ahead of the table, and two packets rewrite it: an `E1`
+(DR_MODE), all of it, and a textured polygon, bits `0..8` and `11` through its
+page halfword (PCSX-Redux `SoftRenderer::texturePage`, called from every
+textured polygon; the dither bit stays). An untextured polygon or line takes its
+ABR from the register, a textured sprite (`0x60..0x7F`) its page as well, and
+every polygon its dither bit. So an untextured semi prim drawn after a textured
+one blends in that prim's ABR, not the last `E1`'s.
+
+[`ot_draw_state.py`](../../scripts/pcsx-redux/ot_draw_state.py) walks each drawn
+table of the retail save-state library carrying that state. Across `1215`
+tables, of the `1385` untextured semi prims `65` carry an ABR the last `E1` does
+not name, and all of them sit among a battle body's own packets while its colour
+word forces semi-transparency (the near-camera pass `0x83000000`, the capture
+fade): the body's textured prims carry the monster's TMD ABR `1` ORed with the
+word's, and the body's untextured groups follow in that mode. The port draws a
+battle body's textured prims only (`tmd_to_vram_mesh_posed_rot` and the rest
+mesh skip a prim with no UVs), so none of those reaches a host. Every other
+untextured semi prim the port draws follows an `E1` or a textured prim at ABR
+`0`: the overworld pointer (`world_map_display_map01_retail`), the screen
+washes and fades. The dispatcher never writes ABR into an untextured packet
+(`apply_render_state_color` in `summon/part_draw.rs`), so the port's mode `0`
+is the carried mode for each of them.
+
+The other carried fields hold no case either. `E2` (texture window) and `E6`
+(mask bits) occur in no table. An `E1` that lowers the dither bit occurs only as
+the DR_MODE ahead of 2D chrome - the HUD's buckets `0..1`, the menu and shop
+windows' bucket `2096` - so no 3D primitive draws undithered after one, and the
+port's menu stills already score `1.000`. A field table's `E3` / `E4` pair at
+bucket `2096` narrows the drawing area and puts it back before any packet
+draws.
+
+The Call Wave film's (`garmel_zeto_pre_call_wave__55`) dark disc behind Zeto is
+not a draw-mode case: retail draws it as a textured `GT4` (`0x3E`, page `0x3F`,
+the default arm's patch at ABR `1`), the port draws the same packets the same way,
+and on the pairs where both hold the same ring radii the frames agree. The
+capture-3 drop is the ring emitter's expand-to-contract switch, which retail
+takes about seventeen frames sooner.
 
 **A draw can force semi-transparency on every prim.** Retail's prim
 dispatcher `FUN_80043390` reads the actor's colour word (`+0x74`) top byte as

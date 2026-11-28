@@ -3748,8 +3748,10 @@ blend word (ABE bit 15 + ABR bits 5..=6, `psx_blend::pack_blend_word`) via
 `Renderer::upload_color_mesh_blended`. With semi-blend on, the opaque colour
 pass discards ABE prims and a per-ABR-mode blend pass
 (`psx_blend::append_semi_tail_words`) re-draws them with the prim colour as
-`F`. Untextured TMD prims carry no texpage, so ABR comes from the draw-env
-state the caller resolves - mode 0 is the PSX default. `upload_color_mesh`
+`F`. Untextured TMD prims carry no texpage: the GPU blends them in the ABR its
+texpage register holds, which the last `E1` or the last textured polygon set
+([renderer-port](renderer-port.md#the-gpu-carries-its-draw-mode)). For every
+untextured semi prim the port draws that is mode 0. `upload_color_mesh`
 without blend words keeps every prim opaque.
 
 **Pipelines.** One blend pipeline per mode, per path, each with its own

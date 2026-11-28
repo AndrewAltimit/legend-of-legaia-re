@@ -246,9 +246,9 @@ pub fn blend_words_of_tsb(cba_tsb: &[[u16; 2]]) -> Vec<u16> {
 /// The inverse of [`prim_semi_transparent`] + [`abr_mode`]. This is
 /// the per-vertex word [`crate::Renderer::upload_color_mesh_blended`]
 /// consumes for untextured prims (which carry no real TSB - their ABE
-/// comes from the TMD group mode byte, and the blend mode from
-/// whatever texpage/draw-env state the caller resolves; mode 0 is the
-/// PSX draw-env default).
+/// comes from the TMD group mode byte, and the blend mode from the
+/// GPU's texpage register as the packet stream left it - the last `E1` or
+/// textured polygon - which the caller resolves).
 pub fn pack_blend_word(abe: bool, abr: u8) -> u16 {
     (if abe { TSB_SEMI_TRANSPARENT_BIT } else { 0 }) | (((abr & 0x3) as u16) << 5)
 }
