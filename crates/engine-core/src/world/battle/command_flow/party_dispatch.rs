@@ -139,6 +139,32 @@ impl World {
                 let def = self
                     .expansion_begin_pack_cast(actor, spell_id)
                     .or_else(|| self.monster_cast_def(spell_id));
+                // The builder's gate on the commit: a Curse or an MP loss that
+                // landed since the menu drops it to a turn with no action
+                // (`legaia_engine_battle::spells::committed_spell_casts`).
+                let holds = def.as_ref().is_some_and(|def| {
+                    let bits = self
+                        .party
+                        .character_ability_bits
+                        .get(usize::from(actor))
+                        .copied()
+                        .unwrap_or(0);
+                    let cost = legaia_engine_battle::spells::caster_mp_cost(def, bits);
+                    let mp = self
+                        .actors
+                        .get(usize::from(actor))
+                        .map_or(0, |a| a.battle.mp);
+                    !legaia_engine_battle::spells::committed_spell_casts(
+                        self.raw_status_word(actor),
+                        mp,
+                        cost,
+                    )
+                });
+                if holds {
+                    self.expansion_end_pack_cast();
+                    self.arm_party_no_command(actor);
+                    return;
+                }
                 match def {
                     Some(def) => {
                         let targets = self.spell_targets_for(&def, target_row, target_slot);

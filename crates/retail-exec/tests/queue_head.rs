@@ -272,3 +272,93 @@ fn the_spar_forces_the_lesson_string() {
     }
     assert_eq!(forced, 1);
 }
+
+/// A party member's committed spell at its turn: the builder's category-`2`
+/// gate (`0x801EF1CC..0x801EF294`) against `spells::committed_spell_casts`.
+/// A Curse, or live MP short of the table's price after the record's
+/// `+0xF4` cost bits, drops the commit to category `0`; the stream is left as
+/// committed.
+#[test]
+fn a_committed_spell_holds_where_retail_holds_it() {
+    differential!(prot(898, BUILDER));
+    use legaia_engine_battle::spells::committed_spell_casts;
+    use legaia_engine_battle_vm::battle_formulas::{MpCostModifier, mp_cost_after_ability_bits};
+    let state = Rc::new(Cell::new(0));
+    let (Some(mut cpu), Some(scus)) = (rig(&state), crate::common::scus()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let table = legaia_game_tables::spell_names::SpellNameTable::from_scus(&scus).expect("spells");
+    const CHARS: u32 = 0x8008_4708;
+    const CHAR_STRIDE: u32 = 0x414;
+    let mut rng = Rng(0x4D41_4749);
+    let (mut cast, mut cursed, mut short) = (0, 0, 0);
+    let mut failures = Vec::new();
+    for round in 0..20000 {
+        let seat = rng.below(3);
+        let spell = 1 + rng.below(0xBD) as u8;
+        let raw = table.mp(spell).expect("spell row");
+        let bits = [0u32, 0, 0x10, 0x20, 0x30][rng.below(5) as usize];
+        let cost =
+            mp_cost_after_ability_bits(u16::from(raw), MpCostModifier::from_ability_flags(bits));
+        let mp = match rng.below(4) {
+            0 => cost.saturating_sub(1),
+            1 => cost,
+            2 => rng.below(300) as u16,
+            _ => cost + rng.below(20) as u16,
+        };
+        // Curse beside the other words a turn can carry; the limb bits are
+        // left out, as their strip reads the stream as arrows (see below).
+        let status = [0u16, 0, 0x1000, 0x1001, 0x0400, 0x0800, 0x1002][rng.below(7) as usize];
+
+        cpu.mem.wr32(CTX_PTR, CTX);
+        for b in 0..0x400 {
+            cpu.mem.wr8(CTX + b, 0);
+        }
+        cpu.mem.wr8(CTX, 3);
+        cpu.mem.wr8(CTX + 1, 1);
+        for s in 0..8u32 {
+            cpu.mem.wr32(ACTORS + s * 4, actor(s));
+            for b in 0..ACTOR_STRIDE {
+                cpu.mem.wr8(actor(s) + b, 0);
+            }
+            cpu.mem.wr8(SEATS + s, if s < 3 { s as u8 + 1 } else { 0 });
+        }
+        for s in 0..3u32 {
+            let rec = CHARS + s * CHAR_STRIDE;
+            for b in (0..CHAR_STRIDE).step_by(4) {
+                cpu.mem.wr32(rec + b, 0);
+            }
+        }
+        cpu.mem.wr32(CHARS + seat * CHAR_STRIDE + 0xF4, bits);
+        let a = actor(seat);
+        cpu.mem.wr8(a + 0x1DE, 2);
+        cpu.mem.wr8(a + 0x1DD, 3);
+        cpu.mem.wr8(a + 0x1DF, spell);
+        cpu.mem.wr16(a + 0x16E, status);
+        cpu.mem.wr16(a + 0x14C, 50);
+        cpu.mem.wr16(a + 0x150, mp);
+        state.set(rng.next());
+        assert_eq!(cpu.call(BUILDER, &[seat]), Stop::Returned, "round {round}");
+        let retail = (cpu.mem.rd8(a + 0x1DE), cpu.mem.read(a + 0x1DF, 4));
+        let casts = committed_spell_casts(status, mp, cost);
+        let port = (if casts { 2 } else { 0 }, vec![spell, 0, 0, 0]);
+        if casts {
+            cast += 1;
+        } else if status & 0x1000 != 0 {
+            cursed += 1;
+        } else {
+            short += 1;
+        }
+        if retail != port && failures.len() < 6 {
+            failures.push(format!(
+                "round {round}: seat {seat} spell {spell:#x} raw {raw} bits {bits:#x} mp {mp} status {status:#x}\n retail {retail:02x?}\n port   {port:02x?}"
+            ));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    assert!(
+        cast > 3000 && cursed > 3000 && short > 1500,
+        "{cast} {cursed} {short}"
+    );
+}

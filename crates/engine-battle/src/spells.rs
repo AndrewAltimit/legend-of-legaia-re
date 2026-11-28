@@ -661,6 +661,23 @@ pub fn caster_mp_cost(spell: &SpellDef, ability_bits: u32) -> u16 {
     )
 }
 
+/// Whether a party member's committed spell still casts when its turn comes.
+/// The queue builder runs for every party turn (`FUN_801E295C` state `0x0C`)
+/// and drops a category-`2` commit to category `0` - a turn with no action -
+/// when the member is Cursed (`+0x16E & 0x1000`) or its live MP (`+0x150`)
+/// is below the spell's price after the caster's ability bits
+/// ([`caster_mp_cost`]). The menu refuses both at the commit, so the gate
+/// bites on a Curse or an MP loss that landed between the commit and the
+/// turn. `cost` is [`caster_mp_cost`]'s answer; the Curse test comes first
+/// and prices nothing.
+///
+// PORT: FUN_801EED1C (`0x801EF1CC..0x801EF294`: `lbu 0x1DE == 2`, `andi
+// 0x1000` on `+0x16E`, the `+0x6BC` bits `0x20` / `0x10` on the table's `+3`
+// cost, `lhu 0x150` against it, `sb zero,0x1DE`)
+pub fn committed_spell_casts(status: u16, mp: u16, cost: u16) -> bool {
+    status & legaia_engine_battle_vm::status_effects::display_flags::CURSE == 0 && mp >= cost
+}
+
 /// Record `+0xF4` word 0 of a character record - the word
 /// [`caster_mp_cost`]'s bits live in (retail `lw 0x6bc(v)` off the
 /// `0x80084140` window at `0x800353B4` / `0x80031174`).
