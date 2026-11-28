@@ -284,6 +284,10 @@ const BIG_WAVE: u8 = 0x56;
 /// band holds (`World::guilty_cross_line`).
 ///
 /// - PROT 0940 Glare, `0x801F6ACC..0x801F6AEC`: Zora's line against everyone's.
+/// - PROT 0940's split body, `0x801F7988..0x801F7998`: the queued action `0x50`
+///   (Divide) calls `0x141`, any other (`0xAE`, Clone) `0x1A9`, the `li` in the
+///   branch's delay slot (`capture`: Jette's Clone dispatches `0x1A9` from
+///   `0x801F79A4`, a `--sfx-callers` recording of `battle_deroa_jette_clone_mid_cast`).
 /// - PROT 0946, `0x801F6AD8..0x801F6B00`: arm 0 forks on the caster's latch
 ///   `0x801C8FE0 + (seat + 1) * 4`. Clear, it is Call Wave's branch, which sets
 ///   the latch and calls `0x150` (`0x801F6CF4`); set, Big Wave's, which clears it
@@ -292,12 +296,17 @@ const BIG_WAVE: u8 = 0x56;
 ///   `zeto_call_wave_mid_cast` recording plays `XA11` channel `0`, `0x150`).
 /// - PROT 0947, `0x801F6AD8..0x801F6AEC`: Neo Windhash against V Windhash.
 /// - PROT 0955 Terror Scream, `0x801F7758..0x801F77B8`: three monster-id bands.
-/// - PROT 0961 and 0962, `0x801F6AC0..0x801F6AD4` and `0x801F6A7C..0x801F6A90`.
+/// - PROT 0961 and 0962, `0x801F6AC0..0x801F6AD4` and `0x801F6A7C..0x801F6A90`:
+///   the body at `0x801F69D8`, which PROT 0962 runs for `0xA5` alone; its other
+///   bodies call their own lines (`0x18B` Blade Breath, `0x18C` Thunder Needle,
+///   `0x18D` Gigaton Press: `--sfx-callers` on `nilboa_koru_pre_thunder_needle`
+///   dispatches `0x18C` from `0x801F7718`).
 /// - PROT 0964's Rogue strikes, `0x801F6BCC..0x801F6C1C`: `0x801F8FE4` holds the
 ///   strike's element (`capture`, caller log: `0xB0`, `0xB1`, `0xB2`).
 pub fn forked_head_cue(entry: u32, action: u8, acting: u16, head: u16) -> Option<Option<u16>> {
     let line = match (entry, action) {
         (940, 0x3C) => Some(if acting == 0xA9 { 0x1B7 } else { 0x192 }),
+        (940, 0xAE) => Some(0x1A9),
         (946, _) => Some(if action == BIG_WAVE { 0x151 } else { 0x150 }),
         (947, _) => Some(if action == 0xA7 { 0x19E } else { 0x19B }),
         (955, 0x70) => match acting {
@@ -307,7 +316,7 @@ pub fn forked_head_cue(entry: u32, action: u8, acting: u16, head: u16) -> Option
             _ => None,
         },
         (961, _) => Some(if head == 0xB5 { 0x1C1 } else { 0x18F }),
-        (962, _) => Some(if head == 0xB5 { 0x1C0 } else { 0x18E }),
+        (962, 0xA5) => Some(if head == 0xB5 { 0x1C0 } else { 0x18E }),
         (964, 0xB0) => Some(0x1C5),
         (964, 0xB1) => Some(0x1C6),
         (964, 0xB2) => Some(0x1C4),
@@ -952,6 +961,10 @@ mod tests {
         assert_eq!(forked_head_cue(946, BIG_WAVE, 1, 1), Some(Some(0x151)));
         assert_eq!(forked_head_cue(940, 0x3C, 0xA9, 1), Some(Some(0x1B7)));
         assert_eq!(forked_head_cue(940, 0x3C, 0x10, 1), Some(Some(0x192)));
+        assert_eq!(forked_head_cue(940, 0xAE, 0xAA, 1), Some(Some(0x1A9)));
+        assert_eq!(forked_head_cue(940, 0x50, 0x10, 1), None);
+        assert_eq!(forked_head_cue(962, 0xA5, 1, 0xB5), Some(Some(0x1C0)));
+        assert_eq!(forked_head_cue(962, 0xA3, 1, 1), None);
     }
 
     #[test]
