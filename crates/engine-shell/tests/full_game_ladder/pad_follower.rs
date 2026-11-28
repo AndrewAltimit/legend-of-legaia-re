@@ -545,6 +545,8 @@ pub(super) fn pad_walk(
     let mut best = dist(here(session));
     let mut visited: HashSet<Cell> = HashSet::new();
     let mut since = 0u32;
+    // A fight's intro held the player since the walk last made progress.
+    let mut fight_in_stall = false;
     let mut planned_from = None;
     // Wedge exits this walk has headed for ([`unwedge`]).
     let mut unwedged = 0usize;
@@ -683,6 +685,7 @@ pub(super) fn pad_walk(
             planned_from = None;
             path.clear();
             since = 0;
+            fight_in_stall = false;
             // The walk after a fight is judged afresh. The stall test counts
             // a frame as progress only on a new cell or a nearer one, and a
             // route re-planned from where the fight left the walker can
@@ -691,15 +694,6 @@ pub(super) fn pad_walk(
             // eight units a frame over its own earlier cells, west round the
             // P1[16] plug, and read as stalled after 300 of them.
             visited.clear();
-            // So are the rides and the scripts on the way: a walk the fights
-            // keep re-planning from where each one left it rides the same
-            // lift again on purpose. `tower`'s lift maze took three fights on
-            // one walk to `teien` (seed 13), re-rode (10, 75) -> (9, 47) after
-            // each and read the fourth landing as a loop; with seven fights
-            // (part C) the lift's own script at (9, 47) read as fired 25
-            // times for nothing.
-            landings.clear();
-            refires.clear();
             best = dist(here(session));
             continue;
         }
@@ -1359,21 +1353,22 @@ pub(super) fn pad_walk(
         if d < best || visited.insert(cell_of(px, pz)) {
             best = best.min(d);
             since = 0;
-        } else if session.host.world.battle_intro_owns_frame() {
-            // A fight rolled on the walk holds the player through its intro
-            // (the transition, until the battle opens): those frames are the
-            // fight's, not the walk's, and the fight's own return re-judges
-            // the walk. Counted,
-            // a walk back over its own cells into the tower's lift (`tower`
-            // (32, 41), seed 13) tipped past the stall on the intro's frames
-            // and wrote the lift off as a dead contact.
+            fight_in_stall = false;
         } else {
             since += 1;
+            fight_in_stall |= session.host.world.battle_intro_owns_frame();
             if since >= PAD_STALL_FRAMES {
                 session.host_pad(0);
                 // The stall was a press for a ride that never came: that
-                // contact is no route for the walks after this one.
-                if let Some(w) = path.windows(2).take(3).find(|w| !adjacent(w[0], w[1])) {
+                // contact is no route for the walks after this one. Not
+                // when a fight's intro held the player inside the stall:
+                // the press was cut off, not refused. `tower`'s lift at
+                // (32, 41) (seed 13) was written off on a stall the intro's
+                // frames tipped over, and the planner then had no way off
+                // the floor.
+                if !fight_in_stall
+                    && let Some(w) = path.windows(2).take(3).find(|w| !adjacent(w[0], w[1]))
+                {
                     note_dead_contact(session, w[1]);
                 }
                 let (px, pz) = player_xz(session);
