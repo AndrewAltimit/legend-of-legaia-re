@@ -2541,8 +2541,19 @@ impl World {
                 }
             }
             // PROT 0938's breath pushes the whole party row back, a seat at a
-            // time along its bearing from the caster, on every pass of arm 1.
-            if let Some(units) = arm.party_shove {
+            // time along its bearing from the caster, on every pass of arm 1:
+            // once a pass, `(table * 2 * step) >> 12` on each lane
+            // (`0x801F74E8..0x801F7554`). Pushed `2` on each one-vsync tick,
+            // the shift truncated every tick's share and a step-4 pass moved
+            // a seat about half retail's distance.
+            let shove_step = if self.toggles.battle_sm_frame_cadence {
+                i16::from(self.module_frame_step())
+            } else {
+                1
+            };
+            if let Some(units) = arm.party_shove
+                && !self.casting.module_pass_repeat
+            {
                 let (cx, cz) = self
                     .actors
                     .get(usize::from(caster_slot))
@@ -2560,8 +2571,7 @@ impl World {
                     .wrapping_add(0x800)
                         & 0xFFF;
                     let (sin, cos) = legaia_engine_system::trig::trig12(heading);
-                    // Retail's `2 * step` a frame is `2` a vsync here.
-                    let by = i32::from(units);
+                    let by = i32::from(units) * i32::from(shove_step);
                     let dx = ((i32::from(sin) * by) >> 12) as i16;
                     let dz = ((i32::from(cos) * by) >> 12) as i16;
                     a.move_state.world_x = a.move_state.world_x.wrapping_add(dx);

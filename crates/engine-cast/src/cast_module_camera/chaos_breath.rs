@@ -48,7 +48,14 @@ pub fn chaos_breath_camera(
         arm.party_shove = Some(2);
     }
     if let Some(a) = arm_countdown(CHAOS_BREATH, phase) {
-        if a.holds(&mut st.countdown) {
+        let held = a.holds(&mut st.countdown);
+        if phase == 3 && st.countdown.0 < 0 {
+            // Arm 3 spends what is left of its budget when that is under the
+            // step and stores `0` (`slt` / `sw zero` at
+            // `0x801F7930..0x801F7944`): the word stops on zero, not below.
+            st.countdown.0 = 0;
+        }
+        if held {
             arm.hold = true;
             return arm;
         }

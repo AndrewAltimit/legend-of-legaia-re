@@ -110,7 +110,15 @@ pub fn paralyzing_wave_camera(
                     st.module_words[0] = FADE_DONE;
                 }
                 arm.parts_level = Some(st.module_words[0] as u16);
-                arm.hold = !over && st.countdown.drain_above(0);
+                // The leaving pass stores `0xFF` and falls through to the
+                // countdown's `subu` all the same (`0x801F7148..0x801F71B0`),
+                // so the word drains the whole pass's `scalar * step` there
+                // too.
+                let held = st.countdown.drain_above(0);
+                if over && held {
+                    st.countdown.drain_rest(super::MODULE_DRAIN_PER_TICK);
+                }
+                arm.hold = !over && held;
                 return arm;
             }
             arm.hold = st.countdown.drain_above(0);
