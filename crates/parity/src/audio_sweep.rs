@@ -399,7 +399,7 @@ impl RetailAudio {
 /// Frames of one 60 Hz video frame at the SPU rate.
 const FRAMES_PER_TICK: usize = (SPU_INTERNAL_RATE / 60) as usize;
 /// The span, in ticks before the sample, the sounding-voice peaks cover.
-const LISTEN_SPAN: usize = (SETTLE_TICKS / 2) as usize;
+pub(crate) const LISTEN_SPAN: usize = (SETTLE_TICKS / 2) as usize;
 
 /// One settle tick of the listener: the play hosts' audio frame
 /// ([`legaia_engine_session::BootSession::step_audio_frame`], which both
@@ -662,7 +662,26 @@ pub fn run_sweep(
             row.channels = c;
             row.detail = d;
         }
-        if !matches!(obs.class, StateClass::Field | StateClass::WorldMap) {
+        // A minigame is seeded as the image corpus seeds it: the venue's
+        // card load, the warp and the phase's drive.
+        if obs.class == StateClass::Minigame {
+            match crate::retail_compare::run_minigame_listening(extracted, &obs, &cdname, None) {
+                Ok(engine) => {
+                    let (c, d) = score(&row.retail, &engine, &bank);
+                    row.channels = c;
+                    row.detail = d;
+                    row.engine = Some(engine);
+                }
+                Err(e) => row.unseeded = Some(format!("seed failed: {e:#}")),
+            }
+            return row;
+        }
+        // A menu state is the field seed with the screen driven open, as
+        // the image corpus drives it, and is heard on the screen.
+        if !matches!(
+            obs.class,
+            StateClass::Field | StateClass::WorldMap | StateClass::Menu
+        ) {
             row.unseeded = Some(format!("{:?}: not a walkable state", obs.class));
             return row;
         }
@@ -674,13 +693,26 @@ pub fn run_sweep(
             .iter()
             .find(|sc| sc.label == entry.label)
             .and_then(|sc| sc.arrival.as_ref());
+        // No track word yet: the front end, which no field seed reaches.
+        let front_end = obs.class == StateClass::Menu && row.retail.track_word == 0;
         let run = match door {
-            Some(d) => crate::retail_compare::run_engine_listening_through_door(extracted, &obs, d),
-            None => crate::retail_compare::run_engine_listening(extracted, &obs),
+            _ if front_end => {
+                crate::retail_compare::run_front_end_listening(extracted, &obs).map(|a| ((), a))
+            }
+            Some(d) => crate::retail_compare::run_engine_listening_through_door(extracted, &obs, d)
+                .map(|(_, a)| ((), a)),
+            None => {
+                crate::retail_compare::run_engine_listening(extracted, &obs).map(|(_, a)| ((), a))
+            }
         };
         match run {
             Ok((_, engine)) => {
-                let (c, d) = score(&row.retail, &engine, &bank);
+                let (mut c, mut d) = score(&row.retail, &engine, &bank);
+                // A menu screen is seated, not pressed to: the cue a retail
+                // press left ringing is drive history the seat has none of.
+                if obs.class == StateClass::Menu && c.remove("ambient").is_some() {
+                    d.remove("ambient");
+                }
                 row.channels = c;
                 row.detail = d;
                 row.engine = Some(engine);

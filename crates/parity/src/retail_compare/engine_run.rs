@@ -222,6 +222,30 @@ pub fn run_engine_listening_through_door(
     Ok((obs, audio))
 }
 
+/// The front end heard (the audio sweep's title half): a state no scene has
+/// written a track word in stands in the title, the continue grid or the card
+/// check behind them, which play the title theme the hosts start on the title
+/// card ([`legaia_engine_session::BootSession::start_title_bgm`]). Nothing
+/// ticks the world; the audio frame alone runs, over the field sample's span.
+pub fn run_front_end_listening(
+    extracted: &Path,
+    retail: &RetailObs,
+) -> Result<crate::audio_sweep::EngineAudio> {
+    let cfg = BootConfig {
+        scene: retail.scene.clone(),
+        enable_audio: true,
+    };
+    let mut session = NativeSession::open_extracted_detached_audio(extracted, &cfg)
+        .context("open boot session")?;
+    anyhow::ensure!(session.start_title_bgm(), "the title theme did not start");
+    let mut audio = crate::audio_sweep::EngineAudio::default();
+    for _ in 0..crate::audio_sweep::LISTEN_SPAN {
+        crate::audio_sweep::listen_frame(&mut session, &mut audio);
+    }
+    crate::audio_sweep::finish_listen(&session, &mut audio);
+    Ok(audio)
+}
+
 /// Ticks a door replay may take to land in the captured scene: a walk-on
 /// door's fade and load, or a cutscene record run to its scene change.
 /// `concend`'s `P2[0]` into `town0d` waits `3293` frames on its own
@@ -330,7 +354,10 @@ fn latch_bgm_word(
     route_bgm(session, director)
 }
 
-fn route_bgm(session: &mut NativeSession, director: &mut RecordingDirector) -> Result<()> {
+pub(super) fn route_bgm(
+    session: &mut NativeSession,
+    director: &mut RecordingDirector,
+) -> Result<()> {
     match session.bgm.as_mut() {
         Some(bgm) => session.host.route_bgm_events(bgm)?,
         None => session.host.route_bgm_events(director)?,
@@ -692,7 +719,12 @@ fn seed_and_settle_cut(
         }
         return Ok(obs);
     }
-    if let Some(audio) = listen {
+    // A menu state is heard on its screen: the listener's sample waits for
+    // the drive below.
+    let menu_listen = retail.class == StateClass::Menu;
+    if let Some(audio) = listen.as_deref_mut()
+        && !menu_listen
+    {
         crate::audio_sweep::finish_listen(&session, audio);
         crate::cue_differential::probe(&mut session, audio);
     }
@@ -721,6 +753,18 @@ fn seed_and_settle_cut(
         }
         _ => None,
     };
+    if let Some(audio) = listen
+        && menu_listen
+    {
+        // The field is frozen under the screen, as retail's mode `0x17`
+        // swaps the field overlay out: the audio frame alone runs on, for
+        // the span the field sample listens over.
+        for _ in 0..crate::audio_sweep::LISTEN_SPAN {
+            crate::audio_sweep::listen_frame(&mut session, audio);
+        }
+        crate::audio_sweep::finish_listen(&session, audio);
+        crate::cue_differential::probe(&mut session, audio);
+    }
     if let Some(film) = super::walk_film::WalkFilm::from_env() {
         session.host.world.toggles.field_frame_cost = field_cost_model;
         film.run(&mut session, retail)?;

@@ -3789,6 +3789,25 @@ no battle bundle (the field track plays on under sound set `0`), and four
 inside the Gaza fight, whose intro zeroes the set it read (formation head
 `0xA6`).
 
+<a id="the-sweep-on-menus-and-minigames"></a>
+**Menus, the front end and the minigames.** A menu state is the field seed with its screen driven open
+as the image corpus drives it (`pause_menu_drive`: the pause menu, a shop, the prize counter), and is
+heard on the screen: the field is frozen under it, as retail's mode `0x17` swaps the field overlay out,
+and the audio frame alone runs on. The screen is seated rather than pressed to, so the cue a retail
+press left ringing is history it has none of, and a menu state scores no `ambient`. A state with no track
+word yet stands in the front end (the title, the Continue grid and its card check), which the hosts
+score with the title theme (`BootSession::start_title_bgm`); nothing seeds it as a field. A minigame
+takes the image corpus's own seed (the departure's card load, the door warp, the phase's drive) and is
+heard while the phase holds. A casino seat's latch (`0x4B6..0x4B8`) is its own record's, raised after
+`koin1`'s entry chose the floor's `2018`, and the seed lowers it for that entry: raised, the entry's
+`+0xEF..0x10C` arms park the track.
+
+Scored this way, every pause-menu, shop and prize state plays retail's track. The fishing states found
+the venue's own track ([`minigame-fishing.md`](minigame-fishing.md)): the init stages `2017`, and the
+port played the departure's. The dance's count-in states (`minigame_dance_retail_ready`, `_go_in`,
+`_go_out`) read retail's held, paused `2055` against no track: both are silent. `conc_pre_entry_card_boot`
+holds the title theme at sequence volume `127`, the others at `107`.
+
 A state reached through a door carries history a card load does not replay:
 the music a sub-op 6 door kept
 ([above](#a-door-keeps-its-music-only-behind-sub-op-6)). A manifest entry
@@ -4005,6 +4024,26 @@ the probe folds the port's registers to compare. What remains is not a defect:
 - `doman_arrival_from_korb2`, whose runtime bank is still `korb2`'s on the frame the state stands on.
 - The credits vignettes seeded without their chain (`arrival` in the manifest). The slots the
   ending theme overwrote hold stale tone data in retail's RAM.
+
+Menu and minigame states take the sweep's seeds ([above](#the-sweep-on-menus-and-minigames)); the
+front end runs no field and is left out. Two findings:
+
+- **A menu screen keys on the field's two voices.** The drainer's one-shot limit is `1` in game modes
+  `3` and `0x17` (`0x80016B70..0x80016BBC`), and the pause menu runs in `0x17`. The port took the field
+  limit in the field and on the world map only, so under its pause menu (`SceneMode::Menu`) a cue with
+  more voices than two kept all its passes: `0x1F` and `0x4D` keyed a third voice in every pause-menu
+  state. `SceneMode::Menu` is in the field family now, and every pause-menu, card-grid and shop state
+  reads alike.
+- **The fishing venue's runtime bank is its own.** The init's scene loader `FUN_8001F7C0(.., 0x4AB, 0)`
+  (`0x801CF1D4..0x801CF1E0`) reads the `other1` venue's sidecars, so its rows (`0x201` the rod's creak,
+  `0x204` the lure's landing) resolve in `other1`'s event-scripts container. The port resolved them in
+  the departure scene's, and `0x201` keyed three voices where retail keys one
+  (`MinigameState::fishing_sfx_bundle`).
+
+What the minigames leave: every static row on category `6` (and, in the Muscle Dome's hub, category
+`2`) keys on retail and not on the port. In those modes retail's slot `6` is the stale header over the
+minigame's slot-2 samples ([the residency](#retail-capture-of-the-slot-2--slot-6-residency)), and none
+of those cues is one the minigames are known to raise.
 
 `--battle` takes one battle state per formation, with the class-2 bank, the formation's two
 `monster.snd` banks and the state's own `bse.dat` rows, whose `+4` categories retail has already

@@ -208,8 +208,17 @@ pub fn run(args: CueDifferentialArgs) -> Result<()> {
         };
         obs.settle_on_loaded_scene(&cdname);
         let battle = obs.class == StateClass::Battle;
+        // A menu screen keys its cues over the field it froze, and a
+        // minigame over its venue: both are seeded as the sweep seeds them.
         if args.battle != battle
-            || !(battle || matches!(obs.class, StateClass::Field | StateClass::WorldMap))
+            || !(battle
+                || matches!(
+                    obs.class,
+                    StateClass::Field
+                        | StateClass::WorldMap
+                        | StateClass::Menu
+                        | StateClass::Minigame
+                ))
         {
             continue;
         }
@@ -221,6 +230,10 @@ pub fn run(args: CueDifferentialArgs) -> Result<()> {
             let (st, _) = psx_pcsx_redux::gpu::load_with_scus(&entry.path, &scus)?;
             st.main_ram().to_vec()
         };
+        // The front end (no track word yet) runs no field to key over.
+        if obs.class == StateClass::Menu && ram[0x7B_AC8..0x7B_ACA] == [0, 0] {
+            continue;
+        }
         let formation: Vec<u8> = ram[0x7B_D0C..0x7B_D10].to_vec();
         let scene_key = if battle {
             format!("{formation:02x?}")
@@ -248,6 +261,9 @@ pub fn run(args: CueDifferentialArgs) -> Result<()> {
         // The listening run hands the probe back filled.
         let heard = if battle {
             battle_probe(&extracted, &ram, &formation, probe)
+        } else if obs.class == StateClass::Minigame {
+            crate::retail_compare::run_minigame_listening(&extracted, &obs, &cdname, Some(probe))
+                .map(|heard| heard.cue_probe.map(|p| p.keyed).unwrap_or_default())
         } else {
             run_engine_listening_with(&extracted, &obs, Some(probe))
                 .map(|(_, heard)| heard.cue_probe.map(|p| p.keyed).unwrap_or_default())
