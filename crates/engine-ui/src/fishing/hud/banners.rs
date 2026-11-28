@@ -316,9 +316,18 @@ impl FishingBanners {
     pub fn on_recast(&mut self) {}
 
     /// Service every timer for one frame and collect the draws still live.
+    ///
+    /// The driver tail (`0x801D01A4..0x801D0270`) services the hook timer,
+    /// then, on every frame the reel-in timer runs, zeroes the hook timer
+    /// before it services the reel-in (`sw zero` to `DAT_801d9160` at
+    /// `0x801D0200`), so a hook banner restarted under a running reel-in is
+    /// drawn once and stopped.
     pub fn service_frame(&mut self, frame_step: i32) -> Vec<HudDraw> {
         let mut out = Vec::new();
         out.extend(self.hook.service(frame_step, banner_from_left_draw));
+        if self.reel_in.is_active() {
+            self.hook.cancel();
+        }
         out.extend(self.reel_in.service(frame_step, banner_from_right_draw));
         out.extend(self.miss.service(frame_step, banner_miss_draw));
         if let Some(pair) = self.converge.service(frame_step, banner_converge_draws) {
