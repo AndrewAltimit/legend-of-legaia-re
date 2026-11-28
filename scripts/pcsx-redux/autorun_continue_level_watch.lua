@@ -20,7 +20,7 @@
 --   level.csv   vsync,mode,submode,bb00,fade,hold,b910,b6ec,seqvol1,seqvol2,seqvol3
 -- Retail RAM-derived: never commit them.
 --
--- Env: LEGAIA_FRAMES (900), LEGAIA_PRESS_AT (30).
+-- Env: LEGAIA_FRAMES (900), LEGAIA_PRESS_AT (30), LEGAIA_PRESSES (see below).
 --
 -- Run:
 --   bash scripts/pcsx-redux/run_probe.sh --headless \
@@ -61,11 +61,14 @@ local function seqvol(slot)
     return u16(p + 0x58)
 end
 
-local PRESSES = {
-    { at = PRESS_AT, btn = probe.BTN.CROSS },
-    { at = PRESS_AT + 100, btn = probe.BTN.UP },
-    { at = PRESS_AT + 160, btn = probe.BTN.CROSS },
-}
+-- `offset:BUTTON` pairs after LEGAIA_PRESS_AT; the default is the grid's
+-- block / Yes / load. From title_menu_idle (cursor on CONTINUE),
+-- `0:UP,60:CROSS` takes NEW GAME instead.
+local PRESSES = {}
+for off, btn in string.gmatch(probe.getenv("LEGAIA_PRESSES", "0:CROSS,100:UP,160:CROSS"),
+    "(%d+):(%u+)") do
+    PRESSES[#PRESSES + 1] = { at = PRESS_AT + tonumber(off), btn = probe.BTN[btn] }
+end
 
 local writes, level
 local vsync = -1

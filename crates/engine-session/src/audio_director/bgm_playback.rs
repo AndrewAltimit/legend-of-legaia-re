@@ -72,9 +72,15 @@ impl<S: AudioSink> AudioDirector<S> {
     pub fn front_end_level_frame(&mut self, store: Option<u8>) {
         self.tick_duck();
         if let Some(level) = store {
-            self.duck_level = level;
-            self.duck_target = level;
+            self.store_audio_level(level);
         }
+    }
+
+    /// Store `level` in the live cell outright (no ramp pulls it back): the
+    /// next [`Self::tick_duck`] applies it.
+    pub fn store_audio_level(&mut self, level: u8) {
+        self.duck_level = level;
+        self.duck_target = level;
     }
 
     /// Rest the live level on the configured one, as the MAN loader does on

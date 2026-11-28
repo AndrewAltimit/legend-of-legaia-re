@@ -69,6 +69,29 @@ fn boot_ui_logos_title_new_game_enters_the_opening() {
     // seats the Vahn / Noa / Gala composition; the New Game drops it. A
     // stale composition is what wrote a Vahn-alone save as a three-member
     // party (card count 3, members 0 1 2) that reloaded with Noa and Gala.
+    // The launch's black: the title theme plays on under it, swelling to
+    // `254` and fading to `0`, and the launch frame ends the hold.
+    let mut applied = Vec::new();
+    for _ in 0..400 {
+        if w.session().host.world.launch_fade.is_none() {
+            break;
+        }
+        w.display_frame(0, 1);
+        if let Some(d) = w.session().bgm.as_ref() {
+            applied.push(d.duck_applied());
+        }
+    }
+    eprintln!(
+        "[native-front-end] the New Game black applied 254 on {} frames",
+        applied.iter().filter(|&&l| l == 254).count()
+    );
+    if let Some(d) = w.session().bgm.as_ref() {
+        assert!(
+            applied.contains(&254) && applied.contains(&0),
+            "the black swells the title theme and fades it out"
+        );
+        assert!(!d.launch_holding(), "the launch frame ends the hold");
+    }
     let party = &w.session().host.world.party;
     assert_eq!(party.party_count, 1, "a New Game party is Vahn alone");
     assert!(

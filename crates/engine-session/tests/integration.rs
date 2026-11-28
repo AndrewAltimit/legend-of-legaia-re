@@ -45,6 +45,7 @@ mod helper_card_records_disc;
 mod koin3_dance_return_disc;
 mod map01_tree_pan_hides_player_disc;
 mod minigame_audio_disc;
+mod new_game_launch_audio_disc;
 mod new_game_launch_hold_disc;
 mod new_game_seed;
 mod npc_conversation_terminates;

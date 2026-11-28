@@ -80,6 +80,20 @@ impl<S: AudioSink> BootSession<S> {
         }
     }
 
+    /// The slate a title NEW GAME takes ([`start_new_game_on`]): the seeded
+    /// world, with the title theme left playing under the `LaunchFade` black
+    /// that follows (`AudioDirector::begin_launch_hold`). Retail's arm swells
+    /// and fades the theme over its hold and ramp and stops it on the launch
+    /// frame; the opening's own commands wait for that frame
+    /// ([`Self::step_audio_frame`] ends the hold once `World::launch_fade`
+    /// has handed over).
+    pub fn begin_new_game_launch(&mut self) {
+        self.begin_new_game();
+        if let Some(bgm) = self.bgm.as_mut() {
+            bgm.begin_launch_hold();
+        }
+    }
+
     /// `Ok` when the host's loaded scene is `scene`. [`Self::enter_field_live`]
     /// logs a failed scene entry and returns `Ok` anyway (its oracle and
     /// headless callers keep running on the old scene by design), so the
@@ -519,7 +533,7 @@ pub trait NewGameHost {
 /// confirmed by the scene the session then holds. `None` when the host has
 /// no session or neither scene would enter.
 pub fn start_new_game_on<H: NewGameHost>(host: &mut H) -> Option<&'static str> {
-    host.new_game_session()?.begin_new_game_slate();
+    host.new_game_session()?.begin_new_game_launch();
     let scene = legaia_engine_scene_host::resume::enter_new_game(|scene| {
         host.enter_opening_scene(scene)
             .map_err(anyhow::Error::msg)?;

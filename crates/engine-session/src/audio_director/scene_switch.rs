@@ -57,6 +57,10 @@ pub(super) struct SceneSwitchHold {
     frames_left: u16,
     /// The held commands, in issue order.
     queued: Vec<HeldCommand>,
+    /// A New Game's `LaunchFade` holds the commands: the title theme plays
+    /// on under the black and nothing ends the hold but
+    /// [`AudioDirector::end_launch_hold`].
+    launch: bool,
 }
 
 impl<S: AudioSink> AudioDirector<S> {
@@ -67,6 +71,13 @@ impl<S: AudioSink> AudioDirector<S> {
     /// BGM commands the new scene issues before the fade ends are held and
     /// replayed after it. Nothing sounding: no fade and no hold.
     pub fn begin_scene_switch(&mut self) {
+        if self.switch.launch {
+            // The opening's entry under a New Game's launch: the title theme
+            // is still the launch's to fade, and the entry's commands join
+            // the hold.
+            self.clear_sfx();
+            return;
+        }
         self.clear_sfx();
         self.last_started = None;
         self.release_pack_music();
@@ -112,7 +123,7 @@ impl<S: AudioSink> AudioDirector<S> {
     /// (or the frame cap runs out, which cuts it now), replay the held
     /// commands.
     pub(super) fn tick_scene_switch(&mut self) {
-        if !self.switch.active {
+        if !self.switch.active || self.switch.launch {
             return;
         }
         self.switch.frames_left = self.switch.frames_left.saturating_sub(1);
@@ -121,6 +132,46 @@ impl<S: AudioSink> AudioDirector<S> {
         }
         self.audio.finish_silence();
         self.switch.active = false;
+        self.replay_held();
+    }
+
+    /// A New Game's `LaunchFade`: from the NEW GAME confirm the title theme
+    /// plays on - the arm stores the live audio level over it each frame
+    /// (`launch_fade_music_level`), `254` through the hold and down to `0`
+    /// over the ramp - and the opening scene's BGM commands, issued at its
+    /// entry ahead of the black, wait for the launch. The cue queue is
+    /// dropped as the slate's stop dropped it.
+    pub fn begin_launch_hold(&mut self) {
+        self.clear_sfx();
+        self.switch.queued.clear();
+        self.switch.active = true;
+        self.switch.launch = true;
+    }
+
+    /// Whether a New Game's launch is holding the BGM commands.
+    pub fn launch_holding(&self) -> bool {
+        self.switch.launch
+    }
+
+    /// The launch frame: retail's `LaunchGame` (sub-mode `6`) stops the
+    /// title's source (`FUN_800266E0(0x8007052C)` then `FUN_80026520`, `0x801DFB60..0x801DFB80`), already at
+    /// level `0`; the scene load rests the level on the configured one; and
+    /// the opening's held commands run.
+    ///
+    /// PORT: FUN_801DD35C (LaunchGame's source stop, `0x801DFB5C..0x801DFB80`)
+    pub fn end_launch_hold(&mut self) {
+        if !self.switch.launch {
+            return;
+        }
+        self.switch.launch = false;
+        self.switch.active = false;
+        BgmDirector::stop(self);
+        self.last_started = None;
+        self.rest_audio_level();
+        self.replay_held();
+    }
+
+    fn replay_held(&mut self) {
         for cmd in std::mem::take(&mut self.switch.queued) {
             match cmd {
                 HeldCommand::Start(id, seq) => BgmDirector::start(self, id, &seq),
