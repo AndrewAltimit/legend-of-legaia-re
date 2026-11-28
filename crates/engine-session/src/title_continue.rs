@@ -140,6 +140,12 @@ impl ContinueScreen {
             preroll: 0,
             alpha_b: 0,
         }
+        .with_pill_preroll()
+    }
+
+    fn with_pill_preroll(mut self) -> Self {
+        self.flow.set_pill_preroll(self.preroll);
+        self
     }
 
     /// The save-select session (what the screen draws).
@@ -177,6 +183,7 @@ impl ContinueScreen {
     /// One frame of the backdrop's two ramps, at a frame step of one.
     fn step_backdrop(&mut self) {
         self.preroll = (self.preroll + 0x80).min(0x1000);
+        self.flow.set_pill_preroll(self.preroll);
         self.alpha_b = if self.select.phase().shows_title_backdrop() {
             (self.alpha_b - 0x100).max(0)
         } else {

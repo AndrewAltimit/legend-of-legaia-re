@@ -135,6 +135,9 @@ pub struct SaveScreenFlow {
     io: CardIoMachine,
     /// `DAT_801EF17C` - the backstop counter the arm states reset.
     io_poll: u16,
+    /// The title overlay's pre-roll `0x801EF120` as the pills read it, when
+    /// a screen ramps it ([`Self::set_pill_preroll`]); `None` reads full.
+    pill_preroll: Option<i32>,
     /// The last result [`card_frame_tick`] published (`0` = still running).
     io_result: i32,
     /// `_DAT_801F0224` - the directory-rebuild request the commit beat
@@ -219,6 +222,14 @@ pub const SAVE_SCREEN_FADE_DELTA: u8 = 0x10;
 impl SaveScreenFlow {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Seat the pre-roll `0x801EF120` the pills fade in on. The title's
+    /// Continue screen zeroes it at the menu's confirm (`0x801DDC6C`) and
+    /// ramps it to `0x1000` as the Load window opens; a screen that never
+    /// seats it draws the pills full, as the pause menu's rows do.
+    pub fn set_pill_preroll(&mut self, preroll: i32) {
+        self.pill_preroll = Some(preroll);
     }
 
     /// Cursor over the previewed port's 5x3 block grid (cell index, not a
@@ -845,6 +856,8 @@ pub struct SaveOverlayModel<'a> {
     pub single_pill: bool,
     pub pills: Vec<u8>,
     pub pill_cursor: Option<usize>,
+    /// The pills' grey ([`save_pill_shade`]): `0x80` is full.
+    pub pill_shade: u8,
     pub slide_t: u16,
     pub info_t: u16,
     pub now_checking: bool,
@@ -885,8 +898,11 @@ impl SaveScreenFlow {
         } else {
             (0..ports).collect()
         };
-        let pill_cursor =
-            (layout.pill_cursor && ports > 0).then(|| (session.current_slot() as usize).min(1));
+        // The hand waits for the pills' fade to finish (`0x801E1DE0..
+        // 0x801E1DE8`: the cursor draw only at a pre-roll of `0x1000`).
+        let faded_in = self.pill_preroll.is_none_or(|p| p == 0x1000);
+        let pill_cursor = (layout.pill_cursor && ports > 0 && faded_in)
+            .then(|| (session.current_slot() as usize).min(1));
         // Under the "Now checking" dialog the grid and the empty info panel
         // come up once the card answers, and every cell the block scan has
         // not stamped yet draws the `USED` frame (record 5): the class array
@@ -980,6 +996,7 @@ impl SaveScreenFlow {
             single_pill: layout.single_pill,
             pills,
             pill_cursor,
+            pill_shade: self.pill_preroll.map_or(0x80, save_pill_shade),
             slide_t: session.slide_anim_t(),
             info_t: session.info_panel_slide_anim_t(),
             now_checking: layout.now_checking || session.now_checking_t() > 0,
@@ -1756,4 +1773,14 @@ mod refusal_tests {
         flow.clear_refusal();
         assert_eq!(flow.refusal(), None);
     }
+}
+
+/// The grey the save-select pills draw at for a pre-roll `0x801EF120`:
+/// `preroll >> 5` (rounding toward zero), held at `0x80`, the packet colour
+/// of every pill quad mode 2 of the panel slide emits.
+///
+/// PORT: FUN_801E1C1C (mode `2`, `0x801E1E0C..0x801E1E40`, the pills' grey)
+pub fn save_pill_shade(preroll: i32) -> u8 {
+    let p = if preroll < 0 { preroll + 0x1F } else { preroll };
+    (p >> 5).min(0x80) as u8
 }

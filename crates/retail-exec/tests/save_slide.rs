@@ -286,7 +286,10 @@ fn the_card_pills_slide_where_the_port_draws_them() {
         let card = rng.below(2);
         cpu.mem.wr32(PILL_T, t);
         cpu.mem.wr32(PORT, card);
-        cpu.mem.wr32(FADE, rng.below(0x1001));
+        cpu.mem.wr32(
+            FADE,
+            [0, 0x1000, 0x1100, rng.below(0x1001)][rng.below(4) as usize],
+        );
         cpu.mem.wr32(POOL_PTR, POOL);
         cpu.mem.wr32(OT_PTR, OT);
         cpu.mem.wr32(STACK_TOP + 0x10, 0x30);
@@ -297,6 +300,22 @@ fn the_card_pills_slide_where_the_port_draws_them() {
             Stop::Returned,
             "case {case}"
         );
+        // The browsing row's quads carry the pre-roll's grey
+        // (`0x801E1E0C..`); the committed pill draws full.
+        let fade = cpu.mem.rd32(FADE) as i32;
+        let shade = if t == 0 {
+            legaia_engine_menus::save_screen::save_pill_shade(fade)
+        } else {
+            0x80
+        };
+        for &p in linked.borrow().iter() {
+            let b = cpu.mem.read(p, 8);
+            assert_eq!(
+                [b[4], b[5], b[6]],
+                [shade; 3],
+                "case {case}: t {t:#x} pre-roll {fade:#x}"
+            );
+        }
         // Each linked packet: its first corner and its texel origin.
         let mut retail: Vec<(i32, i32, u32, u32, i32, i32)> = linked
             .borrow()
@@ -323,6 +342,7 @@ fn the_card_pills_slide_where_the_port_draws_them() {
             single_pill: t != 0,
             pills: &pills,
             pill_cursor: None,
+            pill_shade: legaia_engine_menus::save_screen::save_pill_shade(fade),
             slide_t: t as u16,
             info_t: 0,
             now_checking: false,
@@ -333,6 +353,17 @@ fn the_card_pills_slide_where_the_port_draws_them() {
             location_tab: None,
         };
         let draws = save_select_overlay_draws(&font, Some(&rects), &view, (0, 0), 1);
+        for sp in draws
+            .sprites
+            .iter()
+            .filter(|s| s.src == SLOT1 || s.src == SLOT2)
+        {
+            assert_eq!(
+                (sp.color[0] * 128.0).round() as u8,
+                shade,
+                "case {case}: port grey"
+            );
+        }
         let mut port: Vec<(i32, i32, u32, u32, i32, i32)> = draws
             .sprites
             .iter()
@@ -444,6 +475,7 @@ fn the_panel_darkening_is_the_port_level() {
             single_pill: false,
             pills: &[],
             pill_cursor: None,
+            pill_shade: 0x80,
             slide_t: 0,
             info_t: if mode == 3 { seen } else { 0 },
             now_checking: mode == 0,
