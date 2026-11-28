@@ -3828,8 +3828,10 @@ holds the title theme at sequence volume `127`, the others at `107`: its live au
 `_DAT_8007B910` reads `254` against the reference `_DAT_8008457C`'s `215` (every other front-end state
 holds `215`), and every reader halves the level into the sequence volume. The state stands inside the
 Load's result line, and [the load fades the title theme](#the-load-fades-the-title-theme) names the
-writer. The sweep seeds a front-end state on the title theme and does not drive the Continue to its
-Load, so this row keeps reading `107`; the screen's own level is pinned by unit tests.
+writer. The sweep hears such a state under the port's own Load: `RetailAudio::card_launch` reads the
+arm's hold and ramp words off the state, and the front-end seat drives the save-select session through
+a Load to the same frame of its result line, storing the level that session gives each frame, so the
+row reads `127` on both sides.
 
 <a id="the-load-fades-the-title-theme"></a>
 **The load fades the title theme.** A successful Load's "Load successful." line is the card manager's
@@ -3857,9 +3859,19 @@ nothing. Port: the Continue's result line is the hold and the ramp
 (`save_select::COMMIT_LOAD_RESULT_FRAMES`), `ContinueScreen::music_level` is the store
 (`save_select::launch_fade_music_level`), both hosts hand it to `AudioDirector::front_end_level_frame`,
 which applies it one frame back as the frame driver does, and the landing rests the level
-(`AudioDirector::rest_audio_level`). The New Game's black stops the title theme at the confirm instead
-of fading it: the port enters the opening scene ahead of the black, and the scene's bank replaces the
-theme's.
+(`AudioDirector::rest_audio_level`).
+
+The New Game's black is the same arm. The same probe from `title_menu_idle` (Up, Cross) reads the store
+at `0x801DFA58` from the confirm's frame: `254` for `90` frames, the theme at `127`, then the ramp to `0`;
+`LaunchGame` (sub-mode `6`) stops the title's source (`FUN_800266E0(0x8007052C)`, `0x801DFB74`) on the
+launch frame, two vsyncs before master mode `2`, and the level stays `0` until the MAN loader rests it.
+Nothing cuts the theme earlier. The port enters the opening scene ahead of the black, so the director
+holds the opening's BGM commands for it (`AudioDirector::begin_launch_hold`, from
+`BootSession::begin_new_game_launch`): the title theme plays on under `World::launch_fade`, the audio
+frame stores the arm's level over it, and the frame the fade hands over stops the theme, rests the
+level and runs the held commands (`AudioDirector::end_launch_hold`). Pinned by
+`engine-session/tests/new_game_launch_audio_disc.rs`: `90` frames at `254`, then `239` .. `15`, `0`,
+`0`.
 
 The minigame seed also times the cues. With `LEGAIA_SWEEP_LISTEN_TICKS=<n>` it listens `n` ticks past
 the phase whatever the phase does, records each keyed cue on the listener's tick (`cue_ticks` in the

@@ -507,7 +507,12 @@ stores cue `0x20` (`0x801DF91C`). A successful Load's line is the
 climbs `0x100` a frame and the load lands at `0x1200`, so the line stays up
 eighteen more frames, a press only starting the ramp early. Under the title's
 entry word the arm also fades the title theme out
-([audio](audio.md#the-load-fades-the-title-theme)).
+([audio](audio.md#the-load-fades-the-title-theme)). A clean write takes the
+same line: the write arm leaves sub-mode `3` for `0x17` and then, with no
+retry pending, `0x16` (the dispatcher's tail, `0x801DFC40..`), so "Save
+successful." holds and ramps the same way, and `LaunchGame` (sub-mode `6`)
+with the entry word down closes the screen. The port's result line is that
+shape in both directions (`save_select::commit_result_frames`).
 
 **A damaged block is refused after the read, not on the grid.** The grid
 classifies by filename, so a damaged save still shows its cell and info panel.
