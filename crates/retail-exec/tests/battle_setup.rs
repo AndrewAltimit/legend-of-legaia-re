@@ -23,7 +23,9 @@ use legaia_engine_battle_vm::battle_ground_grid::OutdoorCueTable;
 use legaia_engine_core::world::World;
 use legaia_engine_system::fade::FadeTemplate;
 use legaia_save::Party;
-use legaia_scene_formats::battle_backdrop::{MirrorXTable, drawn_object_indices_gated};
+use legaia_scene_formats::battle_backdrop::{
+    MirrorXTable, drawn_object_indices_gated, drawn_object_indices_rebound,
+};
 use psx_retail_exec::{A0, A1, Stop, V0};
 use std::cell::Cell;
 use std::cell::RefCell;
@@ -303,6 +305,17 @@ fn battle_setup_seats_and_draws_as_retail_does() {
             let n = cpu.mem.rd32(tbl);
             let list: Vec<u32> = (0..n).map(|k| cpu.mem.rd32(tbl + 4 + 4 * k)).collect();
             assert_eq!(list, keep, "{ctx}: {copy} copy's objects, shared {shared}");
+            // The array past the count stays as the edit left it, and PROT
+            // 0968's hand-back reads slot 1 over slot 0 there: a two-object
+            // shell's slot 1 still names object 1.
+            let rebound: Vec<u32> = (0..n)
+                .map(|k| cpu.mem.rd32(tbl + 4 + 4 * k.max(1)))
+                .collect();
+            let want: Vec<u32> = drawn_object_indices_rebound(shell_objects as usize, shared, true)
+                .into_iter()
+                .map(|k| 0xA000_0000 + k as u32)
+                .collect();
+            assert_eq!(rebound, want, "{ctx}: {copy} copy rebound, shared {shared}");
         }
         let second = cpu.mem.rd32(CTX + 0x1070);
         let mirrored = mirror.contains_runtime_id(stage);

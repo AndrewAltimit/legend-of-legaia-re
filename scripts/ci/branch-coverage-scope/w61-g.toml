@@ -257,3 +257,38 @@ image = "57d74793591355fc"
 range = "0x801D2B90..0x801D2B90"
 verdict = "unreachable"
 reason = "PROT 0899 Options popup: the value-label lookup skips when the label table at 0x801E44B8 opens on a zero word; its first word is the pointer 0x8007E8C8, so the walk always runs."
+
+[[arm]]
+entry = "0x801F0450"
+image = "a1445dd6c9461d8b"
+range = "0x801F0D40..0x801F0D40"
+verdict = "unreachable"
+reason = "PROT 0898 auto-combo insertion tail: `blez` on the signed halfword of fp; every pass of the insertion loop (head 0x801F0BF0, back edge 0x801F1270) leaves at 0x801F0C70 when fp < 2, and fp is written only at 0x801F1160, after this test, so here fp >= 2 and the skip is never taken."
+
+[[arm]]
+entry = "0x801F0450"
+image = "a1445dd6c9461d8b"
+range = "0x801F104C..0x801F104C"
+verdict = "unreachable"
+reason = "PROT 0898 auto-combo insertion tail: `blez` on the signed halfword of fp; every pass of the insertion loop (head 0x801F0BF0, back edge 0x801F1270) leaves at 0x801F0C70 when fp < 2, and fp is written only at 0x801F1160, after this test, so here fp >= 2 and the skip is never taken."
+
+[[arm]]
+entry = "0x801F0450"
+image = "a1445dd6c9461d8b"
+range = "0x801F10A0..0x801F10A0"
+verdict = "unreachable"
+reason = "PROT 0898 auto-combo insertion tail: the compiler's signed divide-by-4 rounding guard (`bgez` over `addiu 3`) on the return of rand() FUN_80056798, which is 0..0x7FFF; it is never negative, so the guard is always taken."
+
+[[arm]]
+entry = "0x801F0450"
+image = "a1445dd6c9461d8b"
+range = "0x801F1214..0x801F1214"
+verdict = "unreachable"
+reason = "PROT 0898 auto-combo insertion tail: the chain-length loop tests a0, set once from the record's +0xB byte after `beqz` at 0x801F1208 has passed it as non-zero and never rewritten in the loop (which re-reads only v0), so `beqz a0` is never taken."
+
+[[arm]]
+entry = "0x801F0450"
+image = "a1445dd6c9461d8b"
+range = "0x801F0BD4..0x801F0BD4"
+verdict = "unreachable"
+reason = "PROT 0898 auto-combo insertion tail: the exit when the drawn record index (rand() % 5 + 0xB, at most 0xF) is not below the bank's record count, the first byte of record 0's +0x58 table; every party bank (PROT 0863..0865) holds more than 0x11 records (auto_combo::every_party_bank_holds_the_records_the_fills_draw), so the exit is never taken."
