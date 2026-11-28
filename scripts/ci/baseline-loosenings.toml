@@ -2132,3 +2132,15 @@ changes = [
   ["counts/native/world_map/enhanced/alloc_kb_per_frame", 1491.4, 1505.3],
   ["counts/native/world_map/retail/alloc_kb_per_frame", 1229.4, 1243.3],
 ]
+
+[[loosening]]
+file = "scripts/replays/full_game_baseline.toml"
+reason = "A talk now turns its speaker at the line and its partner first (the dialog SM's own order), which moves the talk timing a few thousand frames from milestone 3 on and re-deals every later roll. Per-stretch: seed_14's two Zora reloads replay zora_castle -> conkram_past's placed examines three times (45 uses against 15), and seed_12 makes one more box talk in noaru_valley -> bio_castle. Both are the counts the first wave-61 gate measured on the tip before any hand change, so they are the re-deal's, not a scene regression."
+changes = [
+  ["shortcuts/walked/seed_12/box_face", 2, 3],
+  ["shortcuts/walked/seed_12/restore_xz", 46, 47],
+  ["shortcuts/walked/seed_14/examine_face", 26, 32],
+  ["shortcuts/walked/seed_14/examine_far", 30, 40],
+  ["shortcuts/walked/seed_14/examine_seat", 4, 6],
+  ["shortcuts/walked/seed_14/restore_xz", 47, 54],
+]
