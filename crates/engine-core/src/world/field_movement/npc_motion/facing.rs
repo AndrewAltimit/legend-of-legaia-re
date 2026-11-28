@@ -13,9 +13,15 @@ impl World {
     ///
     /// REF: FUN_80019b28
     pub(crate) fn face_field_npc(&mut self, npc_slot: u8) {
-        let Some(&(nx, nz)) = self.npcs.positions.get(&npc_slot) else {
+        let Some(&at) = self.npcs.positions.get(&npc_slot) else {
             return;
         };
+        self.face_field_point(at);
+    }
+
+    /// Turn the player toward world point `(nx, nz)`: the touch post's turn
+    /// onto its `+0x98` partner.
+    pub(crate) fn face_field_point(&mut self, (nx, nz): (i16, i16)) {
         let Some(slot) = self.player_actor_slot else {
             return;
         };
@@ -97,9 +103,35 @@ impl World {
     /// heading convention (`0` = Z+, [`engine_bearing`]); the integer bearing
     /// is exactly symmetric under the endpoint swap, so the half-turn is too.
     ///
-    /// PORT: FUN_80039B7C (the `0x80039F48..0x80039F80` face-the-player arm)
     /// REF: FUN_80019B28, FUN_801D5B5C, FUN_8003A1E4, FUN_80020DE0
     pub fn face_field_npc_at_player(&mut self, slot: u8) {
+        self.save_talk_facing(slot);
+        self.snap_talker_to_player(slot);
+    }
+
+    /// The touch post's half of [`Self::face_field_npc_at_player`]: save the
+    /// addressed placement's heading (`+0x26` into `+0x5A`, `FUN_801D5B5C`
+    /// `0x801D5BE4`), unconditionally and once per engagement.
+    ///
+    /// REF: FUN_801D5B5C
+    pub fn save_talk_facing(&mut self, slot: u8) {
+        if !self.npcs.positions.contains_key(&slot) {
+            return;
+        }
+        if self.npcs.facing_save.is_none() {
+            let prev = self.npcs.heading(slot);
+            self.npcs.facing_save = Some((slot, prev));
+        }
+    }
+
+    /// The dialog SM's half of [`Self::face_field_npc_at_player`]: the snap
+    /// toward the player, which `FUN_80039B7C` makes on the frame its context
+    /// lands on a text byte (`sltiu v0,a2,0x20` at `0x80039F38`, then
+    /// `0x80039F48..0x80039F80`) - after whatever prologue ops the record runs
+    /// first, and again at each later line.
+    ///
+    /// PORT: FUN_80039B7C (the `0x80039F48..0x80039F80` face-the-player arm)
+    pub fn snap_talker_to_player(&mut self, slot: u8) {
         // Retail's class gate, which the paragraphs above describe and this
         // arm used to skip: the snap runs only for `flags & 0x420000 ==
         // 0x20000`. `FUN_8003A1E4` ORs `0x20000` into every partition-1
@@ -114,13 +146,6 @@ impl World {
         let Some(&(nx, nz)) = self.npcs.positions.get(&slot) else {
             return;
         };
-        // The touch post's save is unconditional (`FUN_801D5B5C`
-        // `0x801D5BE4`): the class test only gates the snap below, and the
-        // exit's restore makes its own.
-        if self.npcs.facing_save.is_none() {
-            let prev = self.npcs.heading(slot);
-            self.npcs.facing_save = Some((slot, prev));
-        }
         if self.field_channel_flags(slot) & 0x0040_0000 != 0 {
             return;
         }

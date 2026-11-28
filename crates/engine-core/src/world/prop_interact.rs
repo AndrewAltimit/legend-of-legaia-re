@@ -575,7 +575,9 @@ impl World {
                 } else {
                     // Still typing or scrolling: the pager's skip latch
                     // completes the page (`legaia_engine_dialog::dialog_window`).
-                    panel.confirm_while_typing();
+                    if !panel.opening_call_now() {
+                        panel.confirm_while_typing();
+                    }
                 }
             }
             if id.done && id.player_glide.is_none() {

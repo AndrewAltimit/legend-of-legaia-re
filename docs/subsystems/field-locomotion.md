@@ -508,6 +508,12 @@ The probe compares the player's position against each actor's `+0x14` / `+0x18` 
 - the actor's facing `+0x26` saved into `+0x5A`;
 - `FUN_8003c9ac`, which sweeps the scene actor list and copies byte `0` of each moving-class actor's `0x801C6470` record (its standing move) into the requested-move pair `+0x5C` / `+0x88`. That is a clip request, not a hold: nothing counts down and the motion VM keeps running ([`motion-vm.md`](motion-vm.md#the-motion-pause-kick)).
 
+**The snap toward the player is the dialog SM's, at the line.** The touch post only saves `+0x26`. The talker turns when its record lands on a text byte: `FUN_80039B7C` tests `sltiu v0,a2,0x20` at `0x80039F38` and, for a moving-class actor (`flags & 0x420000 == 0x20000`), stores the bearing `FUN_80019B28(player, self)` into `+0x26` at `0x80039F80`.
+
+A record that runs ops before its first line turns its speaker only then: `casino`'s ticket-counter talk turns the clerk beside the speaker for 21 vsyncs first, and the speaker snaps on the frame its box opens. The touch's own turn of the player is onto the `+0x98` partner, which for a talk proxy is the proxy, not the speaker its talk runs. Port: `World::save_talk_facing` at the touch, `World::snap_talker_to_player` where the inline runner opens a line, `World::field_interact_probe_hit` for the partner.
+
+**A leg on a placement spawned before the talker starts a frame later.** The target's own actor tick runs the walk kernel (`FUN_8003BC08`), and the actor walk `FUN_8002519C` ticks placements in spawn order, so a talk that turns an earlier placement has already passed it this frame: the first step is the next frame's, and the leg's landing comes ahead of the talker's SM, so an op waiting on it runs on the landing frame. Port: `World::passed_by_talker`.
+
 The **teardown** is the dialog SM's exit path (`FUN_80039b7c`): it restores `+0x26` from the `+0x5A` save (moving-class partners), subtracts the actor's `+0x2A` out of the global `+0xA`, and when the global reaches zero clears the player's `0x80000` flag and `ctrl+0x60`. Overlapping touches therefore keep locomotion suppressed until every one is dismissed. Decode `FUN_801d5b5c` from a live overlay image; the static `overlay_0897` copy is garbled in this region.
 
 <a id="contact-resumes-the-script-it-does-not-run-the-scripts-last-instruction"></a>

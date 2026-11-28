@@ -270,14 +270,18 @@ impl OwnedDialogPanel {
     /// scroll (see [`crate::dialog_window`]). Returns `false` (and does
     /// nothing) when the page already waits, a menu is up, the panel is done,
     /// or this is a plain-MES panel.
+    /// Whether this vsync's pager call was a box's opening call (state `2`),
+    /// which reads no press. A host that routes the vsync's confirm after
+    /// the call spends that confirm here instead of
+    /// [`Self::confirm_while_typing`]: the next call sees no fresh edge
+    /// (`0x801D84D0` reads the frame's newly pressed bits), so retail types
+    /// the page on.
+    pub fn opening_call_now(&self) -> bool {
+        self.opening_call_now
+    }
+
     pub fn confirm_while_typing(&mut self) -> bool {
         if self.done || self.waiting_for_input || self.menu_active {
-            return false;
-        }
-        // The press this vsync's opening call read: state `2` takes none,
-        // and the next call sees no fresh edge (`0x801D84D0` reads the
-        // frame's newly pressed bits), so retail types the page on.
-        if std::mem::take(&mut self.opening_call_now) {
             return false;
         }
         match self.window.as_ref() {

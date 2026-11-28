@@ -737,9 +737,10 @@ fn a_resumed_box_with_a_full_window_scrolls_first() {
 }
 
 /// A box the SM opens on a game frame takes its opening call on the next
-/// frame (`seat_pager_phase(1)` at step `2`), and a confirm on the vsync of
-/// that call is spent on it: state `2` reads no press, so the page goes on
-/// typing at the typing pace. A confirm on the next call completes it.
+/// frame (`seat_pager_phase(1)` at step `2`), and a host spends a confirm on
+/// the vsync of that call on it (`opening_call_now`): state `2` reads no
+/// press, so the page goes on typing at the typing pace. A confirm on the
+/// next call completes it.
 #[test]
 fn a_press_on_the_opening_call_is_spent_and_the_page_types_on() {
     let inline = vec![
@@ -754,7 +755,7 @@ fn a_press_on_the_opening_call_is_spent_and_the_page_types_on() {
     // The next frame: the opening call, and a confirm on its vsync.
     panel.tick_at_auto(2, &mut auto);
     assert_eq!(panel.pacer().counter, 1, "the opening call");
-    assert!(!panel.confirm_while_typing(), "state 2 reads no press");
+    assert!(panel.opening_call_now(), "state 2 reads no press");
     for _ in 0..2 {
         panel.tick_at_auto(2, &mut auto);
     }
@@ -764,6 +765,7 @@ fn a_press_on_the_opening_call_is_spent_and_the_page_types_on() {
     );
     assert!(!panel.is_waiting_for_input());
     // A confirm on a typing call's vsync latches the skip.
+    assert!(!panel.opening_call_now());
     assert!(panel.confirm_while_typing());
     for _ in 0..2 {
         panel.tick_at_auto(2, &mut auto);

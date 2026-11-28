@@ -193,7 +193,9 @@ impl World {
                 } else {
                     // Still typing or scrolling: the pager's skip latch
                     // completes the page (`legaia_engine_dialog::dialog_window`).
-                    panel.confirm_while_typing();
+                    if !panel.opening_call_now() {
+                        panel.confirm_while_typing();
+                    }
                 }
             }
             // The SM that sees the box done runs on into the record's ops in
@@ -396,6 +398,12 @@ impl World {
                     panel.substitutions = host.world.dialog_substitutions(&id.bytecode);
                     host.world.apply_dialog_window_format(&mut panel);
                     host.world.seat_opening_pager_call(&mut panel);
+                    // The SM's state-1 arm: a context on a text byte snaps
+                    // its talker toward the player.
+                    // REF: FUN_80039B7C (`0x80039F38..0x80039F80`)
+                    if let Some(slot) = id.npc_slot.filter(|_| id.prop_anchor.is_none()) {
+                        host.world.snap_talker_to_player(slot);
+                    }
                     // The panel types the whole packed box (up to 3 rows), so
                     // every row lead counts as shown for the wrap detector,
                     // not just the first.
@@ -1784,7 +1792,21 @@ impl World {
             || n.rotate_legs.contains_key(&slot)
             || n.face_legs.contains_key(&slot)
             || n.motions.contains_key(&slot)
-            || self.leg_landed_this_frame(slot)
+            || (self.leg_landed_this_frame(slot) && !self.passed_by_talker(slot))
+    }
+
+    /// Whether the actor walk has ticked placement `slot` ahead of the talk
+    /// whose record is stepping now: placements tick in spawn order, so one
+    /// spawned before the talker lands its leg ahead of the talker's dialog
+    /// SM in the same frame, and an op aimed at it runs on that frame.
+    ///
+    /// REF: FUN_8002519C, FUN_8003BC08
+    pub(crate) fn passed_by_talker(&self, slot: u8) -> bool {
+        self.dialog.stepping_inline
+            && self
+                .dialog
+                .stepping_inline_npc
+                .is_some_and(|talker| slot < talker)
     }
 
     /// The placement slot a cross-context target byte names: the channel
@@ -2155,6 +2177,17 @@ impl World {
     /// `CC <id> 85|8E|8F ..`): its first frame now, the rest on the field
     /// tick ([`Self::tick_field_npc_face_legs`]). A new leg replaces one the
     /// actor had in flight - retail overwrites `+0x94`.
+    ///
+    /// The leg is the target's: its own actor tick visits the walk kernel
+    /// while the halt bit the acquire raised is up (`FUN_8003BC08`). The
+    /// actor walk `FUN_8002519C` ticks the placements in spawn order, so a
+    /// talk record that turns a placement spawned **before** its talker has
+    /// already passed it this frame, and the turn's first step is the next
+    /// frame's. `casino`'s ticket-counter talk runs `CC 10 85 14 00 F8` on
+    /// the placement ahead of its speaker: retail turns it from the frame
+    /// after the touch, where the port turned it on the touch's frame.
+    ///
+    /// REF: FUN_8002519C, FUN_8003BC08, FUN_8003774C (the 0x4C arm)
     pub fn face_leg_npc(
         &mut self,
         slot: u8,
@@ -2162,7 +2195,11 @@ impl World {
     ) {
         self.npcs.face_legs.remove(&slot);
         self.npcs.rotate_legs.remove(&slot);
-        let grid = self.clock.script_frame_delta();
+        let grid = if self.passed_by_talker(slot) {
+            0
+        } else {
+            self.clock.script_frame_delta()
+        };
         if grid == 0 || !self.step_npc_face_leg_by(slot, &mut ramp, grid) {
             self.npcs.face_legs.insert(slot, ramp);
         } else {

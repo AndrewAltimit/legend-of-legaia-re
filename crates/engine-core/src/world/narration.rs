@@ -1362,7 +1362,7 @@ impl World {
             } else if panel.is_waiting_for_input() {
                 panel.advance_page();
                 closed = panel.is_done();
-            } else {
+            } else if !panel.opening_call_now() {
                 panel.confirm_while_typing();
             }
         }
@@ -1470,7 +1470,9 @@ impl World {
             } else {
                 // Still typing or scrolling: the pager's skip latch
                 // completes the page (`legaia_engine_dialog::dialog_window`).
-                panel.confirm_while_typing();
+                if !panel.opening_call_now() {
+                    panel.confirm_while_typing();
+                }
             }
         }
     }

@@ -1462,8 +1462,9 @@ fn player_cannot_walk_while_the_inline_runner_owns_the_frame() {
     );
 }
 
-/// Talking to an NPC turns it to face the player, instantly, and gives its
-/// authored heading back when the conversation ends.
+/// Talking to an NPC turns it to face the player, instantly, on the frame
+/// its record reaches its line, and gives its authored heading back when the
+/// conversation ends.
 ///
 /// Retail does both in the dialog SM: the touch post saves `+0x26` into
 /// `+0x5A` (`FUN_801D5B5C`), the SM writes the player bearing into `+0x26`
@@ -1481,12 +1482,28 @@ fn talking_turns_the_npc_to_the_player_and_restores_its_facing() {
     );
 
     hold(&mut world, PadButton::Cross.mask(), 1);
+    // The touch saves the heading; the snap waits for the record to land on
+    // its line (`FUN_80039B7C`, `0x80039F38`).
+    assert_eq!(world.npcs.facing_save, Some((3, 0x400)));
+    while !world
+        .dialog
+        .inline
+        .as_ref()
+        .is_some_and(|i| i.panel.is_some())
+    {
+        assert_eq!(
+            world.npcs.headings.get(&3),
+            Some(&0x400),
+            "no snap before the line"
+        );
+        hold(&mut world, 0, 1);
+    }
     // Player at (0, 0), NPC at (0, 64): the bearing NPC -> player is -Z, which
     // is 0x800 in the engine's heading space (0 = +Z). One frame, not a ramp.
     assert_eq!(
         world.npcs.headings.get(&3),
         Some(&0x800),
-        "the addressed NPC faces the player on the frame the talk starts"
+        "the addressed NPC faces the player on the frame its line opens"
     );
     assert_eq!(world.npcs.facing_save, Some((3, 0x400)));
 
