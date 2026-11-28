@@ -184,6 +184,11 @@ impl RampScheduler {
         self.slots.iter().filter(|s| s.is_some()).count()
     }
 
+    /// The live ramps, in install order (the order [`Self::tick`] walks).
+    pub fn live(&self) -> impl Iterator<Item = &Ramp> + '_ {
+        self.order.iter().filter_map(|&i| self.slots[i].as_ref())
+    }
+
     /// `true` while a ramp is driving `dest`.
     pub fn is_driving(&self, dest: u32) -> bool {
         self.slots.iter().any(|s| s.is_some_and(|r| r.dest == dest))

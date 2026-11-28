@@ -103,6 +103,20 @@ impl WorldRumble {
     }
 }
 
+#[cfg(feature = "test-drivers")]
+impl World {
+    /// The ramps live on the two motor words, as retail's `FUN_8003C5F0`
+    /// takes them: `(word address, target, ticks)`, the address
+    /// `gp + dest` (`gp = 0x8007B318`).
+    pub fn drive_rumble_ramps(&self) -> Vec<(u32, i32, i32)> {
+        self.rumble
+            .ramps
+            .live()
+            .map(|r| (0x8007_B318 + r.dest, r.end, r.total))
+            .collect()
+    }
+}
+
 impl World {
     /// Whether the options screen's Events vibration row is Off
     /// (`_DAT_800845A8 != 0`), the gate on the field scripts' rumble writes.

@@ -88,7 +88,7 @@ impl FieldActorFxHost for Inert {
 impl FieldPlayerHost for Inert {}
 impl FieldHaltHost for Inert {}
 
-fn man_payloads(buf: &[u8]) -> Vec<Vec<u8>> {
+pub(crate) fn man_payloads(buf: &[u8]) -> Vec<Vec<u8>> {
     let mut out = Vec::new();
     if let Some(table) = legaia_scene_formats::scene_asset_table::detect(buf) {
         for d in table.descriptors.iter().filter(|d| d.type_byte == 0x03) {
@@ -855,9 +855,30 @@ fn a_sound_cue_or_bgm_barrier_waits_as_retail_waits() {
     cpu.hook(READ_U16, |r, m| r.r[2] = m.rd16(r.r[4]) as i16 as u32);
     cpu.mem.wr8(0x1F80_0393, 1);
     cpu.mem.wr32(CTX + 0x94, SCRIPT);
+    // The calls op `36` makes, with their arguments: the cue push
+    // `FUN_80035B50(id)`, the last-slot delay `FUN_80035BAC(delay)` (sub 4,
+    // `0x801E03C0..0x801E03DC`), the field-audio release `FUN_801D8450`
+    // (sub 3) and the XA start `FUN_8003D53C(arg >> 3, arg & 7, sel)`.
+    let log: std::rc::Rc<std::cell::RefCell<Vec<String>>> = Default::default();
+    for (va, name) in [
+        (0x8003_5B50u32, "push"),
+        (0x8003_5BAC, "delay"),
+        (0x801D_8450, "release"),
+        (0x8003_D53C, "xa"),
+    ] {
+        let log = log.clone();
+        cpu.hook(va, move |r, _| {
+            log.borrow_mut().push(match name {
+                "push" | "delay" => format!("{name} {}", r.r[4] as i16),
+                "release" => name.to_string(),
+                _ => format!("xa {} {} {:#x}", r.r[4] & 0xFF, r.r[5] & 7, r.r[6] & 0xFFFF),
+            });
+        });
+    }
     let gp = cpu.regs.r[GP];
     let clean = cpu.mem.clone();
     let mut rng = crate::common::Rng(0x5841_4655);
+    let mut called = 0u32;
     let (mut waited, mut ran) = (0u32, 0u32);
     let mut differ: BTreeMap<String, u32> = BTreeMap::new();
     for round in 0..6000u32 {
@@ -903,9 +924,11 @@ fn a_sound_cue_or_bgm_barrier_waits_as_retail_waits() {
         cpu.mem.wr32(HAVE, if walk == 0 { 7 } else { 6 });
         cpu.mem.wr32(SOUND, if walk == 2 { 9 } else { 0 });
         cpu.mem.load(SCRIPT, &script);
+        log.borrow_mut().clear();
         assert_eq!(cpu.call(VM, &[SCRIPT, 0, CTX]), Stop::Returned);
         let retail = cpu.regs.r[2] as usize & 0xFFFF;
         let retail_req = cpu.mem.rd32(REQ) as i32;
+        let retail_calls = log.borrow().clone();
 
         let mut w = legaia_engine_core::world::World::new();
         {
@@ -942,18 +965,47 @@ fn a_sound_cue_or_bgm_barrier_waits_as_retail_waits() {
             waited += 1;
         }
         let port_req = w.script_audio_gates_mut().sound_stream.requested;
-        if port != retail || (script[0] == 0x36 && port_req != retail_req) {
+        let mut port_calls: Vec<String> = w
+            .take_sfx_ring_ops()
+            .into_iter()
+            .map(|op| match op {
+                legaia_engine_system::sound_state::SfxRingOp::Push(id) => format!("push {id}"),
+                legaia_engine_system::sound_state::SfxRingOp::SetLastDelay(d) => {
+                    format!("delay {d}")
+                }
+                other => format!("{other:?}"),
+            })
+            .collect();
+        if !w.take_sfx_voice_stops().is_empty() {
+            port_calls.push("release".to_string());
+        }
+        for c in w.drain_field_xa_cues() {
+            port_calls.push(format!(
+                "xa {} {} {:#x}",
+                c.clip & 0xFF,
+                c.channel & 7,
+                c.duration_sectors
+            ));
+        }
+        called += u32::from(!retail_calls.is_empty());
+        if port != retail
+            || (script[0] == 0x36 && (port_req != retail_req || port_calls != retail_calls))
+        {
             *differ
                 .entry(format!(
                     "{script:02x?} req {req} ack {ack} dual {dual} drive {drive} walk {walk}: \
-                     retail pc {retail} req {retail_req}, port pc {port} req {port_req}"
+                     retail pc {retail} req {retail_req} calls {retail_calls:?}, \
+                     port pc {port} req {port_req} calls {port_calls:?}"
                 ))
                 .or_default() += 1;
         }
     }
     let report: Vec<String> = differ.keys().take(20).cloned().collect();
     assert!(report.is_empty(), "{}", report.join("\n"));
-    assert!(waited > 500 && ran - waited > 500, "{ran} {waited}");
+    assert!(
+        waited > 500 && ran - waited > 500 && called > 300,
+        "{ran} {waited} {called}"
+    );
 }
 
 /// Every unprefixed instruction of the disc corpus and of [`synthetic`] with

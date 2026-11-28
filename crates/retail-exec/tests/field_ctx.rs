@@ -29,7 +29,7 @@ const TINT_RAMP_POOL: u32 = 0x801C_66A0;
 const TINT_STACK_TOP: u32 = 0x801F_FF00;
 
 /// `(name, offset, width)` of every context field the port models.
-const FIELDS: [(&str, u32, u8); 28] = [
+pub(crate) const FIELDS: [(&str, u32, u8); 28] = [
     ("flags", 0x10, 4),
     ("world_x", 0x14, 2),
     ("world_y", 0x16, 2),
@@ -64,7 +64,7 @@ const FIELDS: [(&str, u32, u8); 28] = [
 /// its host (the field differs from retail's and `step` left the seed):
 /// a store the port routes to the host by design. Any other such pair is a
 /// store retail makes that nothing in the port makes.
-const LEFT_TO_HOST: [&str; 35] = [
+pub(crate) const LEFT_TO_HOST: [&str; 35] = [
     "23 flags",
     "23 world_y",
     "38 field_26",
@@ -102,7 +102,7 @@ const LEFT_TO_HOST: [&str; 35] = [
     "4C E3 field_8e",
 ];
 
-fn port_field(c: &FieldCtx, name: &str) -> u32 {
+pub(crate) fn port_field(c: &FieldCtx, name: &str) -> u32 {
     match name {
         "flags" => c.flags,
         "world_x" => c.world_x.into(),
@@ -136,7 +136,7 @@ fn port_field(c: &FieldCtx, name: &str) -> u32 {
     }
 }
 
-fn seat(c: &mut FieldCtx, name: &str, v: u32) {
+pub(crate) fn seat(c: &mut FieldCtx, name: &str, v: u32) {
     match name {
         "flags" => c.flags = v,
         "world_x" => c.world_x = v as u16,
@@ -170,7 +170,7 @@ fn seat(c: &mut FieldCtx, name: &str, v: u32) {
     }
 }
 
-fn rd(cpu: &mut psx_retail_exec::Cpu, off: u32, width: u8) -> u32 {
+pub(crate) fn rd(cpu: &mut psx_retail_exec::Cpu, off: u32, width: u8) -> u32 {
     match width {
         1 => cpu.mem.rd8(CTX + off).into(),
         2 => cpu.mem.rd16(CTX + off).into(),
@@ -178,7 +178,7 @@ fn rd(cpu: &mut psx_retail_exec::Cpu, off: u32, width: u8) -> u32 {
     }
 }
 
-fn wr(cpu: &mut psx_retail_exec::Cpu, off: u32, width: u8, v: u32) {
+pub(crate) fn wr(cpu: &mut psx_retail_exec::Cpu, off: u32, width: u8, v: u32) {
     match width {
         1 => cpu.mem.wr8(CTX + off, v as u8),
         2 => cpu.mem.wr16(CTX + off, v as u16),
@@ -188,7 +188,7 @@ fn wr(cpu: &mut psx_retail_exec::Cpu, off: u32, width: u8, v: u32) {
 
 /// The field overlay over the executable, every cross-context target resolved
 /// to the one context under test and every call outside the overlay stubbed.
-fn retail_vm() -> Option<psx_retail_exec::Cpu> {
+pub(crate) fn retail_vm() -> Option<psx_retail_exec::Cpu> {
     let (mut cpu, d) = (scus_cpu()?, disc()?);
     cpu.mem
         .load(OVERLAY_BASE, &d.read_entry(897).expect("PROT 0897"));
@@ -310,7 +310,11 @@ fn every_instruction_leaves_its_context_as_retail_leaves_it() {
 /// compared: `+0x16` (the floor sample is an executable call, stubbed here),
 /// `+0x10` bit 1 (the cull `FUN_801D79E8` the arm calls, which the port runs
 /// per frame) and the walk-state bytes `+0x5E` / `+0x8B..+0x8D`, which the
-/// port's NPC walk does not keep.
+/// port's NPC walk does not keep. The floor sample itself is answered with a
+/// marker height, so whether the seat re-floors (`0x801E1904..0x801E1934`:
+/// never under `0x20000000`, else under `0x20200` or the overworld byte
+/// `_DAT_8007B6A8`, seeded both ways) is compared against the port dropping
+/// the placement's held glide height.
 #[test]
 fn a_seat_lands_the_placement_where_retail_seats_the_actor() {
     differential!(prot(897, VM));
@@ -318,10 +322,12 @@ fn a_seat_lands_the_placement_where_retail_seats_the_actor() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
     };
+    const FLOOR_MARK: u16 = 0x0F1E;
+    cpu.hook(0x8001_9278, |r, _| r.r[2] = u32::from(FLOOR_MARK));
     let gp = cpu.regs.r[GP];
     let clean = cpu.mem.clone();
     let mut rng = Rng(0x5345_4154);
-    let mut ran = 0u32;
+    let (mut ran, mut refloored, mut by_scene) = (0u32, 0u32, 0u32);
     let mut differ: BTreeMap<String, (u32, String)> = BTreeMap::new();
     for (script, pc, label) in corpus() {
         if label != "4C 51" {
@@ -348,10 +354,25 @@ fn a_seat_lands_the_placement_where_retail_seats_the_actor() {
             wr(&mut cpu, off, width, v);
             seat(&mut ctx, name, v);
         }
+        if ctx.world_y == FLOOR_MARK {
+            ctx.world_y ^= 1;
+            wr(&mut cpu, 0x16, 2, ctx.world_y.into());
+        }
+        // A class word with neither `0x20200` bit now and then, so the
+        // overworld byte decides.
+        if rng.below(3) == 0 {
+            ctx.flags &= !0x2002_0200;
+            wr(&mut cpu, 0x10, 4, ctx.flags);
+        }
+        let overworld = rng.below(2) == 0;
+        let classed = ctx.flags & 0x0002_0200 != 0;
+        cpu.mem.wr8(0x8007_B6A8, u8::from(overworld));
         if cpu.call(VM, &[SCRIPT, pc as u32, CTX]) != Stop::Returned {
             continue;
         }
         let mut w = legaia_engine_core::world::World::new();
+        w.party.scene_save_allowed = overworld;
+        w.drive_glide_y(0, Some(0x0123));
         w.field_vm.executing_channel = Some(0);
         w.npcs
             .positions
@@ -387,6 +408,11 @@ fn a_seat_lands_the_placement_where_retail_seats_the_actor() {
         );
         check("+0x62", rd(&mut cpu, 0x62, 2), c.local_flags.into());
         check("+0x5C", rd(&mut cpu, 0x5C, 2), c.move_id.into());
+        let retail_floor = rd(&mut cpu, 0x16, 2) == u32::from(FLOOR_MARK);
+        let port_floor = w.drive_glide_y(0, None).is_none();
+        check("re-floor", retail_floor.into(), port_floor.into());
+        refloored += u32::from(retail_floor);
+        by_scene += u32::from(retail_floor && !classed);
         // The port keeps the drawn heading half a turn on from `+0x26`.
         check(
             "+0x26",
@@ -408,7 +434,10 @@ fn a_seat_lands_the_placement_where_retail_seats_the_actor() {
         .map(|(k, (n, ex))| format!("{k}: {n} e.g. {ex}"))
         .collect();
     assert!(report.is_empty(), "{}", report.join("\n"));
-    assert!(ran > 1000, "{ran}");
+    assert!(
+        ran > 1000 && refloored > 200 && by_scene > 50 && ran - refloored > 200,
+        "{ran} {refloored} {by_scene}"
+    );
 }
 
 /// The `4C 81` tint is the op the port hands its host, which keeps the pair in

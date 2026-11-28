@@ -175,6 +175,7 @@ mod face_anim;
 mod far_arm_clip;
 mod fatal_outcomes;
 mod field_actor_plan;
+mod field_calls;
 mod field_camera;
 mod field_ctx;
 mod field_hud;
