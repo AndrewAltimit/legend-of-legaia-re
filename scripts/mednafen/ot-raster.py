@@ -19,7 +19,12 @@ records are the SCUS frame driver's, so a battle, a field or a minigame frame
 
 No mask bit, and no dither unless `--rule` names one (`console`: the GPU's
 `-4..3` matrix on shaded and texture-blended draws; `pcsx`: PCSX-Redux's
-`0..7` table on Gouraud draws only). The canvas is the 320x224 draw area at offset
+`0..7` table on Gouraud draws only), and then only while the texpage
+register's dither bit is up. That register starts at the record's DR_ENV `E1`
+word and carries through the stream: every `E1` packet rewrites it, and every
+textured polygon's page halfword rewrites its bits 0..8 and 11 (page, ABR,
+depth; not the dither bit), so an untextured semi prim blends in the ABR the
+last of them left. The canvas is the 320x224 draw area at offset
 `(0, 0)`. The point is a second renderer that shares no code with the engine:
 an engine frame seated on the inputs a table was built from should match its
 raster exactly, so a residual against the **displayed** frame that survives
@@ -51,6 +56,7 @@ KSEG0 = 0x8000_0000
 DOUBLE_BUFFER = 0x8007_BF30
 DOUBLE_BUFFER_STRIDE = 0x74
 DOUBLE_BUFFER_OT = 0x70
+DRENV = 0x1C
 OT_BUCKETS = 4096
 W, H = 320, 224
 CONSOLE_DITHER = np.array([[-4, 0, -3, 1], [2, -2, 3, -1], [-3, 1, -4, 0], [3, -1, 2, -2]])
@@ -118,6 +124,8 @@ class Raster:
         # Which draws dither: the console's shaded and texture-blended ones,
         # PCSX-Redux's Gouraud ones only.
         dithered = gour if self.rule == "pcsx" else (gour or (tex and not raw))
+        # The draw mode's dither bit, as the stream left it.
+        dithered = dithered and bool(self.tpage & 0x200)
         if not tex:
             src = np.stack(
                 [self.cut(c[k].astype(np.int32), ys, xs, dithered) for k in range(3)], -1
@@ -214,7 +222,14 @@ def xy(w: int):
 
 
 def walk(r: Raster, record: int, wanted, log):
-    ot = r.u32(DOUBLE_BUFFER + record * DOUBLE_BUFFER_STRIDE + DOUBLE_BUFFER_OT)
+    base = DOUBLE_BUFFER + record * DOUBLE_BUFFER_STRIDE
+    # The texpage register at the table's start: the E1 word of the DR_ENV
+    # packet (`+0x1C`) PutDrawEnv sends ahead of the table.
+    for k in range(1, 16):
+        word = r.u32(base + DRENV + 4 * k)
+        if word >> 24 == 0xE1:
+            r.tpage = word & 0xFF_FFFF
+    ot = r.u32(base + DOUBLE_BUFFER_OT)
     a = ot + (OT_BUCKETS - 1) * 4
     bucket = OT_BUCKETS - 1
     for _ in range(200_000):

@@ -302,8 +302,13 @@ array at `+0x70`; `gp+0x434` names the current one) in chain order and
 rasterises every polygon and sprite against the state's own VRAM at the
 GPU's 5-bit depth: CLUT textures, the texture blend, flat colours cut to 5
 bits, the four ABR modes on STP texels, quads split `(v0, v1, v2)` +
-`(v1, v2, v3)` with affine UVs, oversized prims rejected. No dither, no mask
-bit. `--buckets`, `--clut` and `--skip-clut` isolate one body or layer.
+`(v1, v2, v3)` with affine UVs, oversized prims rejected. The texpage
+register starts at the record's DR_ENV `E1` word and carries through the
+stream as the GPU's does: an `E1` rewrites it, a textured polygon its page,
+ABR and depth bits, so an untextured semi prim blends in the ABR the last of
+them left. No mask bit, and dither only under `--rule` and while the carried
+dither bit is up. `--buckets`, `--clut` and `--skip-clut` isolate one body or
+layer.
 
 It is a second renderer that shares no code with the engine, which is what
 it is for. Neither table is the displayed frame (that one is two passes

@@ -233,7 +233,10 @@ The same pair settles how a recorded pixel was built.
 [`ot_layers.py`](../../scripts/pcsx-redux/ot_layers.py) walks the ordering table the
 recording's frame handed the GPU, out of `ram_<vsync>.bin`, and prints every polygon
 covering a pixel in draw order (its colour there, its blend mode, the texel it samples
-from the state's VRAM) beside the pixel the VRAM holds. `LEGAIA_RAM_AT` counts vsyncs
+from the state's VRAM) beside the pixel the VRAM holds. An untextured prim's blend mode
+is the one the GPU's texpage register carries to it, from the last `E1` or textured
+polygon ([renderer](../subsystems/renderer-port.md#the-gpu-carries-its-draw-mode)), and
+the line names which set it. `LEGAIA_RAM_AT` counts vsyncs
 past the cast's begin. Viguro's arm-12 green floor was read this way
 ([cast module](../subsystems/cast-module.md#prot-0909-viguro)).
 
