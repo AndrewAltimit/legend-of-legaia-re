@@ -743,15 +743,76 @@ fn card_slots_load_asks_then_loads() {
         ..Default::default()
     });
     assert_eq!(s.outcome(), None);
-    // ...but one on the result line does.
+    // ...and one on the result line ends the hold, not the line: retail's
+    // `LaunchFade` adds `0x5A` to the hold, so the launch ramp starts on the
+    // press's frame and the outcome lands on the ramp's last.
     while s.committing_work() == Some(true) {
         s.tick(SelectInput::default());
     }
+    assert_eq!(s.load_launch_ramp(), Some(0));
     s.tick(SelectInput {
         cross: true,
         ..Default::default()
     });
+    assert_eq!(s.load_launch_ramp(), Some(0x100));
+    let mut frames = 1;
+    while s.outcome().is_none() {
+        s.tick(SelectInput::default());
+        frames += 1;
+    }
+    assert_eq!(frames, LOAD_LAUNCH_RAMP_FRAMES);
     assert_eq!(s.outcome(), Some(SelectOutcome::Loaded(0)));
+}
+
+/// A successful Load's result line is retail's `LaunchFade` (sub-mode
+/// `0x16`): `0x5A` frames of hold, then eighteen of ramp, the last landing
+/// the outcome - and the live audio level it stores under the title's entry
+/// word, as a PCSX-Redux write watch from the Continue grid reads it: `254`
+/// through the hold (from `215`), then `239`, `223` .. `15`, `0`, `0`.
+#[test]
+fn a_load_result_line_holds_then_ramps_the_title_level_to_silence() {
+    let mut s = SaveSelectSession::new(SaveSelectMode::Load, slots(&[true]));
+    s.set_card_slots_mode(true);
+    s.set_now_checking_frames(0);
+    for input in [
+        SelectInput {
+            cross: true,
+            ..Default::default()
+        },
+        SelectInput::default(),
+        SelectInput {
+            cross: true,
+            ..Default::default()
+        },
+        SelectInput {
+            left: true,
+            ..Default::default()
+        },
+        SelectInput {
+            cross: true,
+            ..Default::default()
+        },
+    ] {
+        s.tick(input);
+    }
+    while s.committing_work() == Some(true) {
+        assert_eq!(s.load_launch_ramp(), None, "the read beat stores no level");
+        s.tick(SelectInput::default());
+    }
+    let mut levels = Vec::new();
+    while let Some(ramp) = s.load_launch_ramp() {
+        levels.push(launch_fade_music_level(ramp));
+        s.tick(SelectInput::default());
+    }
+    assert_eq!(s.outcome(), Some(SelectOutcome::Loaded(0)));
+    let hold = levels.iter().take_while(|&&l| l == 254).count();
+    assert_eq!(hold, usize::from(COMMIT_RESULT_FRAMES));
+    let ramp: Vec<u8> = levels[hold..].to_vec();
+    let mut want: Vec<u8> = (1..=15u8).map(|k| 255 - 16 * k).collect();
+    want.extend([0, 0]);
+    assert_eq!(ramp, want);
+    // The landing frame is the ramp's eighteenth.
+    assert_eq!(levels.len(), usize::from(COMMIT_LOAD_RESULT_FRAMES));
 }
 
 #[test]

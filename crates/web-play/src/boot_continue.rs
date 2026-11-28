@@ -59,6 +59,17 @@ impl LegaiaRuntime {
             return String::new();
         };
         let step = screen.step(edge, ports);
+        // The Load's `LaunchFade` stores the live audio level each frame (the
+        // native window's Continue arm does the same); the landing's scene
+        // load rests it.
+        let level = screen.music_level();
+        let landed = matches!(step, ContinueStep::Loaded { .. });
+        if let Some(d) = self.audio_director() {
+            d.front_end_level_frame(level);
+            if landed {
+                d.rest_audio_level();
+            }
+        }
         if let Some(blip) = step.blip() {
             let _ = self.play_menu_blip(blip);
         }

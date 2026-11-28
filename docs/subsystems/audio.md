@@ -3808,10 +3808,40 @@ port played the departure's. The dance's count-in states (`minigame_dance_retail
 `_go_out`) read retail's held, paused `2055` against no track: both are silent. `conc_pre_entry_card_boot`
 holds the title theme at sequence volume `127`, the others at `107`: its live audio level
 `_DAT_8007B910` reads `254` against the reference `_DAT_8008457C`'s `215` (every other front-end state
-holds `215`), and every reader halves the level into the sequence volume. None of the cell's dumped
-writers stores `254` (the cold reset's `0xD7`, the MAN loader's rest on the reference, the battle and
-minigame ducks, the world map panel's halve and double), so the writer is in a load-screen path not yet
-dumped; a write watch on the cell from the Continue confirm would name it.
+holds `215`), and every reader halves the level into the sequence volume. The state stands inside the
+Load's result line, and [the load fades the title theme](#the-load-fades-the-title-theme) names the
+writer. The sweep seeds a front-end state on the title theme and does not drive the Continue to its
+Load, so this row keeps reading `107`; the screen's own level is pinned by unit tests.
+
+<a id="the-load-fades-the-title-theme"></a>
+**The load fades the title theme.** A successful Load's "Load successful." line is the card manager's
+`LaunchFade` arm (sub-mode `0x16` of `FUN_801DD35C`), the arm the New Game's black runs too. While the
+title's entry word `_DAT_8007BB00` is up it stores the live level every frame
+(`0x801DFA00..0x801DFA58`): `(0x1000 - ramp)` clamped to `0..=0xFFF`, times `0xFF` (`sll 8`, `subu`),
+over `0x1000` (`sra 12`), with `ramp` the word `0x801EF154`. The ramp stays `0` through the `0x5A`
+hold and then climbs `0x100` a frame, so the title theme swells from `107` to `127` under the line and
+fades out over sixteen frames before the field loads. A PCSX-Redux write watch from the Continue grid
+([`autorun_continue_level_watch.lua`](../../scripts/pcsx-redux/autorun_continue_level_watch.lua),
+`load_grid_endgame_card`, Cross / Up / Cross) reads that store and no other until the scene's own:
+
+| Vsync | Store | Level | Title sequence volume |
+|---|---|---|---|
+| `327` | sub-mode `0x16` begins | `215` | `107` |
+| `328` | `0x801DFA58` (every frame to `434`) | `254` | `107` |
+| `329..417` | | `254` | `127` |
+| `418..433` | the ramp | `239`, `223` .. `15`, `0` | the level one frame back, halved |
+| `435` | master mode `2` | `0` | `0` |
+| `672` | `0x8003B6B4`, the MAN loader's rest | `215` | the field's track |
+
+A press during the hold adds `0x5A` to it, which starts the ramp on the press's frame: the line always
+runs its eighteen ramp frames. The pause menu's Load runs the same arm with the word down and stores
+nothing. Port: the Continue's result line is the hold and the ramp
+(`save_select::COMMIT_LOAD_RESULT_FRAMES`), `ContinueScreen::music_level` is the store
+(`save_select::launch_fade_music_level`), both hosts hand it to `AudioDirector::front_end_level_frame`,
+which applies it one frame back as the frame driver does, and the landing rests the level
+(`AudioDirector::rest_audio_level`). The New Game's black stops the title theme at the confirm instead
+of fading it: the port enters the opening scene ahead of the black, and the scene's bank replaces the
+theme's.
 
 The minigame seed also times the cues. With `LEGAIA_SWEEP_LISTEN_TICKS=<n>` it listens `n` ticks past
 the phase whatever the phase does, records each keyed cue on the listener's tick (`cue_ticks` in the
