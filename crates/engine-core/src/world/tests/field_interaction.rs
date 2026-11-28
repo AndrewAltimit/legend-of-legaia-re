@@ -170,6 +170,48 @@ fn interaction_probe_talks_to_adjacent_npc_only() {
     );
 }
 
+/// The pad hold a script release leaves (`_DAT_8007B6B4`, `0x10` frames)
+/// keeps the talk probe off with the rest of the pad controller
+/// (`FUN_801D1344` `0x801D16C8..0x801D16E4`): a press while it drains talks
+/// to no one, and one after it talks.
+#[test]
+fn interaction_probe_waits_out_the_release_pad_hold() {
+    use legaia_engine_field::field_warp_tile::SCRIPT_RELEASE_HOLD_FRAMES;
+    use legaia_engine_system::input::PadButton;
+
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.player_actor_slot = Some(0);
+    world.actors[0].active = true;
+    world.actors[0].move_state.world_x = 2624;
+    world.actors[0].move_state.world_z = 2624;
+    world.actors[0].move_state.render_26 = 0x400;
+    world.npcs.dialog.insert(5, vec![0x1F, b'h', b'i', 0x00]);
+    world.npcs.positions.insert(5, (2752, 2624));
+    world.locomotion.warp.hold = SCRIPT_RELEASE_HOLD_FRAMES;
+
+    world.input.set_pad(PadButton::Cross.mask());
+    let _ = world.tick();
+    assert!(world.dialog.current.is_none(), "the hold refuses the talk");
+    world.input.set_pad(0);
+    for _ in 0..64 {
+        if world.locomotion.warp.hold == 0 {
+            break;
+        }
+        let _ = world.tick();
+    }
+    assert_eq!(
+        world.locomotion.warp.hold, 0,
+        "the player tick drains the hold"
+    );
+    world.input.set_pad(PadButton::Cross.mask());
+    let _ = world.tick();
+    assert!(
+        world.dialog.current.is_some(),
+        "a press past the hold talks"
+    );
+}
+
 /// A script context that engages the player refuses the talk: the field tick
 /// skips the whole pad controller - the interact probe inside it included -
 /// while the player's `+0x10 & 0x80000` is up (`FUN_801D1344`

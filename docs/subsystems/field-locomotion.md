@@ -478,7 +478,7 @@ A higher overworld speed buys more sub-steps per frame, not a longer reach. The 
 
 ### Touch and interact dispatch
 
-Each sub-step the controller also runs the touch / interact dispatch (`0x801d07c0..0x801d08dc`). It is gated off while the player's `+0x10 & 0x80000` engaged flag, scratchpad `_DAT_1f800394 & 0x400`, or the field-control dialog byte `_DAT_801c6ea4+0x62` is set.
+Each sub-step the controller also runs the touch / interact dispatch (`0x801d07c0..0x801d08dc`). It is gated off while the player's `+0x10 & 0x80000` engaged flag, scratchpad `_DAT_1f800394 & 0x400`, or the field-control dialog byte `_DAT_801c6ea4+0x62` is set. The controller itself sits behind the player tick's walk gate, so a kind-0 warp in flight or an undrained pad hold `_DAT_8007B6B4` keeps the talk probe off too. The script runner's release leaves that hold at `0x10`: retail's `vozz` Genesis Tree record releases the player at vsync `555` (step `3`, hold `16, 13, 10, 7, 4, 1, 0`), ignores a Cross at `560` and takes one at `570`. The port's probe (`World::tick_field_interaction_probe`) tests the same gate.
 
 - **Prop walk-touch is automatic for the static (bit-4) class only.** A step whose probe result carries bit `4` posts the event on the spot - `FUN_801d5b5c` on the `+0x98` partner (test at `0x801d0800..0x801d0804`, post at `0x801d0750..0x801d0754`), every contact step, no button.
   The probe runs before each 2-unit sub-step moves, from where that sub-step starts, so a step that ends one unit short of a box has not touched it: the next frame's first sub-step does, and is refused. `mei_house_door_pcsx` (`10-70:UP`) steps into `town01`'s doorway at vsync `12` and engages on `14`.
