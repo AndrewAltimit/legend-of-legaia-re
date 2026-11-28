@@ -4254,7 +4254,7 @@ Three party actions stand beside the casts, so a strike's sound is scored as a c
 
 | State | `cast` corr | Level | Reading |
 |---|---|---|---|
-| `battle_melee_hit_spark` | `0.9993` | `+0.01` dB | a melee impact; `cast_core` `0.81` at `-1.3` dB |
+| `battle_melee_hit_spark` | `0.9993` | `+0.01` dB | a melee impact; `cast_core` `0.984` at `-0.04` dB ([held cues once](#the-held-cues-sound-once)) |
 | `noa_levelup_fight_pre` | `0.9996` | `0.00` dB | Noa's last blow; the engine's recording ends `20` vsyncs past the Done band, before the level-up banner, and the retail cue tail is silent past `0.5` s: no cue sounds for the level-up |
 | `player_steal_skeleton_pre` | `0.71` | `+0.18` dB | Vahn's arts string into the kill and the steal banner, `5.7` s of cues. Quarter-second windows fit `0.65..0.99` at their best lag, and the lag walks from `+1` to `+4` vsyncs (the engine early) over the string: [the frame step](#the-casts-step-is-pcsx-reduxs) on a party strike. The last second, cue `0x0D` decaying, fits `0.99` |
 
@@ -4346,6 +4346,19 @@ left ringing, Theeder's held pad read `4.5` to `5` dB louder in the render than 
 the seconds the cast is quiet. The engine's side is the cast recording the `cast` channel already makes,
 mixed onto the resumed SPU at lag `0` on the same offset fit (`pcm-retail --resume-state <copy>
 --cast-wav`); `cast_core_steps` does the same with the `cast_steps` run. Harness-only.
+
+<a id="the-held-cues-sound-once"></a>
+**The held cues sound once.** The resumed SPU renders the cue voices the state holds, and the engine's
+recording holds its own copies of them: the replay keys the action from its start, so whatever it keyed
+before the gate still sounds when the recording opens, and mixed onto the resumed SPU the held cues
+sound twice. On `battle_melee_hit_spark` cues `0x4C` and `0x2CC`, keyed `12` and `9` ticks before the
+gate, ring through the first second, which reads `3` to `3.5` dB over the recording that way while the
+rest agrees within `0.1` dB. The channel's engine side is therefore a second run of the child with `LEGAIA_DIAG_AUDIO_WAV_FRESH=1`
+(`<label>.fresh.cast.wav`) wherever the first run's gate held a cue voice (its log's `held cue voices`),
+which moves every cue voice sounding at the gate onto the silent music bus;
+a key-on that takes one puts it back on the cue bus, so a cue that steals a held voice still cuts its
+tail as it does on retail. The `cast` channel keeps the plain recording, since its score render holds no
+cue voices of the state's.
 
 | State | `cast` | `cast_core` | `cast_core` p10 |
 |---|---|---|---|

@@ -584,7 +584,10 @@ impl PlayWindowApp {
     /// recording stops that many ticks past the action SM's Done band
     /// (`0x50` / `0x51` / `0x5A` / `0x65`), where a cast's own sound ends and the
     /// fight's next turn begins; a recording that opens inside that band stops
-    /// that far past its exit. The child must not take its frame on the gate
+    /// that far past its exit.
+    /// `LEGAIA_DIAG_AUDIO_WAV_FRESH=1` leaves out the cue voices already
+    /// sounding at the gate, for the `cast_core` channel. The child must not
+    /// take its frame on the gate
     /// (`LEGAIA_DIAG_CAPTURE_TICK` past the window).
     #[cfg(feature = "oracles")]
     fn record_audio_wav(&self) {
@@ -660,9 +663,30 @@ impl PlayWindowApp {
                         && (p > phase || (p == phase && w.battle_ctx.frame_timer <= word)))
             });
         if rec.start.is_none() && at_arm && self.capture_gate_met() {
+            use legaia_engine_audio::spu::VoiceBus;
+            // The cue voices sounding at the gate. With
+            // `LEGAIA_DIAG_AUDIO_WAV_FRESH=1` they leave the recording: they are
+            // the engine's own copies of the state's held cues, which the
+            // `cast_core` channel renders off the retail state's resumed SPU;
+            // kept, the two sound twice. Moved to the silent music bus, they
+            // still hold their voices until a key-on takes one, which puts it
+            // back on the cue bus.
+            let fresh = std::env::var("LEGAIA_DIAG_AUDIO_WAV_FRESH").as_deref() == Ok("1");
+            let held = director.audio().with_spu(|spu| {
+                let mut held = 0;
+                for v in spu.voices.iter_mut() {
+                    if v.bus == VoiceBus::Sfx && !v.is_off() {
+                        held += 1;
+                        if fresh {
+                            v.bus = VoiceBus::Bgm;
+                        }
+                    }
+                }
+                held
+            });
             let w = &self.session.host.world;
             eprintln!(
-                "audio wav: the capture's gate at tick {tick} (action {:#04x}, side-band stage {}, read left {:?}, drive waiting {})",
+                "audio wav: the capture's gate at tick {tick} (action {:#04x}, side-band stage {}, read left {:?}, drive waiting {}, held cue voices {held})",
                 w.battle_ctx.action_state,
                 w.battle_ctx.menu_open,
                 w.casting.sideband_read_left,

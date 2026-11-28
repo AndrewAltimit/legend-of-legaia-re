@@ -433,26 +433,44 @@ def score(exe: Path, args: list[str], wav: Path, samples: int, out: Path) -> dic
     return json.loads(out.read_text())
 
 
+def held_cue_voices(log: Path) -> int | None:
+    """The cue voices the child's gate held (`held cue voices N` in its log)."""
+    try:
+        text = log.read_text(errors="replace")
+    except OSError:
+        return None
+    for line in text.splitlines():
+        if "held cue voices " in line:
+            return int(line.rsplit("held cue voices ", 1)[1].rstrip(")").strip() or -1)
+    return None
+
+
 def engine_cast_wav(exe: Path, label: str, eng: Path, library: Path, disc: Path,
-                    steps: Path | None = None) -> Path | None:
+                    steps: Path | None = None, fresh: bool = False) -> Path | None:
     """The engine's mix of a battle state's cast, the music bus silent.
 
     The retail comparison corpus seeds the state (its image child, kept with
     `LEGAIA_RC_CHILD_LOG=1`); the child is run again with its director on a
     device-less output, reading the disc's CD-XA, and records from its gate on.
     With `steps`, the recorded run takes that frame-step track
-    (`LEGAIA_CAST_STEP_TRACK`) and writes `<label>.steps.cast.wav`.
+    (`LEGAIA_CAST_STEP_TRACK`) and writes `<label>.steps.cast.wav`. With
+    `fresh`, the cue voices already sounding at the gate are left out
+    (`LEGAIA_DIAG_AUDIO_WAV_FRESH`, `<label>[.steps].fresh.cast.wav`): the
+    `cast_core` channels render the state's own held cues off its resumed SPU,
+    and the engine's copies of them would sound twice.
 
     Every file lands in `eng` (the engine side, `--work`), never beside the retail WAVs.
     """
     rc = eng / f"{label}.rc"
     extracted = REPO / "extracted"
     env = dict(os.environ, LEGAIA_RC_CHILD_LOG="1", RUST_LOG="error", XMODIFIERS="@im=none")
-    subprocess.run([str(exe), "retail-compare", "--out", str(rc), "--library", str(library),
-                    "--extracted-root", str(extracted), "--manifest",
-                    str(REPO / "scripts" / "scenarios.toml"), "--images", "--filter", f"={label}"],
-                   cwd=REPO, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     kept = rc / "engine" / f"{label}.cmd.sh"
+    # A fresh run follows the plain one, which has just kept the child's command.
+    if not (fresh and kept.exists()):
+        subprocess.run([str(exe), "retail-compare", "--out", str(rc), "--library", str(library),
+                        "--extracted-root", str(extracted), "--manifest",
+                        str(REPO / "scripts" / "scenarios.toml"), "--images", "--filter", f"={label}"],
+                       cwd=REPO, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if not kept.exists():
         print(f"[cast] {label}: retail-compare kept no child command")
         return None
@@ -470,7 +488,8 @@ def engine_cast_wav(exe: Path, label: str, eng: Path, library: Path, disc: Path,
     if "--extracted-root" in args:
         j = args.index("--extracted-root")
         args[j : j + 2] = ["--disc", str(disc)]
-    stem = f"{label}.steps.cast" if steps else f"{label}.cast"
+    stem = f"{label}.steps" if steps else label
+    stem += ".fresh.cast" if fresh else ".cast"
     # Absolute for the child (it runs in its own work dir), but not resolved:
     # a symlink here is unlinked, not followed into the folder it points at.
     wav = Path(os.path.abspath(eng / f"{stem}.wav"))
@@ -492,6 +511,8 @@ def engine_cast_wav(exe: Path, label: str, eng: Path, library: Path, disc: Path,
         env["LEGAIA_DIAG_AUDIO_WAV_ARM"] = at
     if (st := state_file(label, library, manifest)) and (left := capture_read_left(st)):
         env["LEGAIA_SEAT_CAPTURE_SEEK_LEFT"] = str(int(left))
+    if fresh:
+        env["LEGAIA_DIAG_AUDIO_WAV_FRESH"] = "1"
     env.update({
         "LEGAIA_AUDIO_DETACHED": "1",
         # The frame is not taken: the child plays on past its gate.
@@ -622,10 +643,13 @@ def main() -> int:
         results.setdefault(label, {})
         results[label] |= {"cast_corr": c["corr_median"], "cast_level": c["level_db"]}
         core_wav = out / f"{label}.castcore.wav"
-        if core_wav.exists():
+        # A child whose gate held no cue voice recorded nothing twice: its cast is the fresh one.
+        held = held_cue_voices(work / f"{label}.cast.log")
+        if core_wav.exists() and (fresh := cast if held == 0 else
+                                  engine_cast_wav(exe, label, work, library, disc, fresh=True)):
             silent = silenced(label, "castcore", state, stop_score=True)
-            k = score(exe, ["--resume-state", str(silent), "--cast-wav", str(cast)], core_wav, samples,
-                      work / f"{label}.castcore.json")
+            k = score(exe, ["--resume-state", str(silent), "--cast-wav", str(fresh)], core_wav,
+                      (fresh.stat().st_size - 44) // 4, work / f"{label}.castcore.json")
             if k["corr_median"] >= 0:
                 results[label] |= {"cast_core_corr": k["corr_median"], "cast_core_level": k["level_db"]}
         steps = out / f"{label}.steps"
@@ -639,9 +663,13 @@ def main() -> int:
             )
             results[label] |= {"cast_steps_corr": c["corr_median"],
                                "cast_steps_level": c["level_db"]}
-            if core_wav.exists():
-                k = score(exe, ["--resume-state", str(silent), "--cast-wav", str(sc)], core_wav, samples,
-                          work / f"{label}.steps.castcore.json")
+            held = held_cue_voices(work / f"{label}.steps.cast.log")
+            if core_wav.exists() and (sf := sc if held == 0 else
+                                      engine_cast_wav(exe, label, work, library, disc, steps,
+                                                      fresh=True)):
+                silent = silenced(label, "castcore", state, stop_score=True)
+                k = score(exe, ["--resume-state", str(silent), "--cast-wav", str(sf)], core_wav,
+                          (sf.stat().st_size - 44) // 4, work / f"{label}.steps.castcore.json")
                 if k["corr_median"] >= 0:
                     results[label] |= {"cast_core_steps_corr": k["corr_median"],
                                        "cast_core_steps_level": k["level_db"]}
