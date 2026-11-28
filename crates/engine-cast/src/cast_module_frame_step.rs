@@ -1406,6 +1406,56 @@ pub fn capture_arm_frame_step(spell: u8, phase: u8, timing: CdTiming) -> Option<
 /// retail's hit (`26` to `28` passes at `4` roll retail's hit on both).
 pub const CAPTURE_ARM_READ_TAILS: &[(u8, u8, u16, u8)] = &[(0x6E, 4, 27, 3)];
 
+/// Capture-band arms whose [`CAPTURE_ARM_STEPS`] `4` is the module's own CD-XA
+/// line and not the arm's work: `(spell, phase)`. The stop watch's polls load
+/// each frame from the line's `CdlReadS` to its `Pause`
+/// (`frame_clock::xa_read_tail_vsyncs`), the frame's raw cost past `0x2D0`
+/// for as long, and once they stop the arm's own frames read `3` behind the
+/// clamped entries and their own step after. The line is a span of vsyncs, so
+/// the pass the arm drops on is the fight's: no pass count holds it across the
+/// films of one cast (`cast-arm-cost-rows.py --capture` reads Call Wave's arm
+/// 2 as `4x53` then `3` on one Zeto fight and another count on the other).
+/// PCSX-Redux only.
+///
+/// Read off the enemy films' recordings: an arm the line ends inside whose
+/// table step is `4`, and whose frames after the line's end run at `4` on
+/// under a tenth of retail's vsyncs (Call Wave's arm 2 none of `31`, Big
+/// Wave's arm 7 none of `19` and `7` of `70`, White Shield's arm 2 none of
+/// `53`). Every other arm a line ends inside keeps its table: Thunder Storm's
+/// arm 6 runs `4` on `.98` of its frames after its line, on its work alone,
+/// which the census prices under the rung.
+pub const CAPTURE_ARM_LINE_CLAMPS: &[(u8, u8)] = &[
+    // power_up
+    (0x52, 2),
+    // spore_gas
+    (0x4F, 4),
+    // call_wave
+    (0x55, 2),
+    // big_wave
+    (0x56, 7),
+    // v_windhash
+    (0x57, 4),
+    // rolling_flare
+    (0x5A, 4),
+    // white_shield
+    (0x60, 2),
+    // melt_spray
+    (0x6F, 4),
+    // water_hazard
+    (0x71, 3),
+    // void_accessories
+    (0x73, 4),
+];
+
+/// Whether `spell`'s capture arm `phase` holds its table step on the module's
+/// line alone ([`CAPTURE_ARM_LINE_CLAMPS`]), on PCSX-Redux's timing.
+pub fn capture_arm_line_clamped(spell: u8, phase: u8, timing: CdTiming) -> bool {
+    timing == CdTiming::PcsxRedux
+        && CAPTURE_ARM_LINE_CLAMPS
+            .iter()
+            .any(|&(s, p)| s == spell && p == phase)
+}
+
 /// Capture-band arms whose own draw load changes cost class inside the arm:
 /// `(spell, phase, pass, step)`, the arm's frames reading `step` from its
 /// `pass`-th pass (from `0`) on, the capture band's

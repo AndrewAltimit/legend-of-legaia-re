@@ -405,6 +405,25 @@ pub const fn xa_loaded_frame_cost(work: u16) -> u16 {
 /// `539` (`--watch 0x8007BC20`).
 pub const XA_READ_TAIL_VSYNCS: u16 = 20;
 
+/// The read tail [`XA_READ_TAIL_VSYNCS`] stands for, as it grows with the
+/// clip: the vsyncs from a battle module's `CdlReadS` to the stop watch's
+/// `Pause`, past the clip's `span`, on PCSX-Redux. The clip player puts the end
+/// sector `ceil(span * 2.5)` past the start (`(span * 150 + 0x95) / 60` at
+/// `0x8003D698..0x8003D6D8`), and the stop watch `FUN_8003D764` polls
+/// `GetlocL` / `GetStat` until the head is past it (`slt v1,v1,v0` at
+/// `0x8003D9E0`), then pauses the drive (`li a0,0x9` at `0x8003DA6C`). The
+/// emulator defers a sector while a poll's interrupt is pending, so the head
+/// runs behind the double-speed clock. `--cd-trace` recordings of twelve enemy
+/// casts' lines read `13` vsyncs and `13` a thousand of the span within a vsync
+/// each, from Gala's Chain (`48`, `14`) to Megaton Press (`1437`, `32`): Call
+/// Wave `479` and `19`, Kiss of Death `425` and `16` (its `CdlReadS` before the
+/// recording), Rogue Wind `1292` and `29`, Lapis Wave `1061` and `27`. The
+/// clamp on the frame cost ends with it: Call Wave's frames read `700` from
+/// vsync `37` (its `CdlReadS` at `29`) to `530`, three after its `Pause`.
+pub const fn xa_read_tail_vsyncs(span: u16) -> u16 {
+    13 + ((span as u32 * 13 + 500) / 1000) as u16
+}
+
 /// Hblanks a vsync spans: the NTSC field's `263` lines, the unit of libetc's
 /// `VSync(1)` count (`FUN_8005FB84`, root counter 1 less its base at
 /// `0x800797D0`).
