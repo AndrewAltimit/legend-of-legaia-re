@@ -4354,11 +4354,13 @@ before the gate still sounds when the recording opens, and mixed onto the resume
 sound twice. On `battle_melee_hit_spark` cues `0x4C` and `0x2CC`, keyed `12` and `9` ticks before the
 gate, ring through the first second, which reads `3` to `3.5` dB over the recording that way while the
 rest agrees within `0.1` dB. The channel's engine side is therefore a second run of the child with `LEGAIA_DIAG_AUDIO_WAV_FRESH=1`
-(`<label>.fresh.cast.wav`) wherever the first run's gate held a cue voice (its log's `held cue voices`),
-which moves every cue voice sounding at the gate onto the silent music bus;
+(`<label>.fresh.cast.wav`) wherever the first run's gate held a cue voice (its log's `held cue voices`)
+and the plain recording scores under `0.99`, which moves every cue voice sounding at the gate onto the
+silent music bus;
 a key-on that takes one puts it back on the cue bus, so a cue that steals a held voice still cuts its
-tail as it does on retail. The `cast` channel keeps the plain recording, since its score render holds no
-cue voices of the state's.
+tail as it does on retail. Over every cast row the fresh recording moves nothing else by more than
+`0.005`, so a row at or above `0.99` keeps the plain one and its second child is saved. The `cast`
+channel keeps the plain recording, since its score render holds no cue voices of the state's.
 
 | State | `cast` | `cast_core` | `cast_core` p10 |
 |---|---|---|---|

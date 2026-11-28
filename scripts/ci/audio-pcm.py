@@ -531,6 +531,32 @@ def engine_cast_wav(exe: Path, label: str, eng: Path, library: Path, disc: Path,
     return wav
 
 
+# The cast_core score under which a gate that held cue voices takes the fresh
+# recording: at or above it the held voices' second copy moved no row by more
+# than `0.005`, and the fresh run costs a second child.
+FRESH_BELOW = 0.99
+
+
+def cast_core_score(exe: Path, label: str, work: Path, library: Path, disc: Path, silent: Path,
+                    core_wav: Path, cast: Path, steps: Path | None) -> dict | None:
+    """The `cast_core` score of one cast recording against `<label>.castcore.wav`.
+
+    The resumed SPU renders the state's held cue voices, and a child whose gate
+    held its own copies of them sounds them a second time. Where the child's
+    log names any (`held cue voices N`) and the plain recording scores under
+    `FRESH_BELOW`, the child runs again with them left out
+    (`LEGAIA_DIAG_AUDIO_WAV_FRESH`) and that recording is the score.
+    """
+    stem = f"{label}.steps" if steps else label
+    run = lambda wav, name: score(exe, ["--resume-state", str(silent), "--cast-wav", str(wav)],
+                                  core_wav, (wav.stat().st_size - 44) // 4, work / name)
+    k = run(cast, f"{stem}.castcore.json")
+    if held_cue_voices(work / f"{stem}.cast.log") == 0 or k["corr_median"] >= FRESH_BELOW:
+        return k
+    fresh = engine_cast_wav(exe, label, work, library, disc, steps, fresh=True)
+    return run(fresh, f"{stem}.fresh.castcore.json") if fresh else None
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--capture", action="store_true", help="record the WAVs that are missing")
@@ -643,14 +669,10 @@ def main() -> int:
         results.setdefault(label, {})
         results[label] |= {"cast_corr": c["corr_median"], "cast_level": c["level_db"]}
         core_wav = out / f"{label}.castcore.wav"
-        # A child whose gate held no cue voice recorded nothing twice: its cast is the fresh one.
-        held = held_cue_voices(work / f"{label}.cast.log")
-        if core_wav.exists() and (fresh := cast if held == 0 else
-                                  engine_cast_wav(exe, label, work, library, disc, fresh=True)):
+        if core_wav.exists():
             silent = silenced(label, "castcore", state, stop_score=True)
-            k = score(exe, ["--resume-state", str(silent), "--cast-wav", str(fresh)], core_wav,
-                      (fresh.stat().st_size - 44) // 4, work / f"{label}.castcore.json")
-            if k["corr_median"] >= 0:
+            k = cast_core_score(exe, label, work, library, disc, silent, core_wav, cast, None)
+            if k and k["corr_median"] >= 0:
                 results[label] |= {"cast_core_corr": k["corr_median"], "cast_core_level": k["level_db"]}
         steps = out / f"{label}.steps"
         if steps.exists() and (sc := engine_cast_wav(exe, label, work, library, disc, steps)):
@@ -663,14 +685,10 @@ def main() -> int:
             )
             results[label] |= {"cast_steps_corr": c["corr_median"],
                                "cast_steps_level": c["level_db"]}
-            held = held_cue_voices(work / f"{label}.steps.cast.log")
-            if core_wav.exists() and (sf := sc if held == 0 else
-                                      engine_cast_wav(exe, label, work, library, disc, steps,
-                                                      fresh=True)):
+            if core_wav.exists():
                 silent = silenced(label, "castcore", state, stop_score=True)
-                k = score(exe, ["--resume-state", str(silent), "--cast-wav", str(sf)], core_wav,
-                          (sf.stat().st_size - 44) // 4, work / f"{label}.steps.castcore.json")
-                if k["corr_median"] >= 0:
+                k = cast_core_score(exe, label, work, library, disc, silent, core_wav, sc, steps)
+                if k and k["corr_median"] >= 0:
                     results[label] |= {"cast_core_steps_corr": k["corr_median"],
                                        "cast_core_steps_level": k["level_db"]}
     for label in filter(want, CORE_STATES):
