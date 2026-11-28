@@ -794,8 +794,16 @@ fn run_engine_minigame(
     let mut tick = |session: &mut NativeSession| -> Result<()> {
         session.tick()?;
         if let Some(audio) = listen.as_deref_mut() {
+            // The minigame arms' own audio steps, which both play hosts run
+            // each frame after the tick: the duel's announcer lines and the
+            // dome hub's cues (the dance's venue step the film runs).
+            session.sound_baka_announcer();
+            session.sound_muscle_hub();
             super::engine_run::route_bgm(session, &mut director)?;
             crate::audio_sweep::listen_frame(session, audio);
+            if std::env::var_os("LEGAIA_SWEEP_LISTEN_TICKS").is_some() {
+                eprintln!("listen tick {}", audio.ticks);
+            }
         }
         Ok(())
     };
@@ -842,6 +850,12 @@ fn run_engine_minigame(
         };
         if at {
             reached = Some(t);
+            if listening && std::env::var_os("LEGAIA_SWEEP_LISTEN_TICKS").is_some() {
+                eprintln!(
+                    "minigame listen: the phase at listener tick {}",
+                    WARP_TICK + t + 1
+                );
+            }
             break;
         }
     }
@@ -932,11 +946,18 @@ fn run_engine_minigame(
     // the field sample listens across: a start the phase's own arm queued
     // (the shore's venue track) is routed and sounds, and a phase that moves
     // on (the dance's count-in) is not listened past.
-    if listening && mg.drive().is_none() {
+    // `LEGAIA_SWEEP_LISTEN_TICKS=<n>`: listen `n` ticks past the phase
+    // whatever it does, for a cue timeline against a retail key-on census
+    // run from the same state (harness).
+    let listen_on: Option<u32> = std::env::var("LEGAIA_SWEEP_LISTEN_TICKS")
+        .ok()
+        .and_then(|v| v.parse().ok());
+    if listening && (mg.drive().is_none() || listen_on.is_some()) {
         session.host.world.input.set_pad(0);
-        for _ in 0..crate::audio_sweep::LISTEN_SPAN {
+        let span = listen_on.map_or(crate::audio_sweep::LISTEN_SPAN, |n| n as usize);
+        for _ in 0..span {
             tick(&mut session)?;
-            if !at_captured_phase(&session.host.world, &mg) {
+            if listen_on.is_none() && !at_captured_phase(&session.host.world, &mg) {
                 break;
             }
         }

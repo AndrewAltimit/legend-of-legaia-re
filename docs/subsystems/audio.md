@@ -3806,7 +3806,24 @@ Scored this way, every pause-menu, shop and prize state plays retail's track. Th
 the venue's own track ([`minigame-fishing.md`](minigame-fishing.md)): the init stages `2017`, and the
 port played the departure's. The dance's count-in states (`minigame_dance_retail_ready`, `_go_in`,
 `_go_out`) read retail's held, paused `2055` against no track: both are silent. `conc_pre_entry_card_boot`
-holds the title theme at sequence volume `127`, the others at `107`.
+holds the title theme at sequence volume `127`, the others at `107`: its live audio level
+`_DAT_8007B910` reads `254` against the reference `_DAT_8008457C`'s `215` (every other front-end state
+holds `215`), and every reader halves the level into the sequence volume. None of the cell's dumped
+writers stores `254` (the cold reset's `0xD7`, the MAN loader's rest on the reference, the battle and
+minigame ducks, the world map panel's halve and double), so the writer is in a load-screen path not yet
+dumped; a write watch on the cell from the Continue confirm would name it.
+
+The minigame seed also times the cues. With `LEGAIA_SWEEP_LISTEN_TICKS=<n>` it listens `n` ticks past
+the phase whatever the phase does, records each keyed cue on the listener's tick (`cue_ticks` in the
+report), and runs the arms' own audio steps both hosts run each frame (`sound_baka_announcer`,
+`sound_muscle_hub`). Against a retail key-on census from the same state
+(`autorun_keyon_census.lua`, `cuekey` and `xa` rows): the Baka Fighter attract card's announcer line
+(`XA33` channel `15`, `118` sectors) starts `43` ticks past the engine's phase where retail's starts `41`
+vsyncs into the state, and the dance's `GO!` cue `0x201` keys `69` ticks past the phase where retail
+keys it `61` vsyncs in (the ring store `0x801CFBF4` a vsync before). Both phases are matched with a lead
+(the cabinet's intro clock, the READY counter less the display lag), so these name an upper bound, not an
+offset. The slot reels, the Muscle Dome's Welcome card and the fishing shore key nothing on either side
+over `320` vsyncs.
 
 A state reached through a door carries history a card load does not replay:
 the music a sub-op 6 door kept

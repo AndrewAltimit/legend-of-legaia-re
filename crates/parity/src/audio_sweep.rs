@@ -167,6 +167,14 @@ pub struct EngineAudio {
     pub bgm_voices_peak: u32,
     /// Every cue id that keyed a voice during the settle window.
     pub cues_fired: BTreeSet<u16>,
+    /// The same keys in order, each on the listener's tick count (the
+    /// audio frames heard so far): the cue timeline a retail key-on census
+    /// (`autorun_keyon_census.lua`'s `cuekey` rows) lines up against.
+    #[serde(default)]
+    pub cue_ticks: Vec<(u32, u16)>,
+    /// Audio frames heard ([`listen_frame`] calls).
+    #[serde(default)]
+    pub ticks: u32,
     /// `(sfx, bgm)` sounding-voice counts of the last [`LISTEN_SPAN`] ticks.
     #[serde(skip)]
     recent: Vec<(u32, u32)>,
@@ -406,8 +414,11 @@ pub(crate) const LISTEN_SPAN: usize = (SETTLE_TICKS / 2) as usize;
 /// hosts run once per sim tick), one video frame of samples pulled through
 /// the output's mix core, then the SPU's sounding voices by bus.
 pub fn listen_frame<S: AudioSink>(session: &mut BootSession<S>, obs: &mut EngineAudio) {
+    obs.ticks += 1;
     if let Some(r) = session.step_audio_frame() {
         obs.cues_fired.extend(r.fired.iter().map(|(id, _)| *id));
+        let t = obs.ticks;
+        obs.cue_ticks.extend(r.fired.iter().map(|(id, _)| (t, *id)));
     }
     let Some(d) = session.bgm.as_ref() else {
         return;
