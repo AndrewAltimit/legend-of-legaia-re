@@ -265,19 +265,19 @@ impl World {
     }
 
     /// The hook's music swap. On the strike the lure tick stops the battle
-    /// sound source `0x8007056C`, reinstalls it from the battle staging
-    /// buffer `_DAT_8007B85C + 0x32000` - the bundle the last fight streamed
-    /// there, still resident - and plays it, raising the latch
-    /// `DAT_801D92A4` (`FUN_801D26CC`, `0x801D360C..0x801D3664`). The session
-    /// puts the venue's own track back from the buffer's head when the catch
-    /// showcase opens (state `0x20`, `0x801CFD84..0x801CFDD4`) or the shore
-    /// comes back (state `0xA`, `0x801CF7E0..0x801CF82C`), dropping the latch.
+    /// sound source `0x8007056C`, reinstalls it from `_DAT_8007B85C +
+    /// 0x32000` and plays it, raising the latch `DAT_801D92A4`
+    /// (`FUN_801D26CC`, `0x801D360C..0x801D3664`). That half of the buffer
+    /// holds what the fishing init staged there, the hook theme
+    /// ([`legaia_engine_mode::minigame_entry::FISHING_HOOK_BGM_ID`], raw TOC
+    /// `0x3F9`, `0x801CF2F8..0x801CF30C`), not the last fight's bundle. The
+    /// session puts the venue's own track back from the buffer's head when the
+    /// catch showcase opens (state `0x20`, `0x801CFD84..0x801CFDD4`) or the
+    /// shore comes back (state `0xA`, `0x801CF7E0..0x801CF82C`), dropping the
+    /// latch.
     ///
-    /// The port plays the last fight's track ([`crate::world::AudioState`]'s
-    /// `last_battle_track`, the configured battle theme before any fight)
-    /// and swaps back on [`legaia_engine_fishing::fishing::PondEvent::Landed`]
-    /// or `Recast`: a catch's swap lands as it is decided, where retail's waits
-    /// out the close-up lift to the showcase.
+    /// The port swaps back on [`legaia_engine_fishing::fishing::PondEvent::Recast`]
+    /// or the frame after the venue camera reaches the showcase.
     ///
     /// PORT: FUN_801d26cc (`0x801D360C..0x801D3664`)
     /// PORT: FUN_801cf3bc (`0x801CF7E0..0x801CF82C`, `0x801CFD84..0x801CFDD4`)
@@ -285,11 +285,13 @@ impl World {
     /// shore (`0x801CF7E0..0x801CF830`): the hook latch `0x801D92A4` starts at
     /// `-1` (`0x801CF358`), so the arm's `beqz` on it falls through once,
     /// stops the battle source `0x8007056C` (`FUN_800266E0` / `FUN_80026520`),
-    /// reinstalls category 5 from the staging buffer's head (`FUN_8001E54C`,
-    /// the venue's track the scene staged) and restarts the source
-    /// (`FUN_80026478`): the track the departure scene was playing starts
-    /// again from its head. The rod / type select ahead of it (state `0`) is
-    /// not modelled, so the replay lands on the session's first shore tick.
+    /// reinstalls category 5 from the staging buffer's head (`FUN_8001E54C`)
+    /// and restarts the source (`FUN_80026478`). The head holds what the
+    /// init staged there, the venue's own track
+    /// ([`legaia_engine_mode::minigame_entry::FISHING_VENUE_BGM_ID`]), so
+    /// the venue plays it whatever the departure scene played. The rod /
+    /// type select ahead of it (state `0`) is not modelled, so the replay
+    /// lands on the session's first shore tick.
     ///
     /// PORT: FUN_801cf3bc (state 0xa: the first arrival's track restore, 0x801CF7E0..0x801CF830)
     fn fishing_shore_replay(&mut self) {
@@ -303,12 +305,17 @@ impl World {
             return;
         }
         self.minigames.fishing_shore_reached = true;
-        if let Some(track) = self.audio.current_bgm {
-            self.pending_field_events.push(FieldEvent::Bgm {
-                text_id: track,
-                sub_op: crate::world::BGM_SUB_OP_ENGINE_RESTART,
-            });
+        // The departure's track comes back on the return warp
+        // ([`Self::restore_minigame_bgm`]); the restart word plays the
+        // venue's from its head even where it already sounds.
+        if !self.audio.minigame_bgm_active {
+            self.audio.minigame_bgm_resume = self.audio.current_bgm;
+            self.audio.minigame_bgm_active = true;
         }
+        self.pending_field_events.push(FieldEvent::Bgm {
+            text_id: legaia_engine_mode::minigame_entry::FISHING_VENUE_BGM_ID,
+            sub_op: crate::world::BGM_SUB_OP_ENGINE_RESTART,
+        });
     }
 
     fn fishing_hook_music(&mut self, events: &[legaia_engine_fishing::fishing::PondEvent]) {
@@ -326,14 +333,15 @@ impl World {
         // the frame after the step, as retail's handler does.
         let back = events.iter().any(|e| matches!(e, PondEvent::Recast))
             || self.minigames.fishing_venue.camera.showcase_opened();
+        // Both are the init's staged tracks: the strike installs the second
+        // half of the buffer, the restores its head.
+        use legaia_engine_mode::minigame_entry::{FISHING_HOOK_BGM_ID, FISHING_VENUE_BGM_ID};
         if hooked && !self.minigames.fishing_hook_music {
             self.minigames.fishing_hook_music = true;
-            if let Some(track) = self.audio.last_battle_track.or(self.audio.battle_bgm) {
-                self.start_minigame_track(track);
-            }
+            self.start_minigame_track(FISHING_HOOK_BGM_ID);
         } else if back && self.minigames.fishing_hook_music {
             self.minigames.fishing_hook_music = false;
-            self.restore_minigame_bgm();
+            self.start_minigame_track(FISHING_VENUE_BGM_ID);
         }
     }
 
@@ -546,18 +554,18 @@ mod hook_audio_tests {
             .collect()
     }
 
-    /// The strike swaps the last fight's theme in once; the landing alone
-    /// does not put the scene's track back (the showcase does, the tick after
-    /// the venue camera reaches it: `fishing_catch_body_disc`), and the shore
-    /// does, once.
+    /// The strike swaps the init's hook theme in once, whatever the last
+    /// fight played; the landing alone does not put the venue's track back
+    /// (the showcase does, the tick after the venue camera reaches it:
+    /// `fishing_catch_body_disc`), and the shore does, once.
     #[test]
-    fn the_hook_plays_the_last_fights_theme_until_the_shore() {
+    fn the_hook_plays_the_staged_hook_theme_until_the_shore() {
+        use legaia_engine_mode::minigame_entry::{FISHING_HOOK_BGM_ID, FISHING_VENUE_BGM_ID};
         let mut w = pond_world();
-        w.audio.current_bgm = Some(2017);
+        w.audio.current_bgm = Some(2000);
         w.audio.battle_bgm = Some(2026);
-        w.audio.last_battle_track = Some(2027);
         w.fishing_hook_music(&[PondEvent::Hooked(3)]);
-        assert_eq!(bgm_starts(&mut w), [2027]);
+        assert_eq!(bgm_starts(&mut w), [FISHING_HOOK_BGM_ID]);
         w.fishing_hook_music(&[PondEvent::Hooked(3)]);
         assert!(bgm_starts(&mut w).is_empty(), "the latch holds");
         w.fishing_hook_music(&[PondEvent::Landed(40)]);
@@ -566,24 +574,23 @@ mod hook_audio_tests {
             "the catch keeps the hook theme"
         );
         w.fishing_hook_music(&[PondEvent::Recast]);
-        assert_eq!(bgm_starts(&mut w), [2017]);
+        assert_eq!(bgm_starts(&mut w), [FISHING_VENUE_BGM_ID]);
         w.fishing_hook_music(&[PondEvent::Recast]);
         assert!(bgm_starts(&mut w).is_empty(), "the latch is down");
-        // Before any fight the configured theme stands in.
-        w.audio.last_battle_track = None;
-        w.fishing_hook_music(&[PondEvent::Hooked(1)]);
-        assert_eq!(bgm_starts(&mut w), [2026]);
-        w.fishing_hook_music(&[PondEvent::Recast]);
-        assert_eq!(bgm_starts(&mut w), [2017]);
+        // The departure's track is what the return warp gives back.
+        w.restore_minigame_bgm();
+        assert_eq!(bgm_starts(&mut w), [2000]);
     }
 
-    /// The first shore arrival restarts the scene's track from its head,
-    /// once per session (the latch's `-1`, `0x801CF358`): the restart word,
-    /// not a plain start the host would play on through.
+    /// The first shore arrival restarts the venue's own track from its head,
+    /// whatever the departure played, once per session (the latch's `-1`,
+    /// `0x801CF358`): the restart word, not a plain start the host would play
+    /// on through.
     #[test]
-    fn the_first_shore_replays_the_scenes_track_once() {
+    fn the_first_shore_replays_the_venues_track_once() {
+        use legaia_engine_mode::minigame_entry::FISHING_VENUE_BGM_ID;
         let mut w = pond_world();
-        w.audio.current_bgm = Some(2017);
+        w.audio.current_bgm = Some(2000);
         w.pending_field_events.clear();
         w.fishing_shore_replay();
         let restarts = |w: &mut World| -> Vec<u16> {
@@ -599,14 +606,14 @@ mod hook_audio_tests {
                 })
                 .collect()
         };
-        assert_eq!(restarts(&mut w), [2017]);
+        assert_eq!(restarts(&mut w), [FISHING_VENUE_BGM_ID]);
         w.fishing_shore_replay();
         assert!(restarts(&mut w).is_empty(), "only the first arrival");
         // A new session loads the overlay again: the latch is back at -1.
         w.exit_fishing();
         w.enter_fishing(pond_world().minigames.fishing.take().unwrap());
         w.fishing_shore_replay();
-        assert_eq!(restarts(&mut w), [2017]);
+        assert_eq!(restarts(&mut w), [FISHING_VENUE_BGM_ID]);
     }
 
     /// The reel's whirr reaches both play hosts' voice queues: a reel press

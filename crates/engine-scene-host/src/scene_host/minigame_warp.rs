@@ -104,6 +104,10 @@ impl SceneHost {
                     self.world.minigames.muscle_leg_bgm = Some(bgm);
                 }
                 (_, Some(bgm)) => self.world.swap_to_minigame_bgm(bgm),
+                // The fishing init releases the field source before it
+                // stages its own two tracks (`FUN_800266E0(0x8007052C)` at
+                // `0x801CF26C..0x801CF274`); the shore starts the venue's.
+                (MinigameSubId::Fishing, None) => self.world.silence_for_minigame_bgm(),
                 (_, None) => {}
             }
             log::info!("minigame warp: entered {}", slot.label());
@@ -160,6 +164,7 @@ impl SceneHost {
             });
         let venue_map = self.fishing_venue_map(venue);
         self.world.enter_fishing_session(&tables, venue, venue_map);
+        self.world.minigames.fishing_sfx_bundle = self.fishing_venue_sfx_bundle();
         // The point-exchange venue pages ride the same overlay image. Decoded
         // here, on the entry the door warp shares, rather than by each host's
         // own launcher: the door path used to install none, so the exchange
@@ -250,6 +255,19 @@ impl SceneHost {
             facing: lead.facing,
             rod_mesh: legaia_engine_minigame_scenes::fishing_rod::rod_mesh_from_scene(&scene),
         })
+    }
+
+    /// The `other1` venue's event-scripts container, the fishing init's
+    /// runtime SFX bank ([`legaia_engine_minigame_scenes::minigame_state::MinigameState::fishing_sfx_bundle`]).
+    /// Empty when the venue scene does not load.
+    fn fishing_venue_sfx_bundle(&self) -> Vec<u8> {
+        legaia_engine_scene::scene::Scene::load(
+            &self.index,
+            legaia_engine_minigame_scenes::fishing_scene::FISHING_VENUE_SCENE,
+        )
+        .ok()
+        .and_then(|scene| scene.find_event_scripts().map(|s| s.bytes.to_vec()))
+        .unwrap_or_default()
     }
 
     /// PROT 0975's payout table -> a live [`legaia_engine_minigames::slot_machine::SlotMachine`].

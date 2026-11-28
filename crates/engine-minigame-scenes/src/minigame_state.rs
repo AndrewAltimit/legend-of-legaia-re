@@ -146,6 +146,15 @@ pub struct MinigameState {
     /// Staged by the scene host on entry - see
     /// `World::runtime_sfx_bundle`.
     pub dance_sfx_bundle: Vec<u8>,
+    /// The fishing venue's runtime SFX descriptor bank: the fishing init's
+    /// scene loader `FUN_8001F7C0(.., 0x4AB, 0)` (`0x801CF1D4..0x801CF1E0`,
+    /// PROT 0972) reads the `other1` venue's sidecars, its event-scripts
+    /// container among them, into the buffer `_DAT_8007B8D0` points at, so
+    /// every `>= 0x200` cue the venue writes to the ring (the rod's creak
+    /// `0x201`, the lure's landing `0x204`) resolves there rather than in the
+    /// departure scene's. Staged by the scene host on entry - see
+    /// `World::runtime_sfx_bundle`.
+    pub fishing_sfx_bundle: Vec<u8>,
     /// Baka Fighter duel state. `Some` while `mode ==
     /// SceneMode::BakaFighter`; the exchange / round / match state machine
     /// runs each tick. See [`legaia_engine_minigames::baka_fighter::BakaFight`] and
@@ -429,6 +438,7 @@ impl MinigameState {
             slot_sfx_bundle: Vec::new(),
             muscle_sfx_bundle: Vec::new(),
             dance_sfx_bundle: Vec::new(),
+            fishing_sfx_bundle: Vec::new(),
             baka_fighter: None,
             baka_return_mode: SceneMode::Field,
             muscle_dome: None,
