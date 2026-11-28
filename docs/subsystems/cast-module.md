@@ -5215,7 +5215,13 @@ close to a minute. It is ported whole.
   `0x801FA2D0` seats for as long as it lives), arm 5 is the long salmon flash,
   and arm 7 jitters its caller's `+0x84` / `+0x28` off three `rand()`s, the six
   rays of arm 23. The seats land on the caller's frame, as
-  [Gilium's and Juggernaut's](#summon-creature-directors) do. Grade
+  [Gilium's and Juggernaut's](#summon-creature-directors) do. The salmon
+  fades of arms 3..5 spawn inside the part walk, which runs after the pass has
+  ticked its fade actors, so each first steps and first draws on the next
+  pass, the frame after the HP falls; joined at once, the flash came up a pass
+  ahead of retail's on all three sweeps (`ScreenFxState::module_fades_next_pass`;
+  the film's arms 11, 14 and 18 read `.961` / `.955` / `.947` against `.992` /
+  `.983` / `.992` with it). Grade
   `disassembly`, each arm held to the module image by the
   [differential](../tooling/retail-kernel-differential.md); the cast's
   [film](../tooling/cast-sequence-oracle.md#evil-seru-magic) reads `.672` to
