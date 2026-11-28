@@ -86,6 +86,7 @@ DIAG_GATES: list[dict[str, object]] = [
     {"env": "LEGAIA_DIAG_AUDIO_WAV", "additive": False, "note": "record the capture child's mix from its gate on to a WAV for the real-PCM cast channel (and the applied audio level beside it); draws nothing"},
     {"env": "LEGAIA_DIAG_AUDIO_WAV_ARM", "additive": False, "note": "LEGAIA_DIAG_AUDIO_WAV: `state,phase,word` the summon band instant the recording opens on; draws nothing"},
     {"env": "LEGAIA_DIAG_AUDIO_WAV_BUS", "additive": False, "note": "LEGAIA_DIAG_AUDIO_WAV: `all` keeps the music bus (default silent); draws nothing"},
+    {"env": "LEGAIA_DIAG_AUDIO_WAV_FRESH", "additive": False, "note": "LEGAIA_DIAG_AUDIO_WAV: `1` moves the cue voices sounding at the gate to the silent music bus, for the cast_core channel; draws nothing"},
     {"env": "LEGAIA_DIAG_AUDIO_WAV_DONE_TAIL", "additive": False, "note": "LEGAIA_DIAG_AUDIO_WAV ticks past the Done band before it stops; draws nothing"},
     {"env": "LEGAIA_DIAG_AUDIO_WAV_SECONDS", "additive": False, "note": "LEGAIA_DIAG_AUDIO_WAV length cap; draws nothing"},
     {"env": "LEGAIA_DIAG_SFX_LOG", "additive": False, "note": "lane C: write every cue the audio director was handed (`tick,id,kind,mode,menu`), any scene, for filming menu blips against retail's cue ring; draws nothing"},
