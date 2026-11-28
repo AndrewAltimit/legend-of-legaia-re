@@ -1306,8 +1306,18 @@ impl World {
         &mut self,
         move_id: u8,
     ) -> legaia_engine_field::field_player_clip::SettleClipPick {
-        self.locomotion.clip_base = u16::from(move_id);
         let leader = self.locomotion.player_anim.as_ref().map_or(0, |a| a.leader);
+        self.player_script_clip_for_leader(move_id, leader)
+    }
+
+    /// [`Self::field_player_script_clip`] with the leader `_DAT_8007B8F8`
+    /// named: the clip base store, the pick and its application.
+    fn player_script_clip_for_leader(
+        &mut self,
+        move_id: u8,
+        leader: u16,
+    ) -> legaia_engine_field::field_player_clip::SettleClipPick {
+        self.locomotion.clip_base = u16::from(move_id);
         let pick = legaia_engine_field::field_player_clip::settle_clip_pick(
             self.locomotion.clip_base,
             leader,
@@ -1565,5 +1575,24 @@ impl World {
             self.advance_with_collision(slot, dir, FIELD_BASE_STEP);
         }
         false
+    }
+}
+
+#[cfg(feature = "test-drivers")]
+impl World {
+    /// The player arm's clip pick (op `4C 51` / op `0x22`) under a seeded
+    /// leader `_DAT_8007B8F8` (which a bare `World` holds only through the
+    /// player's anim bank), `4C CE` override `_DAT_8007B6AC` and party-bank
+    /// bit.
+    pub fn drive_player_script_clip(
+        &mut self,
+        move_id: u8,
+        leader: u16,
+        clip_override: u32,
+        party_bank: bool,
+    ) -> legaia_engine_field::field_player_clip::SettleClipPick {
+        self.locomotion.clip_override = clip_override;
+        self.locomotion.player_party_bank = party_bank;
+        self.player_script_clip_for_leader(move_id, leader)
     }
 }

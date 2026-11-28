@@ -2144,3 +2144,101 @@ fn the_battle_sound_set_is_the_set_retail_stores() {
     );
     assert!(ran > 100 && minus_one > 10, "{ran} {minus_one}");
 }
+
+/// `4C 51`'s player arm (`0x801E1954..0x801E1A3C`): with the context the
+/// player pointer `_DAT_8007C364` names, the move byte goes to the clip base
+/// `_DAT_8007BDD8` and the settle tail's pick runs inline: `99` picks scene
+/// record `leader + 1` and drops the party-bank bit, a flagged player strides
+/// into the leader's bank `_DAT_8007B8F8` (or, under the `4C CE` override
+/// `_DAT_8007B6AC`, takes `base + override - 1`), an unflagged one keeps the
+/// base. The bit is the depth byte's bit 7 the arm writes first. Against
+/// `World::field_player_script_clip`'s pick under the same leader and
+/// override; `+0x5C` and the bit compared.
+#[test]
+fn the_player_clip_pick_is_the_clip_retail_picks() {
+    differential!(prot(897, VM));
+    let Some(mut cpu) = retail_vm() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    const PLAYER_PTR: u32 = 0x8007_C364;
+    const LEADER: u32 = 0x8007_B8F8;
+    const OVERRIDE: u32 = 0x8007_B6AC;
+    let gp = cpu.regs.r[GP];
+    let clean = cpu.mem.clone();
+    let mut rng = Rng(0x434C_4950);
+    let mut seen = [0u32; 4];
+    let mut differ: BTreeMap<String, (u32, String)> = BTreeMap::new();
+    for (script, pc, label) in corpus() {
+        if label != "4C 51" || script[pc] & 0x80 != 0 {
+            continue;
+        }
+        for _ in 0..16 {
+            let mut script = script.clone();
+            let op = pc + 2;
+            script[op + 2] = (script[op + 2] & 0x7F) | if rng.below(2) == 0 { 0x80 } else { 0 };
+            if rng.below(4) == 0 {
+                script[op + 3] = 0x63;
+            } else if rng.below(2) == 0 {
+                script[op + 3] = rng.next() as u8;
+            }
+            let leader = rng.below(3) as u16;
+            let over = [0u32, 0, 1, 1 + rng.below(8)][rng.below(4) as usize];
+            cpu.mem = clean.clone();
+            cpu.regs.r[GP] = gp;
+            cpu.mem.load(SCRIPT, &script);
+            cpu.mem.wr32(CTX + 0x94, SCRIPT);
+            cpu.mem.wr32(PLAYER_PTR, CTX);
+            cpu.mem.wr16(LEADER, leader);
+            cpu.mem.wr32(OVERRIDE, over);
+            for (name, off, width) in FIELDS {
+                let mut v = rng.next();
+                if name == "flags" {
+                    v &= !0x400;
+                }
+                if width == 2 {
+                    v &= 0xFFFF;
+                } else if width == 1 {
+                    v &= 0xFF;
+                }
+                wr(&mut cpu, off, width, v);
+            }
+            if cpu.call(VM, &[SCRIPT, pc as u32, CTX]) != Stop::Returned {
+                continue;
+            }
+            let (depth, move_id) = (script[op + 2], script[op + 3]);
+            let mut w = legaia_engine_core::world::World::new();
+            let pick = w.drive_player_script_clip(move_id, leader, over, depth & 0x80 != 0);
+            let retail = (
+                rd(&mut cpu, 0x5C, 2) as u16,
+                rd(&mut cpu, 0x10, 4) & 0x0100_0000 != 0,
+            );
+            let port = (pick.clip, pick.party_flag);
+            seen[match (move_id == 0x63, depth & 0x80 != 0, over != 0) {
+                (true, ..) => 0,
+                (_, false, _) => 1,
+                (_, true, true) => 2,
+                (_, true, false) => 3,
+            }] += 1;
+            if retail != port {
+                let e = differ
+                    .entry(format!("{:02x?}", &script[pc..pc + 6]))
+                    .or_default();
+                e.0 += 1;
+                e.1 = format!("leader {leader} override {over}: retail {retail:?} port {port:?}");
+            }
+        }
+    }
+    let report: Vec<String> = differ
+        .iter()
+        .take(12)
+        .map(|(k, (n, ex))| format!("{k}: {n} e.g. {ex}"))
+        .collect();
+    assert!(
+        report.is_empty(),
+        "{} differ:\n{}",
+        differ.len(),
+        report.join("\n")
+    );
+    assert!(seen.iter().all(|&n| n > 50), "{seen:?}");
+}

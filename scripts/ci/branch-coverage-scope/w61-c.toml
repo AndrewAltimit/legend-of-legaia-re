@@ -123,3 +123,45 @@ image = "b074b33f8684800f"
 range = "0x801D2018..0x801D2018"
 verdict = "unreachable"
 reason = "PROT 0972 rod actor: the same +0x10 & 0x1000 test ahead of the model-slot store after the draw; the bit is raised at 0x801D1EC8 on every path."
+
+[[arm]]
+entry = "0x801D4004"
+image = "5de79147ed80b94f"
+range = "0x801D4030..0x801D4030"
+verdict = "unported"
+reason = "PROT 0972 hooked-fish tick: the debug readout behind _DAT_8007B9B0 (the species name through the debug printf FUN_80036888 at 0x801D406C); the port has no debug overlay text."
+
+[[arm]]
+entry = "0x801D4004"
+image = "5de79147ed80b94f"
+range = "0x801D4470..0x801D4484"
+verdict = "unported"
+reason = "PROT 0972 hooked-fish tick: the debug load override (with _DAT_8007B9B0 set and pad bit 2 held, the reel load is forced to 1 at 0x801D448C); a developer switch the port does not carry."
+
+[[arm]]
+entry = "0x801D4004"
+image = "5de79147ed80b94f"
+range = "0x801D4710..0x801D4710"
+verdict = "unreachable"
+reason = "PROT 0972 hooked-fish tick: the round-toward-zero fix-up of rand() / 4 (a1 = FUN_80056798's result at 0x801D470C); rand() returns 0..0x7FFF, never negative."
+
+[[arm]]
+entry = "0x801DB21C"
+image = "85f14627e5960000"
+range = "0x801DB230..0x801DB244"
+verdict = "unported"
+reason = "PROT 0899 shop buy list, steps 0 and 1 of the sub-screen step word 0x801E46AC: open the list window through the widget VM FUN_801D6628 (program 0x801E4E64, +0x46BC |= 0x1000) and wait out the slide latch; MenuRuntime's ShopBuy screen opens its list itself and keeps no step word."
+
+[[arm]]
+entry = "0x801DB21C"
+image = "85f14627e5960000"
+range = "0x801DB254..0x801DB254"
+verdict = "unreachable"
+reason = "PROT 0899 shop buy list: the fall-through past step 2; the routine stores only 1 (0x801DB28C) and 2 (0x801DB2B0) into 0x801E46AC, and a sub-screen change zeroes it."
+
+[[arm]]
+entry = "0x801DB21C"
+image = "85f14627e5960000"
+range = "0x801DB29C..0x801DB29C"
+verdict = "unported"
+reason = "PROT 0899 shop buy list, step 1: hold until the window walker's slide latch _DAT_8007BB80 clears, then arm list mode 1; the port's list has no slide latch to wait on."
