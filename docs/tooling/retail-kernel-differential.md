@@ -318,8 +318,11 @@ An unchecked direction falls in one of these, read from the disassembly:
   resolver answers with the running context, so an arm that skips the
   resolve when the header names the running context, or that parks the
   caller as well when the target is the player, writes one context either
-  way. Telling them apart takes a host with a second context, the World's
-  own field host, as `a_tile_warp_lands_on_the_context_it_names` runs it.
+  way. Telling them apart takes a second context and an actor table behind
+  the resolver, with the calls the arm reaches recorded with their
+  arguments (`field_calls`): the port's side is then `step_with_caller` on
+  two contexts, or the World's own field host with the same actors seated,
+  and what the World did is held against the calls retail made.
 - **Comparison gap.** The arm writes something the test does not compare: a
   global the field VM writes beside the context the test holds, a mode word a
   battle exit sets beside the seats it checks. This is what the measurement is
@@ -2303,6 +2306,21 @@ Continue screen the pills rise out of black; the port drew them full with the
 hand up at once. The fishing driver's tail clears the hook banner's timer on
 every frame the reel-in timer runs, where the port cleared it once at the
 landing.
+
+The field VM's arms that branch on an actor lookup, on a player target or
+on a flag that only gates a call into the executable read the same to every
+one-context test, and a second context with a seeded actor table tells them
+apart (`field_calls`). Every acquiring arm parks the caller as well when its
+target is the player, the `4C` acquires (`4C 61`, `4C 80`, `4C 85`, `4C 8E`,
+`4C 8F`) as much as the yielding ones; `step_with_caller` parked the caller
+only on a yield. Op `43 02` skips the three-actor talk when any of its three
+talkers is missing, where the World staged it anyway: the party collapse, the
+talk flags and the lock. The seat `4C 51` re-floors under the scene's
+overworld byte `_DAT_8007B6A8` as op `23` does, and only under a `0x20200`
+class bit otherwise; the World dropped a placement's held height whatever its
+class word, and never read the byte. The clone `4C 14`, the reflection
+`4C 86`, the re-seat `4C D2`, the morph lanes `4B`, the rumble words `4C 46` /
+`4C 47` and op `36`'s cue push, delay, release and XA start agree.
 
 The list kernel `FUN_80032A44`'s header and page triangles, run on random node rects, showed the battle item
 and magic lists drawing both one pixel low and the next-page triangle one pixel left: their seats were read off a
