@@ -902,6 +902,10 @@ div.play-vis-head { cursor: default; }
               <input type="checkbox" id="play-stone-scale-fix"> Stoned foes keep their size
             </label>
             <label class="play-dev-menu"
+                   title="Walking into the Bio Castle on the Drake overworld from any side takes you through its door; the original opens that door from the west side only (play-window --no-bio-castle-approach turns it off). An enhancement; Retail-faithful holds it off. Starts on the engine's default.">
+              <input type="checkbox" id="play-bio-castle-approach"> Bio Castle from any side
+            </label>
+            <label class="play-dev-menu"
                    title="A character healed in battle by an item, a Grail or a healing spell shows the amount over them in green. The original throws no number for a heal and only counts the HP figure up (play-window --heal-numerals turns it on). Off by default; Retail-faithful holds it off.">
               <input type="checkbox" id="play-heal-numerals"> Heal numbers
             </label>
@@ -3952,6 +3956,7 @@ div.play-vis-head { cursor: default; }
   const jewelFixEl = document.getElementById('play-jewel-fix');
   const hpGuardEl = document.getElementById('play-hp-readout-guard');
   const stoneScaleEl = document.getElementById('play-stone-scale-fix');
+  const bioCastleEl = document.getElementById('play-bio-castle-approach');
   const healNumEl = document.getElementById('play-heal-numerals');
   const bonusDropEl = document.getElementById('play-bonus-drop');
   const saveAnywhereEl = document.getElementById('play-save-anywhere');
@@ -3987,6 +3992,7 @@ div.play-vis-head { cursor: default; }
     jewelFixEl.checked = !!rtCall('jewel_fix');
     hpGuardEl.checked = !!rtCall('hp_readout_guard');
     stoneScaleEl.checked = !!rtCall('stone_scale_fix');
+    bioCastleEl.checked = !!rtCall('bio_castle_approach');
     healNumEl.checked = !!rtCall('heal_numerals');
     bonusDropEl.checked = !!rtCall('bonus_drop');
     saveAnywhereEl.checked = !!rtCall('save_anywhere');
@@ -4061,6 +4067,7 @@ div.play-vis-head { cursor: default; }
     rtCall('set_jewel_fix', !!jewelFixEl.checked);
     rtCall('set_hp_readout_guard', !!hpGuardEl.checked);
     rtCall('set_stone_scale_fix', !!stoneScaleEl.checked);
+    rtCall('set_bio_castle_approach', !!bioCastleEl.checked);
     rtCall('set_heal_numerals', !!healNumEl.checked);
     rtCall('set_bonus_drop', !!bonusDropEl.checked);
     rtCall('set_save_anywhere', !!saveAnywhereEl.checked);
@@ -4111,6 +4118,7 @@ div.play-vis-head { cursor: default; }
   jewelFixEl.addEventListener('change', () => { rtCall('set_jewel_fix', !!jewelFixEl.checked); canvas.focus(); });
   hpGuardEl.addEventListener('change', () => { rtCall('set_hp_readout_guard', !!hpGuardEl.checked); canvas.focus(); });
   stoneScaleEl.addEventListener('change', () => { rtCall('set_stone_scale_fix', !!stoneScaleEl.checked); canvas.focus(); });
+  bioCastleEl.addEventListener('change', () => { rtCall('set_bio_castle_approach', !!bioCastleEl.checked); canvas.focus(); });
   healNumEl.addEventListener('change', () => { rtCall('set_heal_numerals', !!healNumEl.checked); canvas.focus(); });
   bonusDropEl.addEventListener('change', () => { rtCall('set_bonus_drop', !!bonusDropEl.checked); canvas.focus(); });
   saveAnywhereEl.addEventListener('change', () => { rtCall('set_save_anywhere', !!saveAnywhereEl.checked); canvas.focus(); });

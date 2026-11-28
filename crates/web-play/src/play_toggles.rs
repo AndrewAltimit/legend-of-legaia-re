@@ -412,6 +412,20 @@ impl LegaiaRuntime {
         self.page_toggles.tweaks.stone_scale_fix
     }
 
+    /// The Bio Castle approach cue, the native `--no-bio-castle-approach`
+    /// inverted (on by default): pressing into the fused castle on `map01`
+    /// from any side crosses its door, where retail opens it from the west
+    /// only. Retail mode holds it off.
+    pub fn set_bio_castle_approach(&mut self, on: bool) {
+        self.page_toggles.tweaks.bio_castle_approach = on;
+        self.apply_page_toggles();
+    }
+
+    /// Whether [`Self::set_bio_castle_approach`] is on.
+    pub fn bio_castle_approach(&self) -> bool {
+        self.page_toggles.tweaks.bio_castle_approach
+    }
+
     /// The heal numerals, the native `--heal-numerals` (off by default): a
     /// battle restore throws a heal-coloured number where retail
     /// only rolls the HP figure up. Retail mode holds it off.
@@ -1041,6 +1055,10 @@ mod tests {
         );
         assert!(rt.shiny_seru() && rt.fortress_encounter_fix() && rt.hp_readout_guard());
         assert!(rt.tetsu_spar_fix());
+        assert!(rt.bio_castle_approach());
+        rt.set_bio_castle_approach(false);
+        assert!(!rt.bio_castle_approach());
+        rt.set_bio_castle_approach(true);
         assert!(!rt.flee_exp() && !rt.jewel_fix() && !rt.heal_numerals());
         assert_eq!(rt.exp_rate_permille(), 1000);
         rt.set_shiny_seru(false);
@@ -1065,6 +1083,7 @@ mod tests {
             "set_jewel_fix",
             "set_hp_readout_guard",
             "set_stone_scale_fix",
+            "set_bio_castle_approach",
             "set_heal_numerals",
             "set_bonus_drop",
             "set_save_anywhere",

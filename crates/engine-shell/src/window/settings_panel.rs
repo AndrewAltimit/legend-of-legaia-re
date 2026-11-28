@@ -30,7 +30,7 @@ use legaia_engine_system::input::PadButton;
 /// monsters, the saved-chain Arts list, the gameplay tweaks and the battle
 /// tuning) and *Original game only*, as the play page's boxes take them
 /// live ([`LIVE_SWITCH_ROWS`]).
-pub(super) const SETTINGS_ROWS: [OptionRow; 46] = [
+pub(super) const SETTINGS_ROWS: [OptionRow; 47] = [
     OptionRow::Preset,
     OptionRow::Fullscreen,
     OptionRow::WholeStepScale,
@@ -64,6 +64,7 @@ pub(super) const SETTINGS_ROWS: [OptionRow; 46] = [
     OptionRow::JewelFix,
     OptionRow::HpReadoutGuard,
     OptionRow::StoneScaleFix,
+    OptionRow::BioCastleApproach,
     OptionRow::ExpRate,
     OptionRow::EnemyStats,
     OptionRow::EnemyAttacks,
@@ -82,7 +83,7 @@ pub(super) const SETTINGS_ROWS: [OptionRow; 46] = [
 /// The launch switches the page changes live. Each is remembered in the
 /// launcher's settings file, where its row there reads it back.
 #[cfg(test)]
-pub(super) const LIVE_SWITCH_ROWS: [OptionRow; 25] = [
+pub(super) const LIVE_SWITCH_ROWS: [OptionRow; 26] = [
     OptionRow::PsxRender,
     OptionRow::EntryPulse,
     OptionRow::SmoothMotion,
@@ -101,6 +102,7 @@ pub(super) const LIVE_SWITCH_ROWS: [OptionRow; 25] = [
     OptionRow::JewelFix,
     OptionRow::HpReadoutGuard,
     OptionRow::StoneScaleFix,
+    OptionRow::BioCastleApproach,
     OptionRow::ExpRate,
     OptionRow::EnemyStats,
     OptionRow::EnemyAttacks,

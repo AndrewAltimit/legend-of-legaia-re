@@ -1631,8 +1631,19 @@ from poked seats:
 
 Down is world `-Z` under the fixed overworld camera. The rests hold with
 the leading-edge wall probes both play hosts run; under the candidate-centre
-test the east walk stops `44` units deeper. Pin:
-`crates/engine-session/tests/bio_castle_entrance_disc.rs`.
+test the east walk stops `44` units deeper. 
+**The port's approach cue.** A party arriving from the south or the east
+meets a wall with no visible way round to the door. The enhancement
+`WorldToggles::bio_castle_approach` (on by default, off under `--retail` /
+`--no-bio-castle-approach`) lets a press into the castle cross the door:
+`World::bio_castle_approach_cue`, run from the overworld auto-engage, engages
+the door's `P2[37]` portal when a leading-edge wall probe of the held
+direction lands on a wall sub-cell of one of the painted body tiles, from
+outside them. The grid is only read, so the castle stays solid, and the
+crossing, its flag writes and the `(0x17, 0x16)` arrival in `jou` are the
+door's. With the cue on, the Down walk from `(95, 28)` and the Left walk from
+`(99, 23)` enter; with it off, the seven walks above end where retail's do.
+Pin: `crates/engine-session/tests/bio_castle_entrance_disc.rs`.
 
 #### NPC dialogue text source
 

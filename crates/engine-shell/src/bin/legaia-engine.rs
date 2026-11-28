@@ -512,6 +512,7 @@ fn main() -> Result<()> {
             // The retired opt-out: the default it asks for is the default.
             no_heal_numerals: _,
             no_stone_scale_fix,
+            no_bio_castle_approach,
             spirit_ap,
             damage_ap,
             seru_catch_rate,
@@ -625,6 +626,7 @@ fn main() -> Result<()> {
                         hp_readout_guard: !no_hp_readout_guard,
                         heal_numerals,
                         stone_scale_fix: !no_stone_scale_fix,
+                        bio_castle_approach: !no_bio_castle_approach,
                         spirit_ap: spirit_ap.unwrap_or(legaia_engine_core::world::SPIRIT_AP_RETAIL),
                         damage_ap: damage_ap.unwrap_or(legaia_engine_core::world::DAMAGE_AP_RETAIL),
                         seru_catch_pct: seru_catch_rate,

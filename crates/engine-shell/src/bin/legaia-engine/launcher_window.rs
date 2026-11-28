@@ -5021,6 +5021,7 @@ mod tests {
                 jewel_fix: true,
                 no_hp_readout_guard: true,
                 no_stone_scale_fix: true,
+                no_bio_castle_approach: true,
                 spirit_ap: Some(-16),
                 damage_ap: Some(200),
                 seru_catch_pct: Some(75),
@@ -5043,6 +5044,7 @@ mod tests {
                 jewel_fix,
                 no_hp_readout_guard,
                 no_stone_scale_fix,
+                no_bio_castle_approach,
                 spirit_ap,
                 damage_ap,
                 seru_catch_rate,
@@ -5062,6 +5064,7 @@ mod tests {
                 assert!(no_tetsu_spar_fix);
                 assert!(no_hp_readout_guard);
                 assert!(no_stone_scale_fix);
+                assert!(no_bio_castle_approach);
                 assert_eq!(exp_rate, Some(2000));
             }
             other => panic!("expected play-window, got {other:?}"),

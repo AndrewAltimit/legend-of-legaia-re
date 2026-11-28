@@ -1225,9 +1225,72 @@ impl World {
                 to_engage.push(idx);
             }
         }
+        if to_engage.is_empty()
+            && let Some(idx) = self.bio_castle_approach_cue(wx, wz)
+        {
+            to_engage.push(idx);
+        }
         for idx in to_engage {
             self.engage_world_map_entity(idx);
         }
+    }
+
+    /// The Bio Castle approach cue ([`crate::world::WorldToggles::bio_castle_approach`]):
+    /// the index of `map01`'s `jou` door portal when the held direction is
+    /// pressing the player into the fused castle's body.
+    ///
+    /// The body is the four rectangles the `map01` system script paints once
+    /// flag `0x3BA` is up (`P1[0]` `0x00A9..0x00BB`): tiles `(94..98, 25)`,
+    /// `(95..97, 24..27)` and `(97, 23)`, less `(96, 27)`. A leading-edge
+    /// wall probe of the held direction (`FIELD_WALL_PROBES`, the points that
+    /// refuse the step) landing on a wall sub-cell of one of those tiles, from
+    /// outside them, is the press. The portal is the door trigger's own
+    /// (`P2[37]`, installed only once `0x3BA` opens the record), so the
+    /// crossing, its flag writes and the arrival seat are the door's. The
+    /// grid is only read: the castle stays as solid as retail's.
+    ///
+    /// Retail has no such cue - its door tile `(95, 23)` is the castle's
+    /// north-west corner, reachable from the west alone.
+    pub fn bio_castle_approach_cue(&self, wx: i16, wz: i16) -> Option<usize> {
+        /// `P2[37]`, the record `map01`'s door trigger `(95, 23)` names.
+        const DOOR_RECORD: u8 = 37;
+        fn in_body(tx: i32, tz: i32) -> bool {
+            (tz == 25 && (94..=98).contains(&tx))
+                || ((95..=97).contains(&tx) && (24..=27).contains(&tz) && (tx, tz) != (96, 27))
+                || (tx, tz) == (97, 23)
+        }
+        if !self.toggles.bio_castle_approach || self.active_scene_label != "map01" {
+            return None;
+        }
+        // A press, not a stale direction from a frame the pad stood still.
+        if self.input.pad() & 0xF0 == 0 {
+            return None;
+        }
+        if in_body(i32::from(wx) >> 7, i32::from(wz) >> 7) {
+            return None;
+        }
+        let pressed = Self::dirs_of_bits(self.locomotion.last_move_dir_bits).any(|dir| {
+            FIELD_WALL_PROBES[dir].iter().any(|&(dx, dz)| {
+                let (px, pz) = (wx.saturating_add(dx), wz.saturating_sub(dz));
+                self.field_tile_is_wall(px, pz) && in_body(i32::from(px) >> 7, i32::from(pz) >> 7)
+            })
+        });
+        if !pressed {
+            return None;
+        }
+        self.world_map
+            .entity_configs
+            .iter()
+            .position(|cfg| {
+                matches!(cfg, WorldMapEntityConfig::OverworldPortal {
+                    scene_name, record, object: false, ..
+                } if scene_name == "jou" && *record == DOOR_RECORD)
+            })
+            .filter(|&idx| {
+                self.world_map.entities.get(idx).is_some_and(|ctx| {
+                    ctx.state == legaia_engine_field::world_map_entity::EntityState::Idle as u16
+                })
+            })
     }
 
     /// Open / dismiss an overworld NPC's dialogue on a confirm press.

@@ -30,7 +30,13 @@
 //! and stops each pad walk below where the port stops it. Those rest
 //! positions are pinned here.
 //!
-//! Both tests resume the playthrough card's `PRO-10` save onto `map01` with
+//! The port's Bio Castle approach cue (`WorldToggles::bio_castle_approach`,
+//! on by default, off under `--retail`) lets a press into the castle's body
+//! from any side cross the same door: the retail walks run with it off and
+//! keep retail's rests, and the south and east walks run again with it on
+//! and enter `jou` through `P2[37]`, the door's own record.
+//!
+//! Every test resumes the playthrough card's `PRO-10` save onto `map01` with
 //! the hosts' collision settings (leading-edge wall probes, solid NPCs).
 //!
 //! Skip-passes without `LEGAIA_DISC_BIN` / `extracted/` / the save library.
@@ -94,8 +100,8 @@ fn player_pos(session: &NativeSession) -> (i32, i32) {
 }
 
 /// Resume `PRO-10` onto `map01` with the player seated on tile `seat`, under
-/// the play hosts' collision settings.
-fn seated(seat: (i32, i32)) -> Option<NativeSession> {
+/// the play hosts' collision settings, with the approach cue on or off.
+fn seated(seat: (i32, i32), approach: bool) -> Option<NativeSession> {
     let extracted = extracted_dir()?;
     let lib = std::env::var_os("LEGAIA_SAVES_LIBRARY")
         .map(PathBuf::from)
@@ -125,6 +131,7 @@ fn seated(seat: (i32, i32)) -> Option<NativeSession> {
     // Both play hosts run retail's three-probe wall footprint and solid NPCs.
     session.host.world.locomotion.leading_edge_wall_probes = true;
     session.host.world.npcs.solid = true;
+    session.host.world.toggles.bio_castle_approach = approach;
     assert!(
         session.host.world.system_flag_test(0x3BA),
         "PRO-10 is past the fusion"
@@ -134,7 +141,7 @@ fn seated(seat: (i32, i32)) -> Option<NativeSession> {
 
 #[test]
 fn the_castle_body_and_door_sit_where_the_disc_puts_them() {
-    let Some(mut session) = seated((94, 23)) else {
+    let Some(mut session) = seated((94, 23), false) else {
         return;
     };
     for _ in 0..30 {
@@ -255,35 +262,46 @@ const RETAIL_WALKS: &[Walk] = &[
     },
 ];
 
+/// Hold `pad` from `seat` for `hold` vsyncs after a 30-vsync settle.
+/// Returns the session, whether the walk crossed into `jou`, and where the
+/// player stands.
+fn walk_from(
+    seat: (i32, i32),
+    pad: u16,
+    hold: u32,
+    approach: bool,
+) -> Option<(NativeSession, bool, (i32, i32))> {
+    let mut session = seated(seat, approach)?;
+    let mut entered = false;
+    for f in 0..30 + hold {
+        // Keep a random encounter out of the walk.
+        if let Some(t) = session.host.world.world_map.region_tracker.as_mut() {
+            t.set_counter(100);
+        }
+        session.host.world.set_pad(if f >= 30 { pad } else { 0 });
+        let _ = session.tick();
+        if session.host.world.scene_change_in_flight()
+            || session.host.world.active_scene_label == "jou"
+        {
+            entered = true;
+            break;
+        }
+        assert_eq!(
+            session.host.world.mode,
+            SceneMode::WorldMap,
+            "walk from {seat:?} left the overworld"
+        );
+    }
+    let at = player_pos(&session);
+    Some((session, entered, at))
+}
+
 #[test]
 fn the_door_opens_from_the_west_and_the_body_stops_the_rest_as_in_retail() {
     for walk in RETAIL_WALKS {
-        let Some(mut session) = seated(walk.seat) else {
+        let Some((_, entered, at)) = walk_from(walk.seat, walk.pad, walk.hold, false) else {
             return;
         };
-        let mut entered = false;
-        for f in 0..30 + walk.hold {
-            // Keep a random encounter out of the walk.
-            if let Some(t) = session.host.world.world_map.region_tracker.as_mut() {
-                t.set_counter(100);
-            }
-            let pad = if f >= 30 { walk.pad } else { 0 };
-            session.host.world.set_pad(pad);
-            let _ = session.tick();
-            if session.host.world.scene_change_in_flight()
-                || session.host.world.active_scene_label == "jou"
-            {
-                entered = true;
-                break;
-            }
-            assert_eq!(
-                session.host.world.mode,
-                SceneMode::WorldMap,
-                "walk from {:?} left the overworld",
-                walk.seat
-            );
-        }
-        let at = player_pos(&session);
         match walk.end {
             End::Enters => assert!(
                 entered,
@@ -309,5 +327,41 @@ fn the_door_opens_from_the_west_and_the_body_stops_the_rest_as_in_retail() {
                 );
             }
         }
+    }
+}
+
+/// With the approach cue on, the two retail dead ends - straight at the
+/// castle from behind, and along the door row from the east - cross the
+/// door, through the door's own record, and land on `jou`'s door seat.
+#[test]
+fn the_approach_cue_lets_the_south_and_east_walks_in_through_the_door() {
+    for (seat, pad) in [((95, 28), DOWN), ((99, 23), LEFT)] {
+        let Some((mut session, entered, at)) = walk_from(seat, pad, 240, true) else {
+            return;
+        };
+        assert!(
+            entered,
+            "walk from {seat:?} (pad {pad:#x}) should cross the door with the cue on; at {at:?}"
+        );
+        // Run the crossing to its end: the arrival is the door's (`P2[37]`'s
+        // `0x3F` entry tile `(0x17, 0x16)`), and jou's own entry moves the
+        // Door of Wind's Rim Elm row to the seat beside the door.
+        for _ in 0..400 {
+            session.host.world.set_pad(0);
+            let _ = session.tick();
+            if session.host.world.active_scene_label == "jou"
+                && session.host.world.mode == SceneMode::Field
+            {
+                break;
+            }
+        }
+        assert_eq!(session.host.world.active_scene_label, "jou");
+        let p = player_pos(&session);
+        assert_eq!((p.0 >> 7, p.1 >> 7), (23, 22), "jou's door seat");
+        assert!(
+            session.host.world.system_flag_test(0x33),
+            "Door of Wind seat flag"
+        );
+        assert!(!session.host.world.system_flag_test(0x20));
     }
 }
