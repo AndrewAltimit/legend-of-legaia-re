@@ -291,6 +291,17 @@ Victory timeline, measured on `rim_elm_gimard_victory` under PCSX-Redux (`script
 | `+335` | exit-fade template (kind 2, `0x40` frames, black -> white), phase halfword from 2 | `screen_fade` = the escape template, drawn by both hosts |
 | `+401` | `ctx[+0x6CE] >= 0x43`: `game_mode = 2` | `finish_battle`, windows come down |
 
+**The level-up jingle keys a vsync after the results frame.** A key-on census from
+`rim_elm_gimard_victory` with Vahn's cumulative EXP set one short of his threshold
+(`autorun_keyon_census.lua`, `LEGAIA_XP_TO_LEVEL=80084708`, `LEGAIA_TRACK=8007BD6C,8007B83C`; a RAM
+poke, no state saved) reads the results frame at v406 (the hold word reset to `2`), cue `0x50` keyed
+at v407 on two voices of VAB slot `11` (the reward bank, tones `0` and `1`), the victory voice on slot
+`7` at v428, and nothing else until mode `2` at v728. The battle score is not paused or ducked for
+the jingle. The port queues the cue with no delay on its results frame
+(`FUN_8004FCC8(0x50)` at `0x8004F6E8`), through the same scheduler whose strike and enemy cues the
+film-cues channel scores at `0` vsyncs; the level-up cue itself is not on a film (inference, not
+measured on the engine side).
+
 **Why the fade is 255 vsyncs after the results frame, not 256.** The hold `gp+0xA54` counts vsyncs, not passes: each pass adds the frame step `0x1F800393` (`0x8004F758..0x8004F76C`), and the results frame zeroes the word (`sw zero,0xa54(gp)` at `0x8004F738`) and then falls into that same add, so the results frame's own step counts. The fade is spawned on the pass that takes the word to `0x100` (`sltiu v0,v0,0x100` at `0x8004F778`), `0x100` vsyncs after the frame *before* the results frame.
 On `rim_elm_gimard_victory` the battle runs at two vsyncs a pass: the word reads `2` on the results frame (v402), `254` at v655 and `256` with the fade template loaded (`0x40` frames) at v657, and `game_mode` reads `2` at v723. The port counts one pass per vsync and seeds the count with the results frame's step, so its fade lands on the same vsync (`World::open_battle_results_frame`).
 

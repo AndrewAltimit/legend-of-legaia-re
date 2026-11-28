@@ -51,6 +51,16 @@
 -- LEGAIA_PAD_SCRIPT drives a flow while it counts: comma-separated
 -- `vsync:BUTTON:frames` presses (`120:LEFT:90,300:START:4`), each row also
 -- logged as `press`, so a walk, a menu or a door shows the cue stream it raises.
+--
+-- LEGAIA_TRACK: comma-separated hex addresses whose u32 is logged as a
+-- `word` row (`mask` = address, records = value) whenever it changes - the
+-- battle results hold `8007BD6C` and the master mode `8007B83C` time a cue
+-- against the frame that raised it.
+-- LEGAIA_XP_TO_LEVEL: comma-separated hex character-record bases
+-- (`80084708` Vahn, `+0x414` Noa, `+0x828` Gala); on the first vsync each
+-- record's cumulative EXP (`+0x0`) is set one short of its next threshold
+-- (`+0x4`), so the fight's reward levels it at the results frame. A RAM
+-- poke: say so in any state saved from such a run.
 
 package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
 local probe = require("probe")
@@ -80,6 +90,16 @@ local NOTE_STRIDE = 0x36
 local function n32(v) return (tonumber(v) or 0) % 0x100000000 end
 
 local csv = probe.csv_open(OUT_PATH, "vsync,mode,mask,ra,records")
+
+local tracked = {}
+for a in string.gmatch(os.getenv("LEGAIA_TRACK") or "", "[^,]+") do
+    tracked[#tracked + 1] = { addr = tonumber(a, 16), last = nil }
+end
+local xp_bases = {}
+for a in string.gmatch(os.getenv("LEGAIA_XP_TO_LEVEL") or "", "[^,]+") do
+    xp_bases[#xp_bases + 1] = tonumber(a, 16)
+end
+local xp_poked = false
 
 local presses = {}
 for at, button, frames in string.gmatch(os.getenv("LEGAIA_PAD_SCRIPT") or "",
@@ -248,6 +268,25 @@ probe.run({
 
     on_capture = function(ctx, elapsed)
         vsync = elapsed
+        if not xp_poked then
+            xp_poked = true
+            for _, base in ipairs(xp_bases) do
+                local next_xp = probe.read_u32(base + 4)
+                if next_xp > 0 then
+                    probe.write_u32(base, next_xp - 1)
+                    if csv then
+                        csv:row("%d,xppoke,%08X,0,xp=%d", elapsed, base, next_xp - 1)
+                    end
+                end
+            end
+        end
+        for _, t in ipairs(tracked) do
+            local v = n32(probe.read_u32(t.addr))
+            if v ~= t.last and csv then
+                csv:row("%d,word,%08X,0,%d", elapsed, t.addr, v)
+            end
+            t.last = v
+        end
         for _, p in ipairs(presses) do
             if elapsed == p.at then
                 probe.pad_force(probe.BTN[p.button])
