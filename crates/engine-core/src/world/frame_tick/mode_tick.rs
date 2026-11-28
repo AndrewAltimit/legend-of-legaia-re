@@ -431,6 +431,7 @@ impl World {
             self.clock.actor_vsync_accum += 1;
         }
         self.release_field_frame_cost();
+        self.stretch_frame_for_xa_start();
         let cadence = self.clock.game_frame_wait();
         let actor_tick_fired = self.clock.actor_vsync_accum >= cadence && runs_master_driver;
         if actor_tick_fired {

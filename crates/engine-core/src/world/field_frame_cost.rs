@@ -616,10 +616,49 @@ impl World {
                 Some(gpu) if self.toggles.field_gpu_cost_step => cost.max(i32::from(gpu)),
                 _ => cost,
             };
+            self.field_cost_work = cost;
+            self.field_cost_xa_loaded = self.field_xa_reading();
             let cost = self.field_xa_polled_cost(cost);
             self.clock.frame_cost = Some(cost.clamp(0, 0x7FFF));
             self.field_cost_priced = true;
         }
+    }
+
+    /// Stretch the game frame in flight when its own scripts started a
+    /// CD-XA one-shot after the frame was priced. Retail's one-shot
+    /// `FUN_8003D53C` issues its seek and read commands inside the frame and
+    /// the clip's polls load the rest of it, so the starting frame already
+    /// runs as long as the loaded frames after it: a PCSX-Redux trace of
+    /// `garmel_zeto_defeat_pre_line` (`autorun_field_cd_trace.lua`) reads
+    /// the one-shot at vsync `166`, that frame's CPU time `1109` hblanks
+    /// against `347..361` for the frames before it and `1122..1167` after,
+    /// and its length `5` vsyncs at step `2`. The port priced the frame
+    /// before its scripts ran, so it stayed `2` vsyncs long and every
+    /// loaded frame after it fell two vsyncs ahead of retail's grid.
+    ///
+    /// REF: FUN_8003D53C, FUN_8003D764, FUN_80016B6C
+    pub(in crate::world) fn stretch_frame_for_xa_start(&mut self) {
+        if !self.field_cost_priced
+            || self.field_cost_xa_loaded
+            || !self.toggles.field_frame_span_law
+            || !self.field_xa_reading()
+        {
+            return;
+        }
+        self.field_cost_xa_loaded = true;
+        let loaded = self.field_xa_polled_cost(self.field_cost_work);
+        let step = self.clock.frame_step;
+        let wall = legaia_engine_vm::frame_clock::frame_wall_vsyncs(step, loaded);
+        self.clock.pass_wait = Some(self.clock.pass_wait.unwrap_or(step).max(wall));
+        // The pacer reads the frame's own time into its ring at the frame's
+        // end, so the step after it is the loaded frame's.
+        let floor = self.clock.frame_step_floor;
+        self.clock.next_frame_step = Some(
+            self.clock
+                .frame_step_telemetry
+                .revise_last(loaded, true, floor)
+                .vsyncs_per_tick(),
+        );
     }
 
     /// A field frame's cost while a CD-XA one-shot reads, under

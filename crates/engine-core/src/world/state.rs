@@ -84,6 +84,13 @@ pub struct World {
     /// The field frame cost in force is the model's (`World::price_field_frame`),
     /// so a mode it does not price drops it.
     pub field_cost_priced: bool,
+    /// The priced frame was priced as a CD-XA read loads it
+    /// (`World::field_xa_polled_cost`); a clip the frame's own scripts start
+    /// stretches it after the fact (`World::stretch_frame_for_xa_start`).
+    pub field_cost_xa_loaded: bool,
+    /// The priced frame's work before any CD-XA load
+    /// ([`Self::field_cost_xa_loaded`]).
+    pub field_cost_work: i32,
     /// The GPU's wait over the field table the host drew last, in hblanks
     /// (`World::note_drawn_table_cost`), which a field frame's price takes
     /// the larger of while `WorldToggles::field_gpu_cost_step` is up. `None`
@@ -495,6 +502,8 @@ impl World {
             field_cost_scratch: std::cell::RefCell::new(Vec::new()),
             field_drawn_table_cost: None,
             field_cost_priced: false,
+            field_cost_xa_loaded: false,
+            field_cost_work: 0,
             fog_volume: legaia_render_kernels::fog_volume::FogVolume::new(),
             script_actors: FieldScriptActorState::default(),
             rng_state: 0x1234_5678,
