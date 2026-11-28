@@ -9,13 +9,23 @@
 //! it was given, as the real one stores it, which the setup then copies into
 //! the battle actor's `+0x3C`. `FUN_80052FA0` (the party assembly) is hooked
 //! to its one store the setup reads, the member count `ctx[+0]`.
+//!
+//! The backdrop pair the setup allocates (`ctx[+0x106C]` / `ctx[+0x1070]`)
+//! is compared too: the object-list edit that drops object 1 unless
+//! `DAT_8007B64B` is set (`battle_backdrop::drawn_object_indices_gated`), the
+//! second copy's transform off the `DAT_80078B50` list
+//! (`MirrorXTable`), and the outdoor byte `0x8007BDA8` off the
+//! `DAT_80078C1C` list (`OutdoorCueTable`).
 
-use crate::common::{Rng, scus_cpu};
+use crate::common::{Rng, scus, scus_cpu};
 use legaia_engine_battle::monster_catalog::{FormationDef, FormationSlot};
+use legaia_engine_battle_vm::battle_ground_grid::OutdoorCueTable;
 use legaia_engine_core::world::World;
 use legaia_engine_system::fade::FadeTemplate;
 use legaia_save::Party;
+use legaia_scene_formats::battle_backdrop::{MirrorXTable, drawn_object_indices_gated};
 use psx_retail_exec::{A0, A1, Stop, V0};
+use std::cell::Cell;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -51,10 +61,12 @@ const HEAP: u32 = 0x8016_0000;
 #[test]
 fn battle_setup_seats_and_draws_as_retail_does() {
     differential!(scus(SETUP));
-    let Some(mut cpu) = scus_cpu() else {
+    let (Some(mut cpu), Some(scus)) = (scus_cpu(), scus()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
     };
+    let mirror = MirrorXTable::from_scus(&scus).expect("mirror table");
+    let outdoor = OutdoorCueTable::from_scus(&scus).expect("outdoor table");
     cpu.stub_outside = Some((SETUP, SETUP_END));
     cpu.hook(PARTY_ASSEMBLY, |_, m| {
         let n = (0..3).filter(|&i| m.rd8(PARTY_IDS + i) != 0).count();
@@ -76,11 +88,22 @@ fn battle_setup_seats_and_draws_as_retail_does() {
         r.r[V0] = node;
     });
     let s = spawned.clone();
+    // The backdrop's object table: a count and that many pointers, the same
+    // on both copies (both are allocated off one source).
+    let objects = Rc::new(Cell::new(2u32));
+    let o = objects.clone();
     cpu.hook(ALLOC_NODE, move |r, m| {
         let mut n = s.borrow_mut();
         let node = NODE + *n * 0x400;
         *n += 1;
+        for b in (0..0x200).step_by(4) {
+            m.wr32(node + b, 0);
+        }
         m.wr32(node + 0x44, node + 0x100);
+        m.wr32(node + 0x100, o.get());
+        for k in 0..o.get() {
+            m.wr32(node + 0x104 + 4 * k, 0xA000_0000 + k);
+        }
         r.r[V0] = node;
     });
     cpu.stub(ALLOC, HEAP);
@@ -127,15 +150,22 @@ fn battle_setup_seats_and_draws_as_retail_does() {
         let rec = RECORD + k * 0x200;
         cpu.mem.wr32(rec + 0x88, rec + 0x8C);
     }
-    cpu.mem.wr8(SHELL_SHARED, 1);
+    const OUTDOOR_BYTE: u32 = 0x8007_BDA8;
 
     let mut rng = Rng(0x5345_5455);
     let (mut families, mut seated, mut raseru) = ([0usize; 3], 0usize, 0);
+    let (mut stages, mut kept) = ([0usize; 4], 0usize);
     for case in 0..3000 {
         let pc = 1 + rng.below(3);
         let mc = 1 + rng.below(4);
         let scripted = rng.below(3) == 0;
-        let map_id = [0x0Cu32, 0x15, 3, 0x40][rng.below(4) as usize];
+        let map_id = match rng.below(6) {
+            4 => u32::from(mirror.ids()[rng.below(mirror.ids().len() as u32) as usize]),
+            5 => u32::from(outdoor.ids()[rng.below(outdoor.ids().len() as u32) as usize]),
+            k => [0x0Cu32, 0x15, 3, 0x40][k as usize],
+        };
+        let shared = rng.below(3) == 0;
+        let shell_objects = 2 + rng.below(4);
         let lead: u8 = match rng.below(6) {
             0 => 0x3D + rng.below(3) as u8,
             1 => 0xAF,
@@ -143,6 +173,13 @@ fn battle_setup_seats_and_draws_as_retail_does() {
         };
         let special = [0u32, 0x200, 0x300, 0x100][rng.below(4) as usize];
         let white = rng.below(2);
+        // The roster ids, Terra's `4` among them, and the monsters' size
+        // class: the node `+0x58` separation word each seat gets.
+        let mut ids = [1u8, 2, 3, 4];
+        for i in (1..4).rev() {
+            ids.swap(i, rng.below(i as u32 + 1) as usize);
+        }
+        let size = rng.below(8) as u8;
         let rolls: Vec<u32> = (0..8).map(|_| rng.next() & 0x7FFF).collect();
         let frames: Vec<u8> = (0..7).map(|_| 1 + rng.below(60) as u8).collect();
 
@@ -153,7 +190,7 @@ fn battle_setup_seats_and_draws_as_retail_does() {
         cpu.mem.wr8(FLAGS, if scripted { 0x80 } else { 0 });
         for i in 0..3 {
             cpu.mem
-                .wr8(PARTY_IDS + i, if i < pc { i as u8 + 1 } else { 0 });
+                .wr8(PARTY_IDS + i, if i < pc { ids[i as usize] } else { 0 });
         }
         for s in 0..4 {
             cpu.mem
@@ -163,17 +200,28 @@ fn battle_setup_seats_and_draws_as_retail_does() {
             cpu.mem.wr8(RECORD + k as u32 * 0x200 + 0x8D, *f);
         }
         cpu.mem.wr8(CELLS, lead);
+        for s in 0..4u32 {
+            cpu.mem.wr8(SOURCE + 0x800 + s * 0x100 + 0x1F, size);
+        }
         cpu.mem.wr32(SPECIAL, special);
         cpu.mem.wr32(MAP_ID, map_id);
         cpu.mem.wr32(WHITE_INTRO, white);
+        cpu.mem.wr8(SHELL_SHARED, u8::from(shared));
+        cpu.mem.wr8(OUTDOOR_BYTE, 0xFF);
+        objects.set(shell_objects);
         *spawned.borrow_mut() = 0;
         *draws.borrow_mut() = (rolls.clone(), 0);
         fades.borrow_mut().clear();
         assert_eq!(cpu.call(SETUP, &[]), Stop::Returned, "case {case}");
 
         let mut w = World::new();
-        w.load_party(Party::zeroed(3));
+        w.load_party(Party::zeroed(4));
+        w.set_active_party(ids[..pc as usize].iter().map(|&id| id - 1).collect());
         w.party.party_count = pc as u8;
+        let mut def =
+            legaia_engine_battle::monster_catalog::MonsterDef::new(u16::from(lead), "m", 10, 1);
+        def.size_class = size;
+        w.tables.monster_catalog.insert(def);
         w.battle.map_id = map_id;
         // Seat the port's stream on the same draws: the setup's are its first.
         let mut slots = vec![FormationSlot::new(u16::from(lead))];
@@ -216,6 +264,11 @@ fn battle_setup_seats_and_draws_as_retail_does() {
             let (roll, draw) = (rolls[slot], port_draws[slot]);
             assert_eq!(cpu.mem.rd16(node + 0x68), ((roll % f) << 4) as u16);
             assert_eq!(w.actors[slot].battle_idle_phase_draw, Some(draw), "{ctx}");
+            assert_eq!(
+                cpu.mem.rd16(node + 0x58) as i16,
+                w.drive_battle_separation_radius(slot),
+                "{ctx}: slot {slot} separation word, ids {ids:?} size {size}"
+            );
         }
         // The formation roll `FUN_80051D84`, stubbed here, may raise the
         // Ra-Seru bit again on the port's side; the setup's own pass is the
@@ -238,6 +291,33 @@ fn battle_setup_seats_and_draws_as_retail_does() {
             }]
         );
         assert_eq!(cpu.mem.rd32(WHITE_INTRO), 0);
+        // The backdrop pair.
+        let stage = map_id as u16;
+        let keep: Vec<u32> = drawn_object_indices_gated(shell_objects as usize, shared)
+            .into_iter()
+            .map(|k| 0xA000_0000 + k as u32)
+            .collect();
+        for (copy, at) in [("first", 0x106C), ("second", 0x1070)] {
+            let node = cpu.mem.rd32(CTX + at);
+            let tbl = cpu.mem.rd32(node + 0x44);
+            let n = cpu.mem.rd32(tbl);
+            let list: Vec<u32> = (0..n).map(|k| cpu.mem.rd32(tbl + 4 + 4 * k)).collect();
+            assert_eq!(list, keep, "{ctx}: {copy} copy's objects, shared {shared}");
+        }
+        let second = cpu.mem.rd32(CTX + 0x1070);
+        let mirrored = mirror.contains_runtime_id(stage);
+        assert_eq!(
+            (cpu.mem.rd16(second + 0x5A), cpu.mem.rd16(second + 0x26)),
+            if mirrored { (2, 0) } else { (0, 0x800) },
+            "{ctx}: second copy"
+        );
+        assert_eq!(
+            cpu.mem.rd8(OUTDOOR_BYTE),
+            u8::from(outdoor.contains_runtime_id(stage)),
+            "{ctx}: outdoor byte"
+        );
+        stages[usize::from(mirrored) + 2 * usize::from(outdoor.contains_runtime_id(stage))] += 1;
+        kept += usize::from(shared);
         let map_arm = matches!(map_id, 0x0C | 0x15) && (0x3D..=0x3F).contains(&lead);
         families[usize::from(scripted) + usize::from(map_arm)] += 1;
         seated += (pc + mc) as usize;
@@ -246,5 +326,9 @@ fn battle_setup_seats_and_draws_as_retail_does() {
     assert!(
         families.iter().all(|&n| n > 20) && seated > 9000 && raseru > 300,
         "{families:?} {seated} {raseru}"
+    );
+    assert!(
+        stages[0] > 100 && stages[1] > 100 && stages[2] + stages[3] > 100 && kept > 300,
+        "{stages:?} {kept}"
     );
 }

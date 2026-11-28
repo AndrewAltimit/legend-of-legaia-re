@@ -111,6 +111,14 @@ fn an_arrow_string_builds_the_queue_retail_builds() {
                 }
             }
         }
+        // A full string a quarter of the time, so a limb strip meets the
+        // last slot (`sltiu a1,0xF` at `0x801EF07C` / `0x801EF0EC` /
+        // `0x801EF164`: no shift, the slot cleared).
+        if rng.below(4) == 0 {
+            while arrows.len() < 16 {
+                arrows.push(Command::from_byte(1 + rng.below(4) as u8).unwrap());
+            }
+        }
         arrows.truncate(16);
         let spirit: u16 = [
             0,
@@ -135,7 +143,7 @@ fn an_arrow_string_builds_the_queue_retail_builds() {
         } else {
             (0..15u8).filter(|_| rng.below(3) == 0).collect()
         };
-        let status: u16 = [0, 0, 0, 0, 8, 0x10, 0x20][rng.below(7) as usize];
+        let status: u16 = [0, 0, 0, 0, 8, 0x10, 0x20, 0x18, 0x38][rng.below(9) as usize];
 
         // Retail.
         cpu.mem.wr32(CTX_PTR, CTX);

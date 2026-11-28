@@ -470,6 +470,7 @@ fn the_group_and_target_flows_commit_and_come_back_as_retail_does() {
     };
     let mut rng = Rng(0x4752_4F55);
     let (mut commits, mut stays, mut leaves, mut cancels, mut refusals) = (0, 0, 0, 0, 0);
+    let mut cured_leaves = 0;
     for episode in 0..6000 {
         let mut verdicts = [true; 256];
         for s in SPELL_POOL {
@@ -538,6 +539,13 @@ fn the_group_and_target_flows_commit_and_come_back_as_retail_does() {
                     assert_eq!(rig.log.borrow().applied.len(), 1, "{what}");
                     assert_eq!(rig.cpu.mem.rd16(MAILBOX), 0xFF, "{what}");
                     assert_eq!(rig.rd(STEP), 4, "{what}");
+                    // The cast may leave nobody it still affects (a cure that
+                    // cured): the re-cast check then backs out to the list
+                    // (`jal 0x8003053C` at `0x801D98B4` / its group twin).
+                    let cured = rng.below(3) == 0;
+                    if cured {
+                        rig.affects.borrow_mut()[usize::from(spell)] = false;
+                    }
                     // The host rebuilds the session off the debited records.
                     let mut casters = p.casters.clone();
                     casters[at].mp = rig.cpu.mem.rd16(caster_rec + 0x10A);
@@ -569,6 +577,7 @@ fn the_group_and_target_flows_commit_and_come_back_as_retail_does() {
                             rig.frame(SPELL_LIST, 0, 0);
                             assert_eq!(rig.rd(LIST_ROW), u32::from(*cursor), "{what}: list row");
                             leaves += 1;
+                            cured_leaves += u32::from(cured);
                         }
                         other => panic!("{what}: {other:?}"),
                     }
@@ -579,7 +588,12 @@ fn the_group_and_target_flows_commit_and_come_back_as_retail_does() {
         }
     }
     assert!(
-        commits > 500 && stays > 300 && leaves > 30 && cancels > 500 && refusals > 100,
-        "{commits} {stays} {leaves} {cancels} {refusals}"
+        commits > 500
+            && stays > 300
+            && leaves > 30
+            && cured_leaves > 30
+            && cancels > 500
+            && refusals > 100,
+        "{commits} {stays} {leaves} {cured_leaves} {cancels} {refusals}"
     );
 }

@@ -1,0 +1,128 @@
+# Battle rules and menu kernels: death credit and spoils, combo records, arts input, item and spell apply, equipment, status, shop and inn menus.
+
+[[arm]]
+entry = "0x8004AD80"
+range = "0x8004B118..0x8004B118"
+verdict = "unreachable"
+reason = "The death arm's Jette count loop skip: it runs with the victim's +0x14C at zero (0x8004B0BC), so the bound is `0 < ctx[+1]`, and ctx[+1] counts the formation's monsters, the dying one among them; a death with ctx[+1] == 0 is never reached."
+
+[[arm]]
+entry = "0x8004AD80"
+range = "0x8004B204..0x8004B204"
+verdict = "unreachable"
+reason = "The defeat cue re-reads +0x1DC bit 3, tested clear at 0x8004B190 on the way in; only the defeat credit's lw/sw of the save block's +0x664 word runs between, so the cue's early exit is never taken."
+
+[[arm]]
+entry = "0x8004AD80"
+range = "0x8004B244..0x8004B244"
+verdict = "unreachable"
+reason = "The defeat cue's `sltiu s3,3` term: the death arm is entered only past `sltiu s3,3; bnez -> 0x8004B6A4` at 0x8004B0AC, so s3 is a monster seat and the fall-through (a party seat opening the gate) never runs from the commit; defeat_credit drives it from the credit head."
+
+[[arm]]
+entry = "0x8004AD80"
+range = "0x8004B3F8..0x8004B3F8"
+verdict = "unreachable"
+reason = "The steal attack's living-member scan skips when ctx[+0] (the party count) is zero; a battle always seats at least one member, so the skip is never taken."
+
+[[arm]]
+entry = "0x801EED1C"
+image = "a80009959eadc5ba"
+range = "0x801EF2FC..0x801EF2FC"
+verdict = "unreachable"
+reason = "PROT 0898 queue builder: the art walk is skipped when the bank's record count (record 0's +0x58 table, first byte) is 0xB or less, i.e. the bank holds no art past the eleven fixed records; every party bank on the disc (PROT 0863..0865, run by arts_queue) holds its arts, so the skip is never taken."
+
+[[arm]]
+entry = "0x8004C140"
+range = "0x8004C1E0..0x8004C1F4"
+verdict = "unreachable"
+reason = "The shout selector's per-character switch, the 0x243 (Spirit-shout) arm: the compiler's case chain on v1 = character - 1, which `sltiu v0,v1,3; beqz -> 0x8004C62C` at 0x8004C170 bounds to 0..2. Past `beq v1,1` and `slti v1,2`, the `beqz v1` (v1 < 2, not 1) is always taken and the `beq v1,2` (v1 >= 2) always taken; their fall-throughs into the default `j` are dead."
+
+[[arm]]
+entry = "0x8004C140"
+range = "0x8004C284..0x8004C298"
+verdict = "unreachable"
+reason = "The shout selector's per-character switch, the a2-flag arm: the compiler's case chain on v1 = character - 1, which `sltiu v0,v1,3; beqz -> 0x8004C62C` at 0x8004C170 bounds to 0..2. Past `beq v1,1` and `slti v1,2`, the `beqz v1` (v1 < 2, not 1) is always taken and the `beq v1,2` (v1 >= 2) always taken; their fall-throughs into the default `j` are dead."
+
+[[arm]]
+entry = "0x8004C140"
+range = "0x8004C31C..0x8004C330"
+verdict = "unreachable"
+reason = "The shout selector's per-character switch, the plain arm: the compiler's case chain on v1 = character - 1, which `sltiu v0,v1,3; beqz -> 0x8004C62C` at 0x8004C170 bounds to 0..2. Past `beq v1,1` and `slti v1,2`, the `beqz v1` (v1 < 2, not 1) is always taken and the `beq v1,2` (v1 >= 2) always taken; their fall-throughs into the default `j` are dead."
+
+[[arm]]
+entry = "0x8004C140"
+range = "0x8004C4BC..0x8004C4D0"
+verdict = "unreachable"
+reason = "The shout selector's per-character switch, the second-band arm: the compiler's case chain on v1 = character - 1, which `sltiu v0,v1,3; beqz -> 0x8004C62C` at 0x8004C170 bounds to 0..2. Past `beq v1,1` and `slti v1,2`, the `beqz v1` (v1 < 2, not 1) is always taken and the `beq v1,2` (v1 >= 2) always taken; their fall-throughs into the default `j` are dead."
+
+[[arm]]
+entry = "0x8004C140"
+range = "0x8004C5E4..0x8004C5F8"
+verdict = "unreachable"
+reason = "The shout selector's per-character switch, the a2-flag cue arm: the compiler's case chain on v1 = character - 1, which `sltiu v0,v1,3; beqz -> 0x8004C62C` at 0x8004C170 bounds to 0..2. Past `beq v1,1` and `slti v1,2`, the `beqz v1` (v1 < 2, not 1) is always taken and the `beq v1,2` (v1 >= 2) always taken; their fall-throughs into the default `j` are dead."
+
+[[arm]]
+entry = "0x80032A44"
+range = "0x800330BC..0x800330BC"
+verdict = "unreachable"
+reason = "The list kernel's row-class case chain on v1 = row & 0xF000 (a multiple of 0x1000): past `beq 0x5000`, `slti 0x5001`, `beq 0x2000`, `slti 0x2001` and `beqz`, v1 can only be 0x1000, so `beq v1,0x1000` is always taken and its default `j` dead."
+
+[[arm]]
+entry = "0x80032A44"
+range = "0x800330D4..0x800330D4"
+verdict = "unreachable"
+reason = "The row-class case chain: in 0x2001..0x5000 and past `beq 0x3000`, a multiple of 0x1000 can only be 0x4000, so `beq v1,0x4000` is always taken and its default `j` dead."
+
+[[arm]]
+entry = "0x80032A44"
+range = "0x80033104..0x80033104"
+verdict = "unreachable"
+reason = "The row-class case chain: in 0x5001..0x8000, past `beq 0x8000` and `beq 0x6000`, a multiple of 0x1000 can only be 0x7000, so `beq v1,0x7000` is always taken and its default `j` dead."
+
+[[arm]]
+entry = "0x80032A44"
+range = "0x800331AC..0x800331AC"
+verdict = "unreachable"
+reason = "The bag row's count numeral: the place walk's zero-terminator exit on the first word of the power table at 0x80073DCC, which is 400000000; the exit never fires."
+
+[[arm]]
+entry = "0x80032A44"
+range = "0x80033390..0x80033390"
+verdict = "unreachable"
+reason = "The 0x6000 / 0x7000 row's count numeral: the same place walk over 0x80073DCC, whose first word is non-zero; the zero-terminator exit never fires."
+
+[[arm]]
+entry = "0x80032A44"
+range = "0x800335EC..0x800335EC"
+verdict = "unreachable"
+reason = "The spell row's MP numeral: the same place walk over 0x80073DCC, whose first word is non-zero; the zero-terminator exit never fires."
+
+[[arm]]
+entry = "0x801DABA4"
+range = "0x801DAD80..0x801DAD80"
+verdict = "unreachable"
+reason = "PROT 0898 turn picker: the party's standing scan is skipped when ctx[+0] (the party count) is zero; a battle always seats at least one member."
+
+[[arm]]
+entry = "0x801DABA4"
+range = "0x801DAE00..0x801DAE00"
+verdict = "unreachable"
+reason = "PROT 0898 turn picker: the monsters' standing scan is skipped when ctx[+1] (the formation's monster count, not the living count) is zero; every formation seats at least one monster."
+
+[[arm]]
+entry = "0x801D8D94"
+range = "0x801D8DC4..0x801D8DC4"
+verdict = "unreachable"
+reason = "PROT 0899 Incense confirm: the step switch's case chain on the pause step word 0x801E46AC: past `beq 1` and `slti 2`, `beqz` sees a step below 1, and the word is only ever stored as 0..6 or incremented from those, so the default `j` behind it is dead."
+
+[[arm]]
+entry = "0x80034E4C"
+range = "0x80034E98..0x80034E98"
+verdict = "unreachable"
+reason = "The nine-place decimal writer's zero-terminator exit on the first word of the power table at 0x80073DCC, which is 400000000; the exit never fires."
+
+[[arm]]
+entry = "0x80034E4C"
+range = "0x80034EF0..0x80034F04"
+verdict = "unreachable"
+reason = "The nine-place decimal writer's leading-zero arm reads gp+0x15C, which the routine sets to 1 at its entry (0x80034E7C) and after every cell it draws (0x80034F68) and clears only at its exit; the glyph call FUN_8003C11C between stores nothing there, so `bnez` at 0x80034EF0 is always taken and the suppression arm behind it (0x80034EF8..0x80034F10) is dead: the writer always prints all nine places."

@@ -1336,6 +1336,14 @@ fn capture_walk_cursor(cursor: i32, passes: i32, advance: i32, total: i32) -> Op
     u16::try_from((cursor - passes * advance).rem_euclid(cycle)).ok()
 }
 
+#[cfg(feature = "test-drivers")]
+impl World {
+    /// [`Self::battle_separation_radius`], for the seat stager's differential.
+    pub fn drive_battle_separation_radius(&self, slot: usize) -> i16 {
+        self.battle_separation_radius(slot)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

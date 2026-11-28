@@ -135,7 +135,7 @@ fn the_apply_screens_use_what_retail_uses_and_land_where_it_lands() {
     let mut seen = std::collections::BTreeMap::<(bool, Landing), u32>::new();
     let mut failures = Vec::new();
     let mut notices = 0u32;
-    for round in 0..3_000 {
+    for round in 0..4_500 {
         let id = usable[rng.below(usable.len() as u32) as usize];
         let e = table.effect(id).unwrap();
         let all = e.flags & 0x20 != 0;
@@ -243,17 +243,19 @@ fn the_apply_screens_use_what_retail_uses_and_land_where_it_lands() {
         if on_target != Some(target) {
             continue;
         }
-        // An eighth of the single-target rounds back out of the target rows:
-        // the picker's "cancelled" returns to the Use list, sub-screen 6
-        // (`0x801D83DC`, `0x801D8490`), with nothing used.
-        if !all && rng.below(8) == 0 {
+        // An eighth of the rounds back out of the target rows or the
+        // all-party confirm: the picker's "cancelled" returns to the Use
+        // list, sub-screen 6 (`0x801D83DC`, `0x801D8490`; the all-party
+        // screen's `0x801D80BC`, `0x801D80F8`), with nothing used.
+        if rng.below(8) == 0 {
             press(&mut sub, &mut world, PadButton::Circle);
             answer.set(2);
-            cpu.mem.wr32(SCREEN, 8);
+            cpu.mem.wr32(SCREEN, if all { 9 } else { 8 });
             cpu.mem.wr32(STEP, 1);
             cpu.mem.wr32(BUSY, 0);
             cues.borrow_mut().clear();
-            assert_eq!(cpu.call(SINGLE, &[]), Stop::Returned, "round {round}");
+            let routine = if all { ALL } else { SINGLE };
+            assert_eq!(cpu.call(routine, &[]), Stop::Returned, "round {round}");
             answer.set(1);
             let rbag: Vec<(u8, u8)> = (0..256u32)
                 .map(|i| (cpu.mem.rd8(BAG + i * 2), cpu.mem.rd8(BAG + i * 2 + 1)))
@@ -265,7 +267,7 @@ fn the_apply_screens_use_what_retail_uses_and_land_where_it_lands() {
                 || rbag.as_slice() != world.party.inventory.slots()
             {
                 failures.push(format!(
-                    "round {round}: item {id:#04x} cancel: retail screen {} port {:?} {:?}",
+                    "round {round}: item {id:#04x} all {all} cancel: retail screen {} port {:?} {:?}",
                     cpu.mem.rd32(SCREEN),
                     items(&sub).focus,
                     items(&sub).inner.state
@@ -444,6 +446,7 @@ fn the_apply_screens_use_what_retail_uses_and_land_where_it_lands() {
     assert!(notices > 5, "{notices} notices");
     for key in [
         (false, Landing::Cancelled),
+        (true, Landing::Cancelled),
         (false, Landing::Again),
         (false, Landing::List),
         (true, Landing::Again),
